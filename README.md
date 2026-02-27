@@ -1,6 +1,7 @@
 # projeto25-26_AI2
-
-## ⚙️ Fluxo de Trabalho GitHub
+## Diagrama da pipeline RAG 
+### ![Diagrama da pipeline RAG](docs/diagramaPipelineRAG.jpg)
+## Fluxo de Trabalho GitHub
 
 ### **Branches**
 * **main**: Código estável e validado em estado de produção.
