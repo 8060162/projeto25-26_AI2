@@ -31,6 +31,7 @@ class HybridChunkingStrategy(BaseChunkingStrategy):
     ) -> List[Chunk]:
         article_count = self._count_node_type(root, "ARTICLE")
         section_count = self._count_node_type(root, "SECTION")
+        lettered_count = self._count_node_type(root, "LETTERED_ITEM")
         annex_count = self._count_node_type(root, "ANNEX")
         chapter_count = self._count_node_type(root, "CHAPTER")
 
@@ -39,13 +40,18 @@ class HybridChunkingStrategy(BaseChunkingStrategy):
         #
         # We choose structure-first when:
         # - the parser found a reasonable number of articles, and
-        # - there is at least some additional hierarchy (sections, annexes,
-        #   or chapters)
+        # - there is at least some additional hierarchy (sections,
+        #   lettered items, annexes, or chapters)
         #
         # Otherwise we use article-smart, which is more forgiving.
         # -------------------------------------------------------------
         has_good_article_backbone = article_count >= 3
-        has_additional_structure = (section_count >= 2) or (annex_count >= 1) or (chapter_count >= 1)
+        has_additional_structure = (
+            (section_count >= 2)
+            or (lettered_count >= 3)
+            or (annex_count >= 1)
+            or (chapter_count >= 1)
+        )
 
         if has_good_article_backbone and has_additional_structure:
             return StructureFirstChunkingStrategy(self.settings).build_chunks(
