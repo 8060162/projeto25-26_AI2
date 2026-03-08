@@ -1,0 +1,1469 @@
+{
+  "node_type": "DOCUMENT",
+  "label": "DOCUMENT",
+  "title": "",
+  "text": "",
+  "page_start": 1,
+  "page_end": 1,
+  "metadata": {},
+  "children": [
+    {
+      "node_type": "PREAMBLE",
+      "label": "PREAMBLE",
+      "title": "",
+      "text": "INSTITUTO POLITÉCNICO DO PORTO\nDespacho n.º 7088/2023\nSumário: Aprova o Regulamento de Matrículas e Inscrições do Instituto Politécnico do Porto.\nConsiderando que:\n1) Pelo Despacho P.PORTO/P -016/2023 foi publicitado o início do procedimento e participação\nprocedimental com vista à aprovação do Regulamento de Matrículas e Inscrições;\n2) Pelo Despacho P.PORTO/P -022/2023 o projeto de Regulamento de Matrículas e Inscrições\nfoi submetido a audiência dos interessados;\n3) Foram analisadas e parcialmente acolhidas as sugestões apresentadas em sede de audiência dos interessados:\nDetermino, através do Despacho P.PORTO/P -041/2023, no uso das competências previstas\nna alínea s) do n.º 1 do artigo 27.º dos Estatutos do Instituto Politécnico do Porto:\na) A aprovação do Regulamento de Matrículas e Inscrições, anexo ao presente despacho e\nque dele faz parte integrante;\nb) A publicação, no Diário da República, do referido regulamento;\nc) A revogação do Despacho P.PORTO/P -21/2021.\n17 de maio de 2023. — O Presidente, Paulo Pereira.",
+      "page_start": 1,
+      "page_end": 1,
+      "metadata": {
+        "document_part": "dispatch_or_intro"
+      },
+      "children": []
+    },
+    {
+      "node_type": "ANNEX",
+      "label": "ANEXO",
+      "title": "Regulamento de Matrículas e Inscrições do Instituto Politécnico do Porto | Regulamento P.PORTO/P -005/2023",
+      "text": "",
+      "page_start": 1,
+      "page_end": 1,
+      "metadata": {
+        "document_part": "regulation_annex"
+      },
+      "children": [
+        {
+          "node_type": "ARTICLE",
+          "label": "ART_1",
+          "title": "Âmbito",
+          "text": "1 — O presente regulamento fixa as normas gerais relativas a matrículas e inscrições nos\ncursos Técnicos Superiores Profissionais, de Licenciatura e de Mestrado, ministrados pelas Escolas\ndo Instituto Politécnico do Porto (P.PORTO).\n2 — O processo de matrícula/inscrição num determinado curso é da responsabilidade da\nEscola onde o curso é ministrado.\n3 — O órgão legal e estatutariamente competente da Escola poderá fixar em regulamento\nespecífico, desde que enquadradas na legislação em vigor e no presente regulamento, normas\nadicionais nas seguintes matérias:\na) Regime de precedências;\nb) Prioridade de inscrição em unidades curriculares em que o estudante se tenha inscrito e a\nque não tenha obtido aprovação;\nc) Inscrição em plano de estudo individual de preparação para frequência de 2.º ciclo.\n4 — O/A Presidente da Escola poderá autorizar, de forma excecional, mediante requerimento\nfundamentado do estudante, alterações aos limites definidos neste regulamento nas seguintes\nmatérias:\na) Número de créditos ECTS necessários para transição de ano curricular quando esteja em\ncausa a necessidade de um ano adicional para a conclusão do curso ou a conclusão do curso e a\nvariação não for superior a 10 % do número de créditos ECTS do curso, sendo devidas propinas\ncalculadas nos termos fixados por deliberação do Conselho Geral;\nb) Aplicação de um regime de transição entre planos de estudo.",
+          "page_start": 1,
+          "page_end": 1,
+          "metadata": {
+            "article_number": "1",
+            "article_title": "Âmbito",
+            "parent_type": "ANNEX",
+            "parent_label": "ANEXO",
+            "parent_title": "Regulamento de Matrículas e Inscrições do Instituto Politécnico do Porto | Regulamento P.PORTO/P -005/2023",
+            "document_part": "regulation_annex"
+          },
+          "children": [
+            {
+              "node_type": "SECTION",
+              "label": "1",
+              "title": "",
+              "text": "1 — O presente regulamento fixa as normas gerais relativas a matrículas e inscrições nos\ncursos Técnicos Superiores Profissionais, de Licenciatura e de Mestrado, ministrados pelas Escolas\ndo Instituto Politécnico do Porto (P.PORTO).",
+              "page_start": 1,
+              "page_end": 1,
+              "metadata": {
+                "article_label": "ART_1",
+                "article_number": "1",
+                "article_title": "Âmbito",
+                "document_part": "regulation_annex"
+              },
+              "children": []
+            },
+            {
+              "node_type": "SECTION",
+              "label": "2",
+              "title": "",
+              "text": "2 — O processo de matrícula/inscrição num determinado curso é da responsabilidade da\nEscola onde o curso é ministrado.",
+              "page_start": 1,
+              "page_end": 1,
+              "metadata": {
+                "article_label": "ART_1",
+                "article_number": "1",
+                "article_title": "Âmbito",
+                "document_part": "regulation_annex"
+              },
+              "children": []
+            },
+            {
+              "node_type": "SECTION",
+              "label": "3",
+              "title": "",
+              "text": "3 — O órgão legal e estatutariamente competente da Escola poderá fixar em regulamento\nespecífico, desde que enquadradas na legislação em vigor e no presente regulamento, normas\nadicionais nas seguintes matérias:\na) Regime de precedências;\nb) Prioridade de inscrição em unidades curriculares em que o estudante se tenha inscrito e a\nque não tenha obtido aprovação;\nc) Inscrição em plano de estudo individual de preparação para frequência de 2.º ciclo.",
+              "page_start": 1,
+              "page_end": 1,
+              "metadata": {
+                "article_label": "ART_1",
+                "article_number": "1",
+                "article_title": "Âmbito",
+                "document_part": "regulation_annex"
+              },
+              "children": []
+            },
+            {
+              "node_type": "SECTION",
+              "label": "4",
+              "title": "",
+              "text": "4 — O/A Presidente da Escola poderá autorizar, de forma excecional, mediante requerimento\nfundamentado do estudante, alterações aos limites definidos neste regulamento nas seguintes\nmatérias:\na) Número de créditos ECTS necessários para transição de ano curricular quando esteja em\ncausa a necessidade de um ano adicional para a conclusão do curso ou a conclusão do curso e a\nvariação não for superior a 10 % do número de créditos ECTS do curso, sendo devidas propinas\ncalculadas nos termos fixados por deliberação do Conselho Geral;\nb) Aplicação de um regime de transição entre planos de estudo.",
+              "page_start": 1,
+              "page_end": 1,
+              "metadata": {
+                "article_label": "ART_1",
+                "article_number": "1",
+                "article_title": "Âmbito",
+                "document_part": "regulation_annex"
+              },
+              "children": []
+            }
+          ]
+        },
+        {
+          "node_type": "ARTICLE",
+          "label": "ART_2",
+          "title": "Definições",
+          "text": "1 — Matrícula — É o ato pelo qual o estudante ingressa num curso. A matrícula, por si só, não\nconfere o direito de frequência do curso, sendo necessária a inscrição nas unidades curriculares\ndo mesmo.\n2 — Inscrição — É o ato pelo qual o estudante, tendo matrícula válida num curso, adquire o\ndireito de frequentar as unidades curriculares em que se inscreve.\n3 — Estudante do P.PORTO — É considerado estudante do P.PORTO aquele que tem matrícula válida.\n4 — Caducidade da matrícula — A matrícula num estabelecimento de ensino superior caduca\nquando um estudante inscrito num ano letivo não renova a inscrição no ano letivo subsequente.\n5 — Unidade curricular — Unidade de ensino com objetivos de formação próprios que é objeto\nde inscrição administrativa e de avaliação traduzida numa classificação final. Incluem -se, ainda,\nneste conceito casos específicos tais como Estágio, Projeto, Dissertação, Tese, Relatório de Estágio\nou outros constantes dos planos curriculares dos cursos.\n6 — Plano de estudo de um curso — Conjunto organizado de unidades curriculares em que\num estudante deve ser aprovado para obter um determinado grau académico, concluir um curso\nnão conferente de grau ou reunir uma parte das condições para obtenção de um determinado grau\nacadémico.\n7 — Plano de transição — Plano que fixa as regras de transição e o plano curricular em vigor\ndurante o período de transição devido a alteração do plano de estudos de um curso. O plano de\nestudos fixado no plano de transição constitui o plano de estudos do curso durante o período de\ntransição.\n8 — Crédito ECTS — Unidade de medida, do Sistema Europeu de Transferência de Créditos, do trabalho do estudante sob todas as suas formas, designadamente, sessões de ensino de\nnatureza coletiva, sessões de orientação pessoal de tipo tutorial, estágios, projetos, trabalhos no\nterreno, estudo e avaliação.\n9 — Créditos de uma unidade curricular — Valor numérico que expressa uma medida do trabalho que deve ser efetuado por um estudante para realizar essa unidade curricular.\n10 — Creditação — Conversão em créditos ECTS de competências reconhecidas ao estudante\nque, por serem relevantes para o curso, o podem dispensar da inscrição nas correspondentes\nunidades curriculares.\n11 — Ano curricular de inscrição — Ano curricular, de acordo com o número de ECTS já obtidos, em que o estudante se encontra.\n12 — Transição de ano — Aprovação no final de cada ano letivo ao número de ECTS necessário para o estudante poder inscrever -se no ano curricular seguinte.\n13 — Duração normal de um ciclo de estudos — Número de anos, semestres ou trimestres\nletivos em que o ciclo de estudos/curso se estrutura. A cada ano curricular correspondem, em regra,\n60 créditos ECTS.\n14 — Inscrição em exame — É o ato pelo qual o estudante formaliza a sua intenção de realizar\num exame.\n15 — Regime de precedências — Regime que estabelece que a inscrição numa ou mais\nunidades curriculares do plano de estudos está condicionada à obtenção de aproveitamento em\nunidade(s) curricular(es) anterior(es).\n16 — Regime de prescrições — Regime que estabelece as regras de perda do direito à inscrição.\n17 — Regime de Estudante a Tempo Integral — Aquele em que o número máximo de créditos ECTS a que o estudante se pode inscrever, em cada ano/semestre letivo, é determinado com\nreferência a, pelo menos, 51 % do número de créditos ECTS do ano curricular completo.\n18 — Regime de Estudante a Tempo Parcial — Aquele em que o número máximo de créditos ECTS a que o estudante se pode inscrever, em cada ano/semestre letivo, é determinado com\nreferência a menos de 51 % do número de créditos ECTS do ano curricular completo.\n19 — Situação de propinas regularizada — Considera -se que a situação de propinas está\nregularizada se o estudante cumpre o pagamento da propina devida para o ano letivo em causa,\nnos termos do calendário estabelecido no regulamento de propinas, ou do calendário específico de\npagamento aprovado pelo Presidente do P.PORTO, e não tem qualquer valor em débito de ano(s)\nletivo(s) anterior(es).",
+          "page_start": 2,
+          "page_end": 3,
+          "metadata": {
+            "article_number": "2",
+            "article_title": "Definições",
+            "parent_type": "ANNEX",
+            "parent_label": "ANEXO",
+            "parent_title": "Regulamento de Matrículas e Inscrições do Instituto Politécnico do Porto | Regulamento P.PORTO/P -005/2023",
+            "document_part": "regulation_annex"
+          },
+          "children": [
+            {
+              "node_type": "SECTION",
+              "label": "1",
+              "title": "",
+              "text": "1 — Matrícula — É o ato pelo qual o estudante ingressa num curso. A matrícula, por si só, não\nconfere o direito de frequência do curso, sendo necessária a inscrição nas unidades curriculares\ndo mesmo.",
+              "page_start": 2,
+              "page_end": 3,
+              "metadata": {
+                "article_label": "ART_2",
+                "article_number": "2",
+                "article_title": "Definições",
+                "document_part": "regulation_annex"
+              },
+              "children": []
+            },
+            {
+              "node_type": "SECTION",
+              "label": "2",
+              "title": "",
+              "text": "2 — Inscrição — É o ato pelo qual o estudante, tendo matrícula válida num curso, adquire o\ndireito de frequentar as unidades curriculares em que se inscreve.",
+              "page_start": 2,
+              "page_end": 3,
+              "metadata": {
+                "article_label": "ART_2",
+                "article_number": "2",
+                "article_title": "Definições",
+                "document_part": "regulation_annex"
+              },
+              "children": []
+            },
+            {
+              "node_type": "SECTION",
+              "label": "3",
+              "title": "",
+              "text": "3 — Estudante do P.PORTO — É considerado estudante do P.PORTO aquele que tem matrícula válida.",
+              "page_start": 2,
+              "page_end": 3,
+              "metadata": {
+                "article_label": "ART_2",
+                "article_number": "2",
+                "article_title": "Definições",
+                "document_part": "regulation_annex"
+              },
+              "children": []
+            },
+            {
+              "node_type": "SECTION",
+              "label": "4",
+              "title": "",
+              "text": "4 — Caducidade da matrícula — A matrícula num estabelecimento de ensino superior caduca\nquando um estudante inscrito num ano letivo não renova a inscrição no ano letivo subsequente.",
+              "page_start": 2,
+              "page_end": 3,
+              "metadata": {
+                "article_label": "ART_2",
+                "article_number": "2",
+                "article_title": "Definições",
+                "document_part": "regulation_annex"
+              },
+              "children": []
+            },
+            {
+              "node_type": "SECTION",
+              "label": "5",
+              "title": "",
+              "text": "5 — Unidade curricular — Unidade de ensino com objetivos de formação próprios que é objeto\nde inscrição administrativa e de avaliação traduzida numa classificação final. Incluem -se, ainda,\nneste conceito casos específicos tais como Estágio, Projeto, Dissertação, Tese, Relatório de Estágio\nou outros constantes dos planos curriculares dos cursos.",
+              "page_start": 2,
+              "page_end": 3,
+              "metadata": {
+                "article_label": "ART_2",
+                "article_number": "2",
+                "article_title": "Definições",
+                "document_part": "regulation_annex"
+              },
+              "children": []
+            },
+            {
+              "node_type": "SECTION",
+              "label": "6",
+              "title": "",
+              "text": "6 — Plano de estudo de um curso — Conjunto organizado de unidades curriculares em que\num estudante deve ser aprovado para obter um determinado grau académico, concluir um curso\nnão conferente de grau ou reunir uma parte das condições para obtenção de um determinado grau\nacadémico.",
+              "page_start": 2,
+              "page_end": 3,
+              "metadata": {
+                "article_label": "ART_2",
+                "article_number": "2",
+                "article_title": "Definições",
+                "document_part": "regulation_annex"
+              },
+              "children": []
+            },
+            {
+              "node_type": "SECTION",
+              "label": "7",
+              "title": "",
+              "text": "7 — Plano de transição — Plano que fixa as regras de transição e o plano curricular em vigor\ndurante o período de transição devido a alteração do plano de estudos de um curso. O plano de\nestudos fixado no plano de transição constitui o plano de estudos do curso durante o período de\ntransição.",
+              "page_start": 2,
+              "page_end": 3,
+              "metadata": {
+                "article_label": "ART_2",
+                "article_number": "2",
+                "article_title": "Definições",
+                "document_part": "regulation_annex"
+              },
+              "children": []
+            },
+            {
+              "node_type": "SECTION",
+              "label": "8",
+              "title": "",
+              "text": "8 — Crédito ECTS — Unidade de medida, do Sistema Europeu de Transferência de Créditos, do trabalho do estudante sob todas as suas formas, designadamente, sessões de ensino de\nnatureza coletiva, sessões de orientação pessoal de tipo tutorial, estágios, projetos, trabalhos no\nterreno, estudo e avaliação.",
+              "page_start": 2,
+              "page_end": 3,
+              "metadata": {
+                "article_label": "ART_2",
+                "article_number": "2",
+                "article_title": "Definições",
+                "document_part": "regulation_annex"
+              },
+              "children": []
+            },
+            {
+              "node_type": "SECTION",
+              "label": "9",
+              "title": "",
+              "text": "9 — Créditos de uma unidade curricular — Valor numérico que expressa uma medida do trabalho que deve ser efetuado por um estudante para realizar essa unidade curricular.",
+              "page_start": 2,
+              "page_end": 3,
+              "metadata": {
+                "article_label": "ART_2",
+                "article_number": "2",
+                "article_title": "Definições",
+                "document_part": "regulation_annex"
+              },
+              "children": []
+            },
+            {
+              "node_type": "SECTION",
+              "label": "10",
+              "title": "",
+              "text": "10 — Creditação — Conversão em créditos ECTS de competências reconhecidas ao estudante\nque, por serem relevantes para o curso, o podem dispensar da inscrição nas correspondentes\nunidades curriculares.",
+              "page_start": 2,
+              "page_end": 3,
+              "metadata": {
+                "article_label": "ART_2",
+                "article_number": "2",
+                "article_title": "Definições",
+                "document_part": "regulation_annex"
+              },
+              "children": []
+            },
+            {
+              "node_type": "SECTION",
+              "label": "11",
+              "title": "",
+              "text": "11 — Ano curricular de inscrição — Ano curricular, de acordo com o número de ECTS já obtidos, em que o estudante se encontra.",
+              "page_start": 2,
+              "page_end": 3,
+              "metadata": {
+                "article_label": "ART_2",
+                "article_number": "2",
+                "article_title": "Definições",
+                "document_part": "regulation_annex"
+              },
+              "children": []
+            },
+            {
+              "node_type": "SECTION",
+              "label": "12",
+              "title": "",
+              "text": "12 — Transição de ano — Aprovação no final de cada ano letivo ao número de ECTS necessário para o estudante poder inscrever -se no ano curricular seguinte.",
+              "page_start": 2,
+              "page_end": 3,
+              "metadata": {
+                "article_label": "ART_2",
+                "article_number": "2",
+                "article_title": "Definições",
+                "document_part": "regulation_annex"
+              },
+              "children": []
+            },
+            {
+              "node_type": "SECTION",
+              "label": "13",
+              "title": "",
+              "text": "13 — Duração normal de um ciclo de estudos — Número de anos, semestres ou trimestres\nletivos em que o ciclo de estudos/curso se estrutura. A cada ano curricular correspondem, em regra,\n60 créditos ECTS.",
+              "page_start": 2,
+              "page_end": 3,
+              "metadata": {
+                "article_label": "ART_2",
+                "article_number": "2",
+                "article_title": "Definições",
+                "document_part": "regulation_annex"
+              },
+              "children": []
+            },
+            {
+              "node_type": "SECTION",
+              "label": "14",
+              "title": "",
+              "text": "14 — Inscrição em exame — É o ato pelo qual o estudante formaliza a sua intenção de realizar\num exame.",
+              "page_start": 2,
+              "page_end": 3,
+              "metadata": {
+                "article_label": "ART_2",
+                "article_number": "2",
+                "article_title": "Definições",
+                "document_part": "regulation_annex"
+              },
+              "children": []
+            },
+            {
+              "node_type": "SECTION",
+              "label": "15",
+              "title": "",
+              "text": "15 — Regime de precedências — Regime que estabelece que a inscrição numa ou mais\nunidades curriculares do plano de estudos está condicionada à obtenção de aproveitamento em\nunidade(s) curricular(es) anterior(es).",
+              "page_start": 2,
+              "page_end": 3,
+              "metadata": {
+                "article_label": "ART_2",
+                "article_number": "2",
+                "article_title": "Definições",
+                "document_part": "regulation_annex"
+              },
+              "children": []
+            },
+            {
+              "node_type": "SECTION",
+              "label": "16",
+              "title": "",
+              "text": "16 — Regime de prescrições — Regime que estabelece as regras de perda do direito à inscrição.",
+              "page_start": 2,
+              "page_end": 3,
+              "metadata": {
+                "article_label": "ART_2",
+                "article_number": "2",
+                "article_title": "Definições",
+                "document_part": "regulation_annex"
+              },
+              "children": []
+            },
+            {
+              "node_type": "SECTION",
+              "label": "17",
+              "title": "",
+              "text": "17 — Regime de Estudante a Tempo Integral — Aquele em que o número máximo de créditos ECTS a que o estudante se pode inscrever, em cada ano/semestre letivo, é determinado com\nreferência a, pelo menos, 51 % do número de créditos ECTS do ano curricular completo.",
+              "page_start": 2,
+              "page_end": 3,
+              "metadata": {
+                "article_label": "ART_2",
+                "article_number": "2",
+                "article_title": "Definições",
+                "document_part": "regulation_annex"
+              },
+              "children": []
+            },
+            {
+              "node_type": "SECTION",
+              "label": "18",
+              "title": "",
+              "text": "18 — Regime de Estudante a Tempo Parcial — Aquele em que o número máximo de créditos ECTS a que o estudante se pode inscrever, em cada ano/semestre letivo, é determinado com\nreferência a menos de 51 % do número de créditos ECTS do ano curricular completo.",
+              "page_start": 2,
+              "page_end": 3,
+              "metadata": {
+                "article_label": "ART_2",
+                "article_number": "2",
+                "article_title": "Definições",
+                "document_part": "regulation_annex"
+              },
+              "children": []
+            },
+            {
+              "node_type": "SECTION",
+              "label": "19",
+              "title": "",
+              "text": "19 — Situação de propinas regularizada — Considera -se que a situação de propinas está\nregularizada se o estudante cumpre o pagamento da propina devida para o ano letivo em causa,\nnos termos do calendário estabelecido no regulamento de propinas, ou do calendário específico de\npagamento aprovado pelo Presidente do P.PORTO, e não tem qualquer valor em débito de ano(s)\nletivo(s) anterior(es).",
+              "page_start": 2,
+              "page_end": 3,
+              "metadata": {
+                "article_label": "ART_2",
+                "article_number": "2",
+                "article_title": "Definições",
+                "document_part": "regulation_annex"
+              },
+              "children": []
+            }
+          ]
+        },
+        {
+          "node_type": "ARTICLE",
+          "label": "ART_3",
+          "title": "Conceitos",
+          "text": "1 — A matrícula e a inscrição são efetuadas no DOMUS (1) mediante preenchimento de formulário anual de inquérito estatístico e dos formulários de matrícula e inscrição, apresentação dos\ndocumentos indicados no artigo 5.º, e pagamento das taxas de inscrição e seguro escolar.\n2 — Com a matrícula o estudante assume a obrigação de pagamento da propina anual devida\npara o ciclo de estudos em que se inscreve.\n3 — O pagamento das taxas de matrícula e do seguro escolar, deve ser efetuado até à data-\n-limite fixada para a respetiva matrícula, sob pena de a mesma ser considerada não válida, implicando nomeadamente:\na) No caso de matrícula resultante de colocação pelo Concurso Nacional de Acesso, a comunicação à Direção -Geral do Ensino Superior, de vaga sobrante;\nb) No caso de renovação, o pagamento da taxa devida por prática de ato administrativo fora\nde prazo para a sua regularização;\nc) Inibição da prática que qualquer ato académico ou administrativo.\n4 — Em conformidade com os números anteriores os estudantes não estão matriculados e,\nconsequentemente, não inscritos, enquanto não procederem ao pagamento das taxas de inscrição\ne de seguro escolar.\n5 — A matrícula e/ou inscrição é provisória, tornando -se efetiva após validação pelos serviços da área académica da Escola respetiva, que verificará todas as condições estipuladas pelo\npresente regulamento.\n6 — O pagamento da propina anual deve ser efetuado nos termos e de acordo com o calendário estabelecido no Regulamento de Propinas.\n7 — Os formulários de matrícula e de inscrição devem conter todos os dados dos estudantes\na que o P.PORTO é legalmente obrigado a solicitar, seja para efeitos de registo ou de informação\nestatística.",
+          "page_start": 3,
+          "page_end": 3,
+          "metadata": {
+            "article_number": "3",
+            "article_title": "Conceitos",
+            "parent_type": "ANNEX",
+            "parent_label": "ANEXO",
+            "parent_title": "Regulamento de Matrículas e Inscrições do Instituto Politécnico do Porto | Regulamento P.PORTO/P -005/2023",
+            "document_part": "regulation_annex"
+          },
+          "children": [
+            {
+              "node_type": "SECTION",
+              "label": "1",
+              "title": "",
+              "text": "1 — A matrícula e a inscrição são efetuadas no DOMUS (1) mediante preenchimento de formulário anual de inquérito estatístico e dos formulários de matrícula e inscrição, apresentação dos\ndocumentos indicados no artigo 5.º, e pagamento das taxas de inscrição e seguro escolar.",
+              "page_start": 3,
+              "page_end": 3,
+              "metadata": {
+                "article_label": "ART_3",
+                "article_number": "3",
+                "article_title": "Conceitos",
+                "document_part": "regulation_annex"
+              },
+              "children": []
+            },
+            {
+              "node_type": "SECTION",
+              "label": "2",
+              "title": "",
+              "text": "2 — Com a matrícula o estudante assume a obrigação de pagamento da propina anual devida\npara o ciclo de estudos em que se inscreve.",
+              "page_start": 3,
+              "page_end": 3,
+              "metadata": {
+                "article_label": "ART_3",
+                "article_number": "3",
+                "article_title": "Conceitos",
+                "document_part": "regulation_annex"
+              },
+              "children": []
+            },
+            {
+              "node_type": "SECTION",
+              "label": "3",
+              "title": "",
+              "text": "3 — O pagamento das taxas de matrícula e do seguro escolar, deve ser efetuado até à data-\n-limite fixada para a respetiva matrícula, sob pena de a mesma ser considerada não válida, implicando nomeadamente:\na) No caso de matrícula resultante de colocação pelo Concurso Nacional de Acesso, a comunicação à Direção -Geral do Ensino Superior, de vaga sobrante;\nb) No caso de renovação, o pagamento da taxa devida por prática de ato administrativo fora\nde prazo para a sua regularização;\nc) Inibição da prática que qualquer ato académico ou administrativo.",
+              "page_start": 3,
+              "page_end": 3,
+              "metadata": {
+                "article_label": "ART_3",
+                "article_number": "3",
+                "article_title": "Conceitos",
+                "document_part": "regulation_annex"
+              },
+              "children": []
+            },
+            {
+              "node_type": "SECTION",
+              "label": "4",
+              "title": "",
+              "text": "4 — Em conformidade com os números anteriores os estudantes não estão matriculados e,\nconsequentemente, não inscritos, enquanto não procederem ao pagamento das taxas de inscrição\ne de seguro escolar.",
+              "page_start": 3,
+              "page_end": 3,
+              "metadata": {
+                "article_label": "ART_3",
+                "article_number": "3",
+                "article_title": "Conceitos",
+                "document_part": "regulation_annex"
+              },
+              "children": []
+            },
+            {
+              "node_type": "SECTION",
+              "label": "5",
+              "title": "",
+              "text": "5 — A matrícula e/ou inscrição é provisória, tornando -se efetiva após validação pelos serviços da área académica da Escola respetiva, que verificará todas as condições estipuladas pelo\npresente regulamento.",
+              "page_start": 3,
+              "page_end": 3,
+              "metadata": {
+                "article_label": "ART_3",
+                "article_number": "3",
+                "article_title": "Conceitos",
+                "document_part": "regulation_annex"
+              },
+              "children": []
+            },
+            {
+              "node_type": "SECTION",
+              "label": "6",
+              "title": "",
+              "text": "6 — O pagamento da propina anual deve ser efetuado nos termos e de acordo com o calendário estabelecido no Regulamento de Propinas.",
+              "page_start": 3,
+              "page_end": 3,
+              "metadata": {
+                "article_label": "ART_3",
+                "article_number": "3",
+                "article_title": "Conceitos",
+                "document_part": "regulation_annex"
+              },
+              "children": []
+            },
+            {
+              "node_type": "SECTION",
+              "label": "7",
+              "title": "",
+              "text": "7 — Os formulários de matrícula e de inscrição devem conter todos os dados dos estudantes\na que o P.PORTO é legalmente obrigado a solicitar, seja para efeitos de registo ou de informação\nestatística.",
+              "page_start": 3,
+              "page_end": 3,
+              "metadata": {
+                "article_label": "ART_3",
+                "article_number": "3",
+                "article_title": "Conceitos",
+                "document_part": "regulation_annex"
+              },
+              "children": []
+            }
+          ]
+        },
+        {
+          "node_type": "ARTICLE",
+          "label": "ART_4",
+          "title": "Realização da matrícula/inscrição | Têm legitimidade para efetuar a matrícula e/ou inscrição:",
+          "text": "a) O estudante;\nb) Um seu procurador bastante;\nc) Sendo o estudante menor, a pessoa que demonstre exercer o poder paternal ou tutelar.",
+          "page_start": 3,
+          "page_end": 3,
+          "metadata": {
+            "article_number": "4",
+            "article_title": "Realização da matrícula/inscrição | Têm legitimidade para efetuar a matrícula e/ou inscrição:",
+            "parent_type": "ANNEX",
+            "parent_label": "ANEXO",
+            "parent_title": "Regulamento de Matrículas e Inscrições do Instituto Politécnico do Porto | Regulamento P.PORTO/P -005/2023",
+            "document_part": "regulation_annex"
+          },
+          "children": []
+        },
+        {
+          "node_type": "ARTICLE",
+          "label": "ART_5",
+          "title": "Documentos necessários para a matrícula",
+          "text": "1 — Para a matrícula e inscrição são necessários os seguintes documentos:\na) Uma fotografia;\nb) Comprovativo da nacionalidade;\nc) Comprovativo de não ter enquadramento no estatuto de estudante internacional (aplicável\napenas a estudantes nacionais de países fora da União Europeia);\nd) Comprovativo do número de identificação fiscal;\ne) Comprovativo da vacina antitetânica atualizada;\nf) Comprovativo de satisfação dos pré -requisitos (aplicável apenas a estudantes colocados\nem cursos que exigem a satisfação de pré -requisitos);\ng) Comprovativo de pagamento de propinas efetuado na Instituição onde anteriormente se\nmatriculou (aplicável apenas a estudantes recolocados na 2.ª ou 3.ª fases do Concurso Nacional\nde Acesso).\n2 — Os documentos referidos no n.º 1 deverão ser carregados no DOMUS e os respetivos\noriginais, com exceção do referido na alínea a), apresentados nos serviços da área académica da\nEscola respetiva para verificação, bem como documento de identificação legalmente válido, quando\nsolicitado e dentro dos prazos estabelecidos.\n3 — O não cumprimento do disposto no número anterior implicará o bloqueio do acesso ao\nDOMUS.",
+          "page_start": 3,
+          "page_end": 4,
+          "metadata": {
+            "article_number": "5",
+            "article_title": "Documentos necessários para a matrícula",
+            "parent_type": "ANNEX",
+            "parent_label": "ANEXO",
+            "parent_title": "Regulamento de Matrículas e Inscrições do Instituto Politécnico do Porto | Regulamento P.PORTO/P -005/2023",
+            "document_part": "regulation_annex"
+          },
+          "children": [
+            {
+              "node_type": "SECTION",
+              "label": "1",
+              "title": "",
+              "text": "1 — Para a matrícula e inscrição são necessários os seguintes documentos:\na) Uma fotografia;\nb) Comprovativo da nacionalidade;\nc) Comprovativo de não ter enquadramento no estatuto de estudante internacional (aplicável\napenas a estudantes nacionais de países fora da União Europeia);\nd) Comprovativo do número de identificação fiscal;\ne) Comprovativo da vacina antitetânica atualizada;\nf) Comprovativo de satisfação dos pré -requisitos (aplicável apenas a estudantes colocados\nem cursos que exigem a satisfação de pré -requisitos);\ng) Comprovativo de pagamento de propinas efetuado na Instituição onde anteriormente se\nmatriculou (aplicável apenas a estudantes recolocados na 2.ª ou 3.ª fases do Concurso Nacional\nde Acesso).",
+              "page_start": 3,
+              "page_end": 4,
+              "metadata": {
+                "article_label": "ART_5",
+                "article_number": "5",
+                "article_title": "Documentos necessários para a matrícula",
+                "document_part": "regulation_annex"
+              },
+              "children": []
+            },
+            {
+              "node_type": "SECTION",
+              "label": "2",
+              "title": "",
+              "text": "2 — Os documentos referidos no n.º 1 deverão ser carregados no DOMUS e os respetivos\noriginais, com exceção do referido na alínea a), apresentados nos serviços da área académica da\nEscola respetiva para verificação, bem como documento de identificação legalmente válido, quando\nsolicitado e dentro dos prazos estabelecidos.",
+              "page_start": 3,
+              "page_end": 4,
+              "metadata": {
+                "article_label": "ART_5",
+                "article_number": "5",
+                "article_title": "Documentos necessários para a matrícula",
+                "document_part": "regulation_annex"
+              },
+              "children": []
+            },
+            {
+              "node_type": "SECTION",
+              "label": "3",
+              "title": "",
+              "text": "3 — O não cumprimento do disposto no número anterior implicará o bloqueio do acesso ao\nDOMUS.",
+              "page_start": 3,
+              "page_end": 4,
+              "metadata": {
+                "article_label": "ART_5",
+                "article_number": "5",
+                "article_title": "Documentos necessários para a matrícula",
+                "document_part": "regulation_annex"
+              },
+              "children": []
+            }
+          ]
+        },
+        {
+          "node_type": "ARTICLE",
+          "label": "ART_6",
+          "title": "Prazos de matrícula e de inscrição | As matrículas e inscrições realizam -se nos prazos fixados no calendário escolar, com exceção",
+          "text": "dos casos previstos nos números seguintes:\na) Estudantes colocados ao abrigo do Concurso Nacional de Acesso — os prazos de matrículas\ne inscrições são os fixados no respetivo regulamento aprovado pela Tutela;\nb) Estudantes colocados ao abrigo dos Regimes Especiais de Acesso — os prazos são os\nfixados no respetivo regulamento aprovado pela Tutela;\nc) Estudantes colocados ao abrigo dos Concursos Especiais e Regimes de Mudança de Par\nInstituição/Curso e Reingresso — os prazos são os fixados no respetivo edital do concurso;\nd) Estudantes colocados ao abrigo de outros Concursos Institucionais — os prazos são os\nfixados no respetivo edital do concurso;\ne) Estudantes que realizam exames ao abrigo de estatutos especiais nas situações de exceção\nprevistas no respetivo regulamento aplicando -se os prazos nele fixados.",
+          "page_start": 4,
+          "page_end": 4,
+          "metadata": {
+            "article_number": "6",
+            "article_title": "Prazos de matrícula e de inscrição | As matrículas e inscrições realizam -se nos prazos fixados no calendário escolar, com exceção",
+            "parent_type": "ANNEX",
+            "parent_label": "ANEXO",
+            "parent_title": "Regulamento de Matrículas e Inscrições do Instituto Politécnico do Porto | Regulamento P.PORTO/P -005/2023",
+            "document_part": "regulation_annex"
+          },
+          "children": []
+        },
+        {
+          "node_type": "ARTICLE",
+          "label": "ART_7",
+          "title": "Condições para realização da matrícula | Para a realização da matrícula é necessária a verificação cumulativa das seguintes condições:",
+          "text": "a) A admissão do estudante à Escola ao abrigo dos concursos regulamentarmente referidos\nno artigo anterior;\nb) A inexistência de qualquer valor em débito ao P.PORTO, incluindo as escolas, independentemente da sua natureza, ou em caso de existência de um valor em débito, este esteja a ser\ndevidamente liquidado através de um plano de regularização, de acordo com o estabelecido no\nRegulamento de Propinas do P.PORTO;\nc) O estudante não se encontrar impedido de realizar a matrícula em resultado do regime de\nprescrições.",
+          "page_start": 4,
+          "page_end": 4,
+          "metadata": {
+            "article_number": "7",
+            "article_title": "Condições para realização da matrícula | Para a realização da matrícula é necessária a verificação cumulativa das seguintes condições:",
+            "parent_type": "ANNEX",
+            "parent_label": "ANEXO",
+            "parent_title": "Regulamento de Matrículas e Inscrições do Instituto Politécnico do Porto | Regulamento P.PORTO/P -005/2023",
+            "document_part": "regulation_annex"
+          },
+          "children": []
+        },
+        {
+          "node_type": "ARTICLE",
+          "label": "ART_8",
+          "title": "Condições para realização da inscrição",
+          "text": "1 — Para a realização da inscrição é necessária a verificação cumulativa das seguintes condições:\na) A existência de matrícula válida;\nb) A inexistência de qualquer valor em débito ao P.PORTO, incluindo as escolas, independentemente da sua natureza, ou em caso de existência de um valor em débito, este esteja a ser\ndevidamente liquidado através de um plano de regularização, de acordo com o estabelecido no\nRegulamento de Propinas do P.PORTO;\nc) A inscrição a, pelo menos, uma unidade curricular.\n2 — A inscrição a uma unidade curricular específica encontra -se condicionada à verificação\ncumulativa das seguintes condições:\na) Observância do número máximo de créditos ECTS em que o estudante se pode inscrever\npor período/ano letivo/curso;\nb) Cumprimento das regras de precedência aprovadas e em vigor para o curso.\n3 — As inscrições não poderão exceder o correspondente ao número máximo de créditos ECTS\npor ano, semestre ou trimestre, nos termos do artigo 10.º do presente regulamento.\n4 — Aos serviços da área académica das Escolas assiste o direito de anular automaticamente,\ne sem aviso prévio, as inscrições realizadas em unidades curriculares que não satisfaçam as condições estabelecidas no presente regulamento e nas normas específicas em vigor na respetiva\nEscola elaboradas nos termos do n.º 3 do artigo 1.º\n5 — No caso de se aplicar a alínea b) do n.º 4 do artigo 1.º, e se verifique que a inscrição\ndo estudante o não cumpriu, os serviços da área académica procederão à sua inscrição oficiosa,\nrevendo também o cumprimento do limite máximo de créditos definido.\n6 — O estudante que se matricula no 1.º ano e pela 1.ª vez inscreve -se às unidades curriculares\nfixadas no plano de estudos para o 1.º ano do curso, sem prejuízo de o estudante poder alterar a\ninscrição, nos termos previstos no artigo 12.º\n7 — São nulos e de nenhum efeito os resultados obtidos em unidades curriculares em que o\nestudante não esteja regularmente inscrito.\n8 — Não é permitida a inscrição em unidades curriculares em que o estudante já tenha aprovação ou creditação de competências com exceção de recusa expressa da creditação concedida.\n9 — É da responsabilidade do estudante a verificação das unidades curriculares em que se\nencontra efetivamente inscrito.",
+          "page_start": 4,
+          "page_end": 5,
+          "metadata": {
+            "article_number": "8",
+            "article_title": "Condições para realização da inscrição",
+            "parent_type": "ANNEX",
+            "parent_label": "ANEXO",
+            "parent_title": "Regulamento de Matrículas e Inscrições do Instituto Politécnico do Porto | Regulamento P.PORTO/P -005/2023",
+            "document_part": "regulation_annex"
+          },
+          "children": [
+            {
+              "node_type": "SECTION",
+              "label": "1",
+              "title": "",
+              "text": "1 — Para a realização da inscrição é necessária a verificação cumulativa das seguintes condições:\na) A existência de matrícula válida;\nb) A inexistência de qualquer valor em débito ao P.PORTO, incluindo as escolas, independentemente da sua natureza, ou em caso de existência de um valor em débito, este esteja a ser\ndevidamente liquidado através de um plano de regularização, de acordo com o estabelecido no\nRegulamento de Propinas do P.PORTO;\nc) A inscrição a, pelo menos, uma unidade curricular.",
+              "page_start": 4,
+              "page_end": 5,
+              "metadata": {
+                "article_label": "ART_8",
+                "article_number": "8",
+                "article_title": "Condições para realização da inscrição",
+                "document_part": "regulation_annex"
+              },
+              "children": []
+            },
+            {
+              "node_type": "SECTION",
+              "label": "2",
+              "title": "",
+              "text": "2 — A inscrição a uma unidade curricular específica encontra -se condicionada à verificação\ncumulativa das seguintes condições:\na) Observância do número máximo de créditos ECTS em que o estudante se pode inscrever\npor período/ano letivo/curso;\nb) Cumprimento das regras de precedência aprovadas e em vigor para o curso.",
+              "page_start": 4,
+              "page_end": 5,
+              "metadata": {
+                "article_label": "ART_8",
+                "article_number": "8",
+                "article_title": "Condições para realização da inscrição",
+                "document_part": "regulation_annex"
+              },
+              "children": []
+            },
+            {
+              "node_type": "SECTION",
+              "label": "3",
+              "title": "",
+              "text": "3 — As inscrições não poderão exceder o correspondente ao número máximo de créditos ECTS\npor ano, semestre ou trimestre, nos termos do artigo 10.º do presente regulamento.",
+              "page_start": 4,
+              "page_end": 5,
+              "metadata": {
+                "article_label": "ART_8",
+                "article_number": "8",
+                "article_title": "Condições para realização da inscrição",
+                "document_part": "regulation_annex"
+              },
+              "children": []
+            },
+            {
+              "node_type": "SECTION",
+              "label": "4",
+              "title": "",
+              "text": "4 — Aos serviços da área académica das Escolas assiste o direito de anular automaticamente,\ne sem aviso prévio, as inscrições realizadas em unidades curriculares que não satisfaçam as condições estabelecidas no presente regulamento e nas normas específicas em vigor na respetiva\nEscola elaboradas nos termos do n.º 3 do artigo 1.º",
+              "page_start": 4,
+              "page_end": 5,
+              "metadata": {
+                "article_label": "ART_8",
+                "article_number": "8",
+                "article_title": "Condições para realização da inscrição",
+                "document_part": "regulation_annex"
+              },
+              "children": []
+            },
+            {
+              "node_type": "SECTION",
+              "label": "5",
+              "title": "",
+              "text": "5 — No caso de se aplicar a alínea b) do n.º 4 do artigo 1.º, e se verifique que a inscrição\ndo estudante o não cumpriu, os serviços da área académica procederão à sua inscrição oficiosa,\nrevendo também o cumprimento do limite máximo de créditos definido.",
+              "page_start": 4,
+              "page_end": 5,
+              "metadata": {
+                "article_label": "ART_8",
+                "article_number": "8",
+                "article_title": "Condições para realização da inscrição",
+                "document_part": "regulation_annex"
+              },
+              "children": []
+            },
+            {
+              "node_type": "SECTION",
+              "label": "6",
+              "title": "",
+              "text": "6 — O estudante que se matricula no 1.º ano e pela 1.ª vez inscreve -se às unidades curriculares\nfixadas no plano de estudos para o 1.º ano do curso, sem prejuízo de o estudante poder alterar a\ninscrição, nos termos previstos no artigo 12.º",
+              "page_start": 4,
+              "page_end": 5,
+              "metadata": {
+                "article_label": "ART_8",
+                "article_number": "8",
+                "article_title": "Condições para realização da inscrição",
+                "document_part": "regulation_annex"
+              },
+              "children": []
+            },
+            {
+              "node_type": "SECTION",
+              "label": "7",
+              "title": "",
+              "text": "7 — São nulos e de nenhum efeito os resultados obtidos em unidades curriculares em que o\nestudante não esteja regularmente inscrito.",
+              "page_start": 4,
+              "page_end": 5,
+              "metadata": {
+                "article_label": "ART_8",
+                "article_number": "8",
+                "article_title": "Condições para realização da inscrição",
+                "document_part": "regulation_annex"
+              },
+              "children": []
+            },
+            {
+              "node_type": "SECTION",
+              "label": "8",
+              "title": "",
+              "text": "8 — Não é permitida a inscrição em unidades curriculares em que o estudante já tenha aprovação ou creditação de competências com exceção de recusa expressa da creditação concedida.",
+              "page_start": 4,
+              "page_end": 5,
+              "metadata": {
+                "article_label": "ART_8",
+                "article_number": "8",
+                "article_title": "Condições para realização da inscrição",
+                "document_part": "regulation_annex"
+              },
+              "children": []
+            },
+            {
+              "node_type": "SECTION",
+              "label": "9",
+              "title": "",
+              "text": "9 — É da responsabilidade do estudante a verificação das unidades curriculares em que se\nencontra efetivamente inscrito.",
+              "page_start": 4,
+              "page_end": 5,
+              "metadata": {
+                "article_label": "ART_8",
+                "article_number": "8",
+                "article_title": "Condições para realização da inscrição",
+                "document_part": "regulation_annex"
+              },
+              "children": []
+            }
+          ]
+        },
+        {
+          "node_type": "ARTICLE",
+          "label": "ART_9",
+          "title": "Bolsa de créditos",
+          "text": "A cada estudante é atribuída uma bolsa de créditos ECTS igual a 20 % do número total de créditos ECTS do curso, para inscrição para além do número de créditos de referência correspondente\nao regime de inscrição, integral ou parcial. Esta bolsa é utilizável, nos termos do artigo seguinte,\ndurante a permanência do estudante no curso e não é renovável.",
+          "page_start": 5,
+          "page_end": 5,
+          "metadata": {
+            "article_number": "9",
+            "article_title": "Bolsa de créditos",
+            "parent_type": "ANNEX",
+            "parent_label": "ANEXO",
+            "parent_title": "Regulamento de Matrículas e Inscrições do Instituto Politécnico do Porto | Regulamento P.PORTO/P -005/2023",
+            "document_part": "regulation_annex"
+          },
+          "children": []
+        },
+        {
+          "node_type": "ARTICLE",
+          "label": "ART_10",
+          "title": "Número de créditos ECTS a que os estudantes se podem inscrever",
+          "text": "1 — Os estudantes inscritos no 1.º ano de um ciclo de estudos podem inscrever -se, no máximo,\nao número de créditos do ano curricular completo, se inscritos em regime de tempo integral, ou\na menos de 51 % do número de créditos do ano curricular completo, se inscritos em regime de\ntempo parcial.\n2 — Os estudantes dos anos mais avançados podem, em cada ano letivo, inscrever -se, no\nmáximo, a 80 ECTS ou a 40 ECTS, conforme estejam inscritos em regime de tempo integral ou\nparcial, respetivamente, o que corresponde a 1,3(3) vezes o número de créditos ECTS de referência\nno regime de inscrição.\n3 — A inscrição em unidades extracurriculares não é considerada para os limites referidos\nnos números anteriores.\n4 — É permitida a inscrição para além dos limites fixados nos números anteriores aos estudantes a quem falte para a conclusão do ciclo de estudos um máximo de 12 créditos ECTS.\n5 — É ainda permitida a inscrição para além dos limites fixados nos números anteriores aos\nestudantes que estejam inscritos em planos de estudo individuais de preparação para frequência\ndo 2.º ciclo.\n6 — Pela inscrição a créditos ECTS para além dos limites fixados, quando permitido no âmbito\ndos números 3 e 4, são devidas propinas calculadas nos termos fixados por deliberação do Conselho Geral.",
+          "page_start": 5,
+          "page_end": 6,
+          "metadata": {
+            "article_number": "10",
+            "article_title": "Número de créditos ECTS a que os estudantes se podem inscrever",
+            "parent_type": "ANNEX",
+            "parent_label": "ANEXO",
+            "parent_title": "Regulamento de Matrículas e Inscrições do Instituto Politécnico do Porto | Regulamento P.PORTO/P -005/2023",
+            "document_part": "regulation_annex"
+          },
+          "children": [
+            {
+              "node_type": "SECTION",
+              "label": "1",
+              "title": "",
+              "text": "1 — Os estudantes inscritos no 1.º ano de um ciclo de estudos podem inscrever -se, no máximo,\nao número de créditos do ano curricular completo, se inscritos em regime de tempo integral, ou\na menos de 51 % do número de créditos do ano curricular completo, se inscritos em regime de\ntempo parcial.",
+              "page_start": 5,
+              "page_end": 6,
+              "metadata": {
+                "article_label": "ART_10",
+                "article_number": "10",
+                "article_title": "Número de créditos ECTS a que os estudantes se podem inscrever",
+                "document_part": "regulation_annex"
+              },
+              "children": []
+            },
+            {
+              "node_type": "SECTION",
+              "label": "2",
+              "title": "",
+              "text": "2 — Os estudantes dos anos mais avançados podem, em cada ano letivo, inscrever -se, no\nmáximo, a 80 ECTS ou a 40 ECTS, conforme estejam inscritos em regime de tempo integral ou\nparcial, respetivamente, o que corresponde a 1,3(3) vezes o número de créditos ECTS de referência\nno regime de inscrição.",
+              "page_start": 5,
+              "page_end": 6,
+              "metadata": {
+                "article_label": "ART_10",
+                "article_number": "10",
+                "article_title": "Número de créditos ECTS a que os estudantes se podem inscrever",
+                "document_part": "regulation_annex"
+              },
+              "children": []
+            },
+            {
+              "node_type": "SECTION",
+              "label": "3",
+              "title": "",
+              "text": "3 — A inscrição em unidades extracurriculares não é considerada para os limites referidos\nnos números anteriores.",
+              "page_start": 5,
+              "page_end": 6,
+              "metadata": {
+                "article_label": "ART_10",
+                "article_number": "10",
+                "article_title": "Número de créditos ECTS a que os estudantes se podem inscrever",
+                "document_part": "regulation_annex"
+              },
+              "children": []
+            },
+            {
+              "node_type": "SECTION",
+              "label": "4",
+              "title": "",
+              "text": "4 — É permitida a inscrição para além dos limites fixados nos números anteriores aos estudantes a quem falte para a conclusão do ciclo de estudos um máximo de 12 créditos ECTS.",
+              "page_start": 5,
+              "page_end": 6,
+              "metadata": {
+                "article_label": "ART_10",
+                "article_number": "10",
+                "article_title": "Número de créditos ECTS a que os estudantes se podem inscrever",
+                "document_part": "regulation_annex"
+              },
+              "children": []
+            },
+            {
+              "node_type": "SECTION",
+              "label": "5",
+              "title": "",
+              "text": "5 — É ainda permitida a inscrição para além dos limites fixados nos números anteriores aos\nestudantes que estejam inscritos em planos de estudo individuais de preparação para frequência\ndo 2.º ciclo.",
+              "page_start": 5,
+              "page_end": 6,
+              "metadata": {
+                "article_label": "ART_10",
+                "article_number": "10",
+                "article_title": "Número de créditos ECTS a que os estudantes se podem inscrever",
+                "document_part": "regulation_annex"
+              },
+              "children": []
+            },
+            {
+              "node_type": "SECTION",
+              "label": "6",
+              "title": "",
+              "text": "6 — Pela inscrição a créditos ECTS para além dos limites fixados, quando permitido no âmbito\ndos números 3 e 4, são devidas propinas calculadas nos termos fixados por deliberação do Conselho Geral.",
+              "page_start": 5,
+              "page_end": 6,
+              "metadata": {
+                "article_label": "ART_10",
+                "article_number": "10",
+                "article_title": "Número de créditos ECTS a que os estudantes se podem inscrever",
+                "document_part": "regulation_annex"
+              },
+              "children": []
+            }
+          ]
+        },
+        {
+          "node_type": "ARTICLE",
+          "label": "ART_11",
+          "title": "Inscrição fora de prazo",
+          "text": "1 — Com exceção dos casos previstos nas alíneas a) e b) do artigo 6.º, findo o prazo fixado\npara inscrição, o estudante poderá inscrever -se, mediante despacho favorável da Presidência da\nEscola a requerimento devidamente fundamentado do interessado.\n2 — A inscrição, na sequência do deferimento do requerimento mencionado no número anterior,\né feita no prazo máximo de 7 dias úteis, contados a partir da data da comunicação do deferimento,\nmediante pagamento das taxas respetivas incluindo os devidos por prática de ato administrativo\nfora de prazo.",
+          "page_start": 6,
+          "page_end": 6,
+          "metadata": {
+            "article_number": "11",
+            "article_title": "Inscrição fora de prazo",
+            "parent_type": "ANNEX",
+            "parent_label": "ANEXO",
+            "parent_title": "Regulamento de Matrículas e Inscrições do Instituto Politécnico do Porto | Regulamento P.PORTO/P -005/2023",
+            "document_part": "regulation_annex"
+          },
+          "children": [
+            {
+              "node_type": "SECTION",
+              "label": "1",
+              "title": "",
+              "text": "1 — Com exceção dos casos previstos nas alíneas a) e b) do artigo 6.º, findo o prazo fixado\npara inscrição, o estudante poderá inscrever -se, mediante despacho favorável da Presidência da\nEscola a requerimento devidamente fundamentado do interessado.",
+              "page_start": 6,
+              "page_end": 6,
+              "metadata": {
+                "article_label": "ART_11",
+                "article_number": "11",
+                "article_title": "Inscrição fora de prazo",
+                "document_part": "regulation_annex"
+              },
+              "children": []
+            },
+            {
+              "node_type": "SECTION",
+              "label": "2",
+              "title": "",
+              "text": "2 — A inscrição, na sequência do deferimento do requerimento mencionado no número anterior,\né feita no prazo máximo de 7 dias úteis, contados a partir da data da comunicação do deferimento,\nmediante pagamento das taxas respetivas incluindo os devidos por prática de ato administrativo\nfora de prazo.",
+              "page_start": 6,
+              "page_end": 6,
+              "metadata": {
+                "article_label": "ART_11",
+                "article_number": "11",
+                "article_title": "Inscrição fora de prazo",
+                "document_part": "regulation_annex"
+              },
+              "children": []
+            }
+          ]
+        },
+        {
+          "node_type": "ARTICLE",
+          "label": "ART_12",
+          "title": "Alterações da inscrição",
+          "text": "1 — As alterações que resultem do processo de verificação previsto no n.º 5 do artigo 8.º ou do\ndisposto no n.º 2 do artigo 15.º e para as quais o estudante seja notificado, deverão ser efetuadas\nnos 7 dias consecutivos ao da notificação.\n2 — Os estudantes que tenham requerido reconhecimento e creditação/certificação de competências terão o direito de alterar a sua inscrição, inclusive o regime de inscrição e de avaliação,\nnos 7 dias úteis àquele em que tomarem conhecimento da deliberação da concessão de creditação.\na) Nos casos em que o reconhecimento de competências o justifique, nomeadamente quando\nse verifique a creditação de unidades curriculares de vários anos do curso, o estudante pode, sem\nprejuízo de qualquer regra de inscrição, requerer a definição de um plano de estudos individual,\nmediante o pagamento da taxa prevista na tabela de emolumentos em vigor.\nb) As alterações de inscrição, que resultem da creditação de formação realizada no âmbito de\nexperiência profissional e de outra formação, são condicionadas ao pagamento do valor fixado na\ntabela de emolumentos em vigor.\n3 — Nos casos restantes, a alteração das inscrições pode ser realizada até 30 dias consecutivos contados da data prevista, no calendário escolar, para o início do período letivo em causa.\n4 — Alterações de inscrições posteriores aos prazos fixados nos números anteriores, só podem\nter lugar mediante despacho favorável da Presidência da Escola a requerimento, devidamente\nfundamentado, do estudante.",
+          "page_start": 6,
+          "page_end": 6,
+          "metadata": {
+            "article_number": "12",
+            "article_title": "Alterações da inscrição",
+            "parent_type": "ANNEX",
+            "parent_label": "ANEXO",
+            "parent_title": "Regulamento de Matrículas e Inscrições do Instituto Politécnico do Porto | Regulamento P.PORTO/P -005/2023",
+            "document_part": "regulation_annex"
+          },
+          "children": [
+            {
+              "node_type": "SECTION",
+              "label": "1",
+              "title": "",
+              "text": "1 — As alterações que resultem do processo de verificação previsto no n.º 5 do artigo 8.º ou do\ndisposto no n.º 2 do artigo 15.º e para as quais o estudante seja notificado, deverão ser efetuadas\nnos 7 dias consecutivos ao da notificação.",
+              "page_start": 6,
+              "page_end": 6,
+              "metadata": {
+                "article_label": "ART_12",
+                "article_number": "12",
+                "article_title": "Alterações da inscrição",
+                "document_part": "regulation_annex"
+              },
+              "children": []
+            },
+            {
+              "node_type": "SECTION",
+              "label": "2",
+              "title": "",
+              "text": "2 — Os estudantes que tenham requerido reconhecimento e creditação/certificação de competências terão o direito de alterar a sua inscrição, inclusive o regime de inscrição e de avaliação,\nnos 7 dias úteis àquele em que tomarem conhecimento da deliberação da concessão de creditação.\na) Nos casos em que o reconhecimento de competências o justifique, nomeadamente quando\nse verifique a creditação de unidades curriculares de vários anos do curso, o estudante pode, sem\nprejuízo de qualquer regra de inscrição, requerer a definição de um plano de estudos individual,\nmediante o pagamento da taxa prevista na tabela de emolumentos em vigor.\nb) As alterações de inscrição, que resultem da creditação de formação realizada no âmbito de\nexperiência profissional e de outra formação, são condicionadas ao pagamento do valor fixado na\ntabela de emolumentos em vigor.",
+              "page_start": 6,
+              "page_end": 6,
+              "metadata": {
+                "article_label": "ART_12",
+                "article_number": "12",
+                "article_title": "Alterações da inscrição",
+                "document_part": "regulation_annex"
+              },
+              "children": []
+            },
+            {
+              "node_type": "SECTION",
+              "label": "3",
+              "title": "",
+              "text": "3 — Nos casos restantes, a alteração das inscrições pode ser realizada até 30 dias consecutivos contados da data prevista, no calendário escolar, para o início do período letivo em causa.",
+              "page_start": 6,
+              "page_end": 6,
+              "metadata": {
+                "article_label": "ART_12",
+                "article_number": "12",
+                "article_title": "Alterações da inscrição",
+                "document_part": "regulation_annex"
+              },
+              "children": []
+            },
+            {
+              "node_type": "SECTION",
+              "label": "4",
+              "title": "",
+              "text": "4 — Alterações de inscrições posteriores aos prazos fixados nos números anteriores, só podem\nter lugar mediante despacho favorável da Presidência da Escola a requerimento, devidamente\nfundamentado, do estudante.",
+              "page_start": 6,
+              "page_end": 6,
+              "metadata": {
+                "article_label": "ART_12",
+                "article_number": "12",
+                "article_title": "Alterações da inscrição",
+                "document_part": "regulation_annex"
+              },
+              "children": []
+            }
+          ]
+        },
+        {
+          "node_type": "ARTICLE",
+          "label": "ART_13",
+          "title": "Mudança de regime",
+          "text": "1 — A opção pelo regime de inscrição — tempo integral ou tempo parcial — é efetuada pelo\nestudante, no ato de inscrição.\n2 — O estudante poderá mudar de regime nos 30 dias consecutivos contados da data prevista, no calendário escolar, para o início das atividades letivas ou da data de inscrição se realizada\nposteriormente.\n3 — Fora do prazo estabelecido no número anterior, só são possíveis as mudanças de regime\nde tempo parcial para tempo integral.\n4 — Na alteração de regime de tempo integral para tempo parcial:\na) Não poderá anular -se a inscrição a unidades curriculares cuja lecionação já tenha terminado\nno período letivo a que respeita a inscrição atual;\nb) Não serão reembolsadas propinas entretanto pagas.",
+          "page_start": 6,
+          "page_end": 7,
+          "metadata": {
+            "article_number": "13",
+            "article_title": "Mudança de regime",
+            "parent_type": "ANNEX",
+            "parent_label": "ANEXO",
+            "parent_title": "Regulamento de Matrículas e Inscrições do Instituto Politécnico do Porto | Regulamento P.PORTO/P -005/2023",
+            "document_part": "regulation_annex"
+          },
+          "children": [
+            {
+              "node_type": "SECTION",
+              "label": "1",
+              "title": "",
+              "text": "1 — A opção pelo regime de inscrição — tempo integral ou tempo parcial — é efetuada pelo\nestudante, no ato de inscrição.",
+              "page_start": 6,
+              "page_end": 7,
+              "metadata": {
+                "article_label": "ART_13",
+                "article_number": "13",
+                "article_title": "Mudança de regime",
+                "document_part": "regulation_annex"
+              },
+              "children": []
+            },
+            {
+              "node_type": "SECTION",
+              "label": "2",
+              "title": "",
+              "text": "2 — O estudante poderá mudar de regime nos 30 dias consecutivos contados da data prevista, no calendário escolar, para o início das atividades letivas ou da data de inscrição se realizada\nposteriormente.",
+              "page_start": 6,
+              "page_end": 7,
+              "metadata": {
+                "article_label": "ART_13",
+                "article_number": "13",
+                "article_title": "Mudança de regime",
+                "document_part": "regulation_annex"
+              },
+              "children": []
+            },
+            {
+              "node_type": "SECTION",
+              "label": "3",
+              "title": "",
+              "text": "3 — Fora do prazo estabelecido no número anterior, só são possíveis as mudanças de regime\nde tempo parcial para tempo integral.",
+              "page_start": 6,
+              "page_end": 7,
+              "metadata": {
+                "article_label": "ART_13",
+                "article_number": "13",
+                "article_title": "Mudança de regime",
+                "document_part": "regulation_annex"
+              },
+              "children": []
+            },
+            {
+              "node_type": "SECTION",
+              "label": "4",
+              "title": "",
+              "text": "4 — Na alteração de regime de tempo integral para tempo parcial:\na) Não poderá anular -se a inscrição a unidades curriculares cuja lecionação já tenha terminado\nno período letivo a que respeita a inscrição atual;\nb) Não serão reembolsadas propinas entretanto pagas.",
+              "page_start": 6,
+              "page_end": 7,
+              "metadata": {
+                "article_label": "ART_13",
+                "article_number": "13",
+                "article_title": "Mudança de regime",
+                "document_part": "regulation_annex"
+              },
+              "children": []
+            }
+          ]
+        },
+        {
+          "node_type": "ARTICLE",
+          "label": "ART_14",
+          "title": "Anulação da matrícula",
+          "text": "1 — A anulação da matrícula implica a anulação da inscrição em todas as unidades curriculares\nem que o estudante estava regularmente inscrito.\n2 — No caso de anulação da matrícula, qualquer que seja o motivo que a determine, a propina\na pagar será a seguinte:\na) 50 % da propina anual se formalmente instruída até 31 de outubro do ano civil em curso;\nb) O valor fixado para o regime de tempo parcial se formalmente instruída após o prazo fixado\nna alínea anterior e até 31 de dezembro do ano civil em curso, ou até sessenta (60) dias após a\ndata da inscrição, caso este prazo termine depois do primeiro;\nc) 100 % da propina anual se formalmente instruída após o prazo fixado na alínea anterior.\n3 — Excetuam -se do disposto no número anterior os casos de recolocação no âmbito do concurso nacional de acesso ao ensino superior ou de colocação de estudantes do P.PORTO através\ndos concursos institucionais, legalmente previstos, em outro curso/Escola do P.PORTO.\n4 — Os estudantes que pretendam solicitar a anulação da matrícula, deverão no DOMUS\naceder a Área Pessoal > Requerimentos Presidente P.PORTO e apresentar um pedido fundamentado, acompanhado, se for o caso, duma proposta de plano de pagamentos do valor em débito,\nconforme estabelecido no n.º 2 do presente artigo.",
+          "page_start": 7,
+          "page_end": 7,
+          "metadata": {
+            "article_number": "14",
+            "article_title": "Anulação da matrícula",
+            "parent_type": "ANNEX",
+            "parent_label": "ANEXO",
+            "parent_title": "Regulamento de Matrículas e Inscrições do Instituto Politécnico do Porto | Regulamento P.PORTO/P -005/2023",
+            "document_part": "regulation_annex"
+          },
+          "children": [
+            {
+              "node_type": "SECTION",
+              "label": "1",
+              "title": "",
+              "text": "1 — A anulação da matrícula implica a anulação da inscrição em todas as unidades curriculares\nem que o estudante estava regularmente inscrito.",
+              "page_start": 7,
+              "page_end": 7,
+              "metadata": {
+                "article_label": "ART_14",
+                "article_number": "14",
+                "article_title": "Anulação da matrícula",
+                "document_part": "regulation_annex"
+              },
+              "children": []
+            },
+            {
+              "node_type": "SECTION",
+              "label": "2",
+              "title": "",
+              "text": "2 — No caso de anulação da matrícula, qualquer que seja o motivo que a determine, a propina\na pagar será a seguinte:\na) 50 % da propina anual se formalmente instruída até 31 de outubro do ano civil em curso;\nb) O valor fixado para o regime de tempo parcial se formalmente instruída após o prazo fixado\nna alínea anterior e até 31 de dezembro do ano civil em curso, ou até sessenta (60) dias após a\ndata da inscrição, caso este prazo termine depois do primeiro;\nc) 100 % da propina anual se formalmente instruída após o prazo fixado na alínea anterior.",
+              "page_start": 7,
+              "page_end": 7,
+              "metadata": {
+                "article_label": "ART_14",
+                "article_number": "14",
+                "article_title": "Anulação da matrícula",
+                "document_part": "regulation_annex"
+              },
+              "children": []
+            },
+            {
+              "node_type": "SECTION",
+              "label": "3",
+              "title": "",
+              "text": "3 — Excetuam -se do disposto no número anterior os casos de recolocação no âmbito do concurso nacional de acesso ao ensino superior ou de colocação de estudantes do P.PORTO através\ndos concursos institucionais, legalmente previstos, em outro curso/Escola do P.PORTO.",
+              "page_start": 7,
+              "page_end": 7,
+              "metadata": {
+                "article_label": "ART_14",
+                "article_number": "14",
+                "article_title": "Anulação da matrícula",
+                "document_part": "regulation_annex"
+              },
+              "children": []
+            },
+            {
+              "node_type": "SECTION",
+              "label": "4",
+              "title": "",
+              "text": "4 — Os estudantes que pretendam solicitar a anulação da matrícula, deverão no DOMUS\naceder a Área Pessoal > Requerimentos Presidente P.PORTO e apresentar um pedido fundamentado, acompanhado, se for o caso, duma proposta de plano de pagamentos do valor em débito,\nconforme estabelecido no n.º 2 do presente artigo.",
+              "page_start": 7,
+              "page_end": 7,
+              "metadata": {
+                "article_label": "ART_14",
+                "article_number": "14",
+                "article_title": "Anulação da matrícula",
+                "document_part": "regulation_annex"
+              },
+              "children": []
+            }
+          ]
+        },
+        {
+          "node_type": "ARTICLE",
+          "label": "ART_15",
+          "title": "Inscrições em unidades curriculares optativas",
+          "text": "1 — Quando, no plano de estudos do curso, existirem identificadas unidades curriculares optativas o estudante deverá identificar a(s) unidade(s) curricular(es) optativas em que se inscreve.\n2 — Se, terminado o período de inscrições, se verificar que o número de estudantes inscritos\nnão perfaz o mínimo para o funcionamento da opção, os serviços da área académica da Escola,\nnotificarão o estudante para alterar a sua inscrição, conforme definido no artigo 12.º\n3 — No caso previsto no número anterior é responsabilidade da Escola fixar:\na) Quais as unidades curriculares optativas a funcionar, em cada período letivo;\nb) As condições de distribuição dos estudantes pelas unidades curriculares de opção.",
+          "page_start": 7,
+          "page_end": 7,
+          "metadata": {
+            "article_number": "15",
+            "article_title": "Inscrições em unidades curriculares optativas",
+            "parent_type": "ANNEX",
+            "parent_label": "ANEXO",
+            "parent_title": "Regulamento de Matrículas e Inscrições do Instituto Politécnico do Porto | Regulamento P.PORTO/P -005/2023",
+            "document_part": "regulation_annex"
+          },
+          "children": [
+            {
+              "node_type": "SECTION",
+              "label": "1",
+              "title": "",
+              "text": "1 — Quando, no plano de estudos do curso, existirem identificadas unidades curriculares optativas o estudante deverá identificar a(s) unidade(s) curricular(es) optativas em que se inscreve.",
+              "page_start": 7,
+              "page_end": 7,
+              "metadata": {
+                "article_label": "ART_15",
+                "article_number": "15",
+                "article_title": "Inscrições em unidades curriculares optativas",
+                "document_part": "regulation_annex"
+              },
+              "children": []
+            },
+            {
+              "node_type": "SECTION",
+              "label": "2",
+              "title": "",
+              "text": "2 — Se, terminado o período de inscrições, se verificar que o número de estudantes inscritos\nnão perfaz o mínimo para o funcionamento da opção, os serviços da área académica da Escola,\nnotificarão o estudante para alterar a sua inscrição, conforme definido no artigo 12.º",
+              "page_start": 7,
+              "page_end": 7,
+              "metadata": {
+                "article_label": "ART_15",
+                "article_number": "15",
+                "article_title": "Inscrições em unidades curriculares optativas",
+                "document_part": "regulation_annex"
+              },
+              "children": []
+            },
+            {
+              "node_type": "SECTION",
+              "label": "3",
+              "title": "",
+              "text": "3 — No caso previsto no número anterior é responsabilidade da Escola fixar:\na) Quais as unidades curriculares optativas a funcionar, em cada período letivo;\nb) As condições de distribuição dos estudantes pelas unidades curriculares de opção.",
+              "page_start": 7,
+              "page_end": 7,
+              "metadata": {
+                "article_label": "ART_15",
+                "article_number": "15",
+                "article_title": "Inscrições em unidades curriculares optativas",
+                "document_part": "regulation_annex"
+              },
+              "children": []
+            }
+          ]
+        },
+        {
+          "node_type": "ARTICLE",
+          "label": "ART_16",
+          "title": "Processo individual",
+          "text": "Para cada estudante será mantido no DOMUS um processo individual, com todos os documentos relativos aos processos de matrícula e inscrição.",
+          "page_start": 7,
+          "page_end": 7,
+          "metadata": {
+            "article_number": "16",
+            "article_title": "Processo individual",
+            "parent_type": "ANNEX",
+            "parent_label": "ANEXO",
+            "parent_title": "Regulamento de Matrículas e Inscrições do Instituto Politécnico do Porto | Regulamento P.PORTO/P -005/2023",
+            "document_part": "regulation_annex"
+          },
+          "children": []
+        },
+        {
+          "node_type": "ARTICLE",
+          "label": "ART_17",
+          "title": "Inscrições em “estágio profissional”",
+          "text": "1 — O presente artigo regulamenta as medidas de apoio aos licenciados e mestres, previstas no",
+          "page_start": 7,
+          "page_end": 7,
+          "metadata": {
+            "article_number": "17",
+            "article_title": "Inscrições em “estágio profissional”",
+            "parent_type": "ANNEX",
+            "parent_label": "ANEXO",
+            "parent_title": "Regulamento de Matrículas e Inscrições do Instituto Politécnico do Porto | Regulamento P.PORTO/P -005/2023",
+            "document_part": "regulation_annex"
+          },
+          "children": [
+            {
+              "node_type": "SECTION",
+              "label": "1",
+              "title": "",
+              "text": "1 — O presente artigo regulamenta as medidas de apoio aos licenciados e mestres, previstas no",
+              "page_start": 7,
+              "page_end": 7,
+              "metadata": {
+                "article_label": "ART_17",
+                "article_number": "17",
+                "article_title": "Inscrições em “estágio profissional”",
+                "document_part": "regulation_annex"
+              },
+              "children": []
+            }
+          ]
+        },
+        {
+          "node_type": "ARTICLE",
+          "label": "ART_46",
+          "title": "B do Decreto -Lei n.º 74/2006, de 24 de março, republicado pelo Decreto -Lei n.º 115/2013",
+          "text": "de 7 de agosto, na sua redação atual.\n2 — Aplica -se aos titulares do grau de licenciatura ou de mestrado do P.PORTO que, no\nperíodo de 24 meses após a obtenção do grau, se encontrem a realizar estágio profissional para\no exercício de uma profissão.\n3 — Os diplomados em estágio profissional têm direito:\na) À emissão de cartão de identificação do P.PORTO;\nb) À ação social escolar nos mesmos termos dos estudantes do P.PORTO, incluindo a eventual\natribuição de bolsa de estudos;\nc) A aceder aos recursos do P.PORTO, tais como bibliotecas e recursos informáticos, nos\nmesmos termos a que acedem os estudantes do P.PORTO.\n4 — A atribuição dos direitos é independente de o estágio ser remunerado ou não e está condicionada à respetiva inscrição.\n5 — A inscrição em estágio profissional é efetuada mediante a apresentação, no DOMUS,\nde requerimento acompanhado de documento comprovativo, com indicação da data de início e\nduração do estágio, emitido pela entidade responsável pela organização do mesmo e pagamento\ndo seguro escolar.\n6 — A inscrição é válida para o período de realização do estágio e até ao prazo máximo de\n24 meses após a obtenção do grau.\n7 — O estagiário compromete -se a informar os serviços da área académica da Escola e os\nServiços de Ação Social (SAS.IPP), caso seja bolseiro, do abandono ou interrupção do estágio.",
+          "page_start": 7,
+          "page_end": 8,
+          "metadata": {
+            "article_number": "46",
+            "article_title": "B do Decreto -Lei n.º 74/2006, de 24 de março, republicado pelo Decreto -Lei n.º 115/2013",
+            "parent_type": "ANNEX",
+            "parent_label": "ANEXO",
+            "parent_title": "Regulamento de Matrículas e Inscrições do Instituto Politécnico do Porto | Regulamento P.PORTO/P -005/2023",
+            "document_part": "regulation_annex"
+          },
+          "children": [
+            {
+              "node_type": "SECTION",
+              "label": "2",
+              "title": "",
+              "text": "2 — Aplica -se aos titulares do grau de licenciatura ou de mestrado do P.PORTO que, no\nperíodo de 24 meses após a obtenção do grau, se encontrem a realizar estágio profissional para\no exercício de uma profissão.",
+              "page_start": 7,
+              "page_end": 8,
+              "metadata": {
+                "article_label": "ART_46",
+                "article_number": "46",
+                "article_title": "B do Decreto -Lei n.º 74/2006, de 24 de março, republicado pelo Decreto -Lei n.º 115/2013",
+                "document_part": "regulation_annex"
+              },
+              "children": []
+            },
+            {
+              "node_type": "SECTION",
+              "label": "3",
+              "title": "",
+              "text": "3 — Os diplomados em estágio profissional têm direito:\na) À emissão de cartão de identificação do P.PORTO;\nb) À ação social escolar nos mesmos termos dos estudantes do P.PORTO, incluindo a eventual\natribuição de bolsa de estudos;\nc) A aceder aos recursos do P.PORTO, tais como bibliotecas e recursos informáticos, nos\nmesmos termos a que acedem os estudantes do P.PORTO.",
+              "page_start": 7,
+              "page_end": 8,
+              "metadata": {
+                "article_label": "ART_46",
+                "article_number": "46",
+                "article_title": "B do Decreto -Lei n.º 74/2006, de 24 de março, republicado pelo Decreto -Lei n.º 115/2013",
+                "document_part": "regulation_annex"
+              },
+              "children": []
+            },
+            {
+              "node_type": "SECTION",
+              "label": "4",
+              "title": "",
+              "text": "4 — A atribuição dos direitos é independente de o estágio ser remunerado ou não e está condicionada à respetiva inscrição.",
+              "page_start": 7,
+              "page_end": 8,
+              "metadata": {
+                "article_label": "ART_46",
+                "article_number": "46",
+                "article_title": "B do Decreto -Lei n.º 74/2006, de 24 de março, republicado pelo Decreto -Lei n.º 115/2013",
+                "document_part": "regulation_annex"
+              },
+              "children": []
+            },
+            {
+              "node_type": "SECTION",
+              "label": "5",
+              "title": "",
+              "text": "5 — A inscrição em estágio profissional é efetuada mediante a apresentação, no DOMUS,\nde requerimento acompanhado de documento comprovativo, com indicação da data de início e\nduração do estágio, emitido pela entidade responsável pela organização do mesmo e pagamento\ndo seguro escolar.",
+              "page_start": 7,
+              "page_end": 8,
+              "metadata": {
+                "article_label": "ART_46",
+                "article_number": "46",
+                "article_title": "B do Decreto -Lei n.º 74/2006, de 24 de março, republicado pelo Decreto -Lei n.º 115/2013",
+                "document_part": "regulation_annex"
+              },
+              "children": []
+            },
+            {
+              "node_type": "SECTION",
+              "label": "6",
+              "title": "",
+              "text": "6 — A inscrição é válida para o período de realização do estágio e até ao prazo máximo de\n24 meses após a obtenção do grau.",
+              "page_start": 7,
+              "page_end": 8,
+              "metadata": {
+                "article_label": "ART_46",
+                "article_number": "46",
+                "article_title": "B do Decreto -Lei n.º 74/2006, de 24 de março, republicado pelo Decreto -Lei n.º 115/2013",
+                "document_part": "regulation_annex"
+              },
+              "children": []
+            },
+            {
+              "node_type": "SECTION",
+              "label": "7",
+              "title": "",
+              "text": "7 — O estagiário compromete -se a informar os serviços da área académica da Escola e os\nServiços de Ação Social (SAS.IPP), caso seja bolseiro, do abandono ou interrupção do estágio.",
+              "page_start": 7,
+              "page_end": 8,
+              "metadata": {
+                "article_label": "ART_46",
+                "article_number": "46",
+                "article_title": "B do Decreto -Lei n.º 74/2006, de 24 de março, republicado pelo Decreto -Lei n.º 115/2013",
+                "document_part": "regulation_annex"
+              },
+              "children": []
+            }
+          ]
+        },
+        {
+          "node_type": "ARTICLE",
+          "label": "ART_18",
+          "title": "Dúvidas e omissões | As dúvidas e omissões resultantes da aplicação do presente regulamento serão resolvidas",
+          "text": "por despacho do Presidente do P.PORTO.",
+          "page_start": 8,
+          "page_end": 8,
+          "metadata": {
+            "article_number": "18",
+            "article_title": "Dúvidas e omissões | As dúvidas e omissões resultantes da aplicação do presente regulamento serão resolvidas",
+            "parent_type": "ANNEX",
+            "parent_label": "ANEXO",
+            "parent_title": "Regulamento de Matrículas e Inscrições do Instituto Politécnico do Porto | Regulamento P.PORTO/P -005/2023",
+            "document_part": "regulation_annex"
+          },
+          "children": []
+        },
+        {
+          "node_type": "ARTICLE",
+          "label": "ART_19",
+          "title": "Disposições finais",
+          "text": "O presente regulamento entra em vigor a partir do ano letivo 2023/2024, inclusive.\n(1) Acessível em https://domus.ipp.pt/ e no caso do ISEP em https://portal.isep.ipp.pt/.",
+          "page_start": 8,
+          "page_end": 8,
+          "metadata": {
+            "article_number": "19",
+            "article_title": "Disposições finais",
+            "parent_type": "ANNEX",
+            "parent_label": "ANEXO",
+            "parent_title": "Regulamento de Matrículas e Inscrições do Instituto Politécnico do Porto | Regulamento P.PORTO/P -005/2023",
+            "document_part": "regulation_annex"
+          },
+          "children": []
+        }
+      ]
+    }
+  ]
+}
