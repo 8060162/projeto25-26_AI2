@@ -57,7 +57,9 @@
                 "article_label": "ART_1",
                 "article_number": "1",
                 "article_title": "Âmbito",
-                "document_part": "regulation_annex"
+                "document_part": "regulation_annex",
+                "parent_type": "ARTICLE",
+                "parent_label": "ART_1"
               },
               "children": []
             },
@@ -72,7 +74,9 @@
                 "article_label": "ART_1",
                 "article_number": "1",
                 "article_title": "Âmbito",
-                "document_part": "regulation_annex"
+                "document_part": "regulation_annex",
+                "parent_type": "ARTICLE",
+                "parent_label": "ART_1"
               },
               "children": []
             },
@@ -87,7 +91,9 @@
                 "article_label": "ART_1",
                 "article_number": "1",
                 "article_title": "Âmbito",
-                "document_part": "regulation_annex"
+                "document_part": "regulation_annex",
+                "parent_type": "ARTICLE",
+                "parent_label": "ART_1"
               },
               "children": []
             },
@@ -102,7 +108,9 @@
                 "article_label": "ART_1",
                 "article_number": "1",
                 "article_title": "Âmbito",
-                "document_part": "regulation_annex"
+                "document_part": "regulation_annex",
+                "parent_type": "ARTICLE",
+                "parent_label": "ART_1"
               },
               "children": []
             }
@@ -135,7 +143,9 @@
                 "article_label": "ART_2",
                 "article_number": "2",
                 "article_title": "Definições",
-                "document_part": "regulation_annex"
+                "document_part": "regulation_annex",
+                "parent_type": "ARTICLE",
+                "parent_label": "ART_2"
               },
               "children": []
             },
@@ -150,7 +160,9 @@
                 "article_label": "ART_2",
                 "article_number": "2",
                 "article_title": "Definições",
-                "document_part": "regulation_annex"
+                "document_part": "regulation_annex",
+                "parent_type": "ARTICLE",
+                "parent_label": "ART_2"
               },
               "children": []
             },
@@ -165,7 +177,9 @@
                 "article_label": "ART_2",
                 "article_number": "2",
                 "article_title": "Definições",
-                "document_part": "regulation_annex"
+                "document_part": "regulation_annex",
+                "parent_type": "ARTICLE",
+                "parent_label": "ART_2"
               },
               "children": []
             },
@@ -180,7 +194,9 @@
                 "article_label": "ART_2",
                 "article_number": "2",
                 "article_title": "Definições",
-                "document_part": "regulation_annex"
+                "document_part": "regulation_annex",
+                "parent_type": "ARTICLE",
+                "parent_label": "ART_2"
               },
               "children": []
             },
@@ -195,7 +211,9 @@
                 "article_label": "ART_2",
                 "article_number": "2",
                 "article_title": "Definições",
-                "document_part": "regulation_annex"
+                "document_part": "regulation_annex",
+                "parent_type": "ARTICLE",
+                "parent_label": "ART_2"
               },
               "children": []
             },
@@ -210,7 +228,9 @@
                 "article_label": "ART_2",
                 "article_number": "2",
                 "article_title": "Definições",
-                "document_part": "regulation_annex"
+                "document_part": "regulation_annex",
+                "parent_type": "ARTICLE",
+                "parent_label": "ART_2"
               },
               "children": []
             },
@@ -225,7 +245,9 @@
                 "article_label": "ART_2",
                 "article_number": "2",
                 "article_title": "Definições",
-                "document_part": "regulation_annex"
+                "document_part": "regulation_annex",
+                "parent_type": "ARTICLE",
+                "parent_label": "ART_2"
               },
               "children": []
             },
@@ -240,7 +262,9 @@
                 "article_label": "ART_2",
                 "article_number": "2",
                 "article_title": "Definições",
-                "document_part": "regulation_annex"
+                "document_part": "regulation_annex",
+                "parent_type": "ARTICLE",
+                "parent_label": "ART_2"
               },
               "children": []
             },
@@ -255,7 +279,9 @@
                 "article_label": "ART_2",
                 "article_number": "2",
                 "article_title": "Definições",
-                "document_part": "regulation_annex"
+                "document_part": "regulation_annex",
+                "parent_type": "ARTICLE",
+                "parent_label": "ART_2"
               },
               "children": []
             },
@@ -270,7 +296,9 @@
                 "article_label": "ART_2",
                 "article_number": "2",
                 "article_title": "Definições",
-                "document_part": "regulation_annex"
+                "document_part": "regulation_annex",
+                "parent_type": "ARTICLE",
+                "parent_label": "ART_2"
               },
               "children": []
             },
@@ -285,7 +313,9 @@
                 "article_label": "ART_2",
                 "article_number": "2",
                 "article_title": "Definições",
-                "document_part": "regulation_annex"
+                "document_part": "regulation_annex",
+                "parent_type": "ARTICLE",
+                "parent_label": "ART_2"
               },
               "children": []
             },
@@ -300,7 +330,9 @@
                 "article_label": "ART_2",
                 "article_number": "2",
                 "article_title": "Definições",
-                "document_part": "regulation_annex"
+                "document_part": "regulation_annex",
+                "parent_type": "ARTICLE",
+                "parent_label": "ART_2"
               },
               "children": []
             },
@@ -308,14 +340,33 @@
               "node_type": "SECTION",
               "label": "13",
               "title": "",
-              "text": "13 — Duração normal de um ciclo de estudos — Número de anos, semestres ou trimestres\nletivos em que o ciclo de estudos/curso se estrutura. A cada ano curricular correspondem, em regra,\n60 créditos ECTS.",
+              "text": "13 — Duração normal de um ciclo de estudos — Número de anos, semestres ou trimestres\nletivos em que o ciclo de estudos/curso se estrutura. A cada ano curricular correspondem, em regra,",
               "page_start": 2,
               "page_end": 3,
               "metadata": {
                 "article_label": "ART_2",
                 "article_number": "2",
                 "article_title": "Definições",
-                "document_part": "regulation_annex"
+                "document_part": "regulation_annex",
+                "parent_type": "ARTICLE",
+                "parent_label": "ART_2"
+              },
+              "children": []
+            },
+            {
+              "node_type": "SECTION",
+              "label": "60",
+              "title": "",
+              "text": "60 créditos ECTS.",
+              "page_start": 2,
+              "page_end": 3,
+              "metadata": {
+                "article_label": "ART_2",
+                "article_number": "2",
+                "article_title": "Definições",
+                "document_part": "regulation_annex",
+                "parent_type": "ARTICLE",
+                "parent_label": "ART_2"
               },
               "children": []
             },
@@ -330,7 +381,9 @@
                 "article_label": "ART_2",
                 "article_number": "2",
                 "article_title": "Definições",
-                "document_part": "regulation_annex"
+                "document_part": "regulation_annex",
+                "parent_type": "ARTICLE",
+                "parent_label": "ART_2"
               },
               "children": []
             },
@@ -345,7 +398,9 @@
                 "article_label": "ART_2",
                 "article_number": "2",
                 "article_title": "Definições",
-                "document_part": "regulation_annex"
+                "document_part": "regulation_annex",
+                "parent_type": "ARTICLE",
+                "parent_label": "ART_2"
               },
               "children": []
             },
@@ -360,7 +415,9 @@
                 "article_label": "ART_2",
                 "article_number": "2",
                 "article_title": "Definições",
-                "document_part": "regulation_annex"
+                "document_part": "regulation_annex",
+                "parent_type": "ARTICLE",
+                "parent_label": "ART_2"
               },
               "children": []
             },
@@ -375,7 +432,9 @@
                 "article_label": "ART_2",
                 "article_number": "2",
                 "article_title": "Definições",
-                "document_part": "regulation_annex"
+                "document_part": "regulation_annex",
+                "parent_type": "ARTICLE",
+                "parent_label": "ART_2"
               },
               "children": []
             },
@@ -390,7 +449,9 @@
                 "article_label": "ART_2",
                 "article_number": "2",
                 "article_title": "Definições",
-                "document_part": "regulation_annex"
+                "document_part": "regulation_annex",
+                "parent_type": "ARTICLE",
+                "parent_label": "ART_2"
               },
               "children": []
             },
@@ -405,7 +466,9 @@
                 "article_label": "ART_2",
                 "article_number": "2",
                 "article_title": "Definições",
-                "document_part": "regulation_annex"
+                "document_part": "regulation_annex",
+                "parent_type": "ARTICLE",
+                "parent_label": "ART_2"
               },
               "children": []
             }
@@ -438,7 +501,9 @@
                 "article_label": "ART_3",
                 "article_number": "3",
                 "article_title": "Conceitos",
-                "document_part": "regulation_annex"
+                "document_part": "regulation_annex",
+                "parent_type": "ARTICLE",
+                "parent_label": "ART_3"
               },
               "children": []
             },
@@ -453,7 +518,9 @@
                 "article_label": "ART_3",
                 "article_number": "3",
                 "article_title": "Conceitos",
-                "document_part": "regulation_annex"
+                "document_part": "regulation_annex",
+                "parent_type": "ARTICLE",
+                "parent_label": "ART_3"
               },
               "children": []
             },
@@ -468,7 +535,9 @@
                 "article_label": "ART_3",
                 "article_number": "3",
                 "article_title": "Conceitos",
-                "document_part": "regulation_annex"
+                "document_part": "regulation_annex",
+                "parent_type": "ARTICLE",
+                "parent_label": "ART_3"
               },
               "children": []
             },
@@ -483,7 +552,9 @@
                 "article_label": "ART_3",
                 "article_number": "3",
                 "article_title": "Conceitos",
-                "document_part": "regulation_annex"
+                "document_part": "regulation_annex",
+                "parent_type": "ARTICLE",
+                "parent_label": "ART_3"
               },
               "children": []
             },
@@ -498,7 +569,9 @@
                 "article_label": "ART_3",
                 "article_number": "3",
                 "article_title": "Conceitos",
-                "document_part": "regulation_annex"
+                "document_part": "regulation_annex",
+                "parent_type": "ARTICLE",
+                "parent_label": "ART_3"
               },
               "children": []
             },
@@ -513,7 +586,9 @@
                 "article_label": "ART_3",
                 "article_number": "3",
                 "article_title": "Conceitos",
-                "document_part": "regulation_annex"
+                "document_part": "regulation_annex",
+                "parent_type": "ARTICLE",
+                "parent_label": "ART_3"
               },
               "children": []
             },
@@ -528,7 +603,9 @@
                 "article_label": "ART_3",
                 "article_number": "3",
                 "article_title": "Conceitos",
-                "document_part": "regulation_annex"
+                "document_part": "regulation_annex",
+                "parent_type": "ARTICLE",
+                "parent_label": "ART_3"
               },
               "children": []
             }
@@ -537,19 +614,71 @@
         {
           "node_type": "ARTICLE",
           "label": "ART_4",
-          "title": "Realização da matrícula/inscrição | Têm legitimidade para efetuar a matrícula e/ou inscrição:",
-          "text": "a) O estudante;\nb) Um seu procurador bastante;\nc) Sendo o estudante menor, a pessoa que demonstre exercer o poder paternal ou tutelar.",
+          "title": "Realização da matrícula/inscrição",
+          "text": "Têm legitimidade para efetuar a matrícula e/ou inscrição:\na) O estudante;\nb) Um seu procurador bastante;\nc) Sendo o estudante menor, a pessoa que demonstre exercer o poder paternal ou tutelar.",
           "page_start": 3,
           "page_end": 3,
           "metadata": {
             "article_number": "4",
-            "article_title": "Realização da matrícula/inscrição | Têm legitimidade para efetuar a matrícula e/ou inscrição:",
+            "article_title": "Realização da matrícula/inscrição",
             "parent_type": "ANNEX",
             "parent_label": "ANEXO",
             "parent_title": "Regulamento de Matrículas e Inscrições do Instituto Politécnico do Porto | Regulamento P.PORTO/P -005/2023",
             "document_part": "regulation_annex"
           },
-          "children": []
+          "children": [
+            {
+              "node_type": "LETTERED_ITEM",
+              "label": "a",
+              "title": "",
+              "text": "a) O estudante;",
+              "page_start": 3,
+              "page_end": 3,
+              "metadata": {
+                "parent_type": "ARTICLE",
+                "parent_label": "ART_4",
+                "document_part": "regulation_annex",
+                "article_label": "ART_4",
+                "article_number": "4",
+                "article_title": "Realização da matrícula/inscrição"
+              },
+              "children": []
+            },
+            {
+              "node_type": "LETTERED_ITEM",
+              "label": "b",
+              "title": "",
+              "text": "b) Um seu procurador bastante;",
+              "page_start": 3,
+              "page_end": 3,
+              "metadata": {
+                "parent_type": "ARTICLE",
+                "parent_label": "ART_4",
+                "document_part": "regulation_annex",
+                "article_label": "ART_4",
+                "article_number": "4",
+                "article_title": "Realização da matrícula/inscrição"
+              },
+              "children": []
+            },
+            {
+              "node_type": "LETTERED_ITEM",
+              "label": "c",
+              "title": "",
+              "text": "c) Sendo o estudante menor, a pessoa que demonstre exercer o poder paternal ou tutelar.",
+              "page_start": 3,
+              "page_end": 3,
+              "metadata": {
+                "parent_type": "ARTICLE",
+                "parent_label": "ART_4",
+                "document_part": "regulation_annex",
+                "article_label": "ART_4",
+                "article_number": "4",
+                "article_title": "Realização da matrícula/inscrição"
+              },
+              "children": []
+            }
+          ]
         },
         {
           "node_type": "ARTICLE",
@@ -578,7 +707,9 @@
                 "article_label": "ART_5",
                 "article_number": "5",
                 "article_title": "Documentos necessários para a matrícula",
-                "document_part": "regulation_annex"
+                "document_part": "regulation_annex",
+                "parent_type": "ARTICLE",
+                "parent_label": "ART_5"
               },
               "children": []
             },
@@ -593,7 +724,9 @@
                 "article_label": "ART_5",
                 "article_number": "5",
                 "article_title": "Documentos necessários para a matrícula",
-                "document_part": "regulation_annex"
+                "document_part": "regulation_annex",
+                "parent_type": "ARTICLE",
+                "parent_label": "ART_5"
               },
               "children": []
             },
@@ -608,7 +741,9 @@
                 "article_label": "ART_5",
                 "article_number": "5",
                 "article_title": "Documentos necessários para a matrícula",
-                "document_part": "regulation_annex"
+                "document_part": "regulation_annex",
+                "parent_type": "ARTICLE",
+                "parent_label": "ART_5"
               },
               "children": []
             }
@@ -617,36 +752,174 @@
         {
           "node_type": "ARTICLE",
           "label": "ART_6",
-          "title": "Prazos de matrícula e de inscrição | As matrículas e inscrições realizam -se nos prazos fixados no calendário escolar, com exceção",
-          "text": "dos casos previstos nos números seguintes:\na) Estudantes colocados ao abrigo do Concurso Nacional de Acesso — os prazos de matrículas\ne inscrições são os fixados no respetivo regulamento aprovado pela Tutela;\nb) Estudantes colocados ao abrigo dos Regimes Especiais de Acesso — os prazos são os\nfixados no respetivo regulamento aprovado pela Tutela;\nc) Estudantes colocados ao abrigo dos Concursos Especiais e Regimes de Mudança de Par\nInstituição/Curso e Reingresso — os prazos são os fixados no respetivo edital do concurso;\nd) Estudantes colocados ao abrigo de outros Concursos Institucionais — os prazos são os\nfixados no respetivo edital do concurso;\ne) Estudantes que realizam exames ao abrigo de estatutos especiais nas situações de exceção\nprevistas no respetivo regulamento aplicando -se os prazos nele fixados.",
+          "title": "Prazos de matrícula e de inscrição",
+          "text": "As matrículas e inscrições realizam -se nos prazos fixados no calendário escolar, com exceção\ndos casos previstos nos números seguintes:\na) Estudantes colocados ao abrigo do Concurso Nacional de Acesso — os prazos de matrículas\ne inscrições são os fixados no respetivo regulamento aprovado pela Tutela;\nb) Estudantes colocados ao abrigo dos Regimes Especiais de Acesso — os prazos são os\nfixados no respetivo regulamento aprovado pela Tutela;\nc) Estudantes colocados ao abrigo dos Concursos Especiais e Regimes de Mudança de Par\nInstituição/Curso e Reingresso — os prazos são os fixados no respetivo edital do concurso;\nd) Estudantes colocados ao abrigo de outros Concursos Institucionais — os prazos são os\nfixados no respetivo edital do concurso;\ne) Estudantes que realizam exames ao abrigo de estatutos especiais nas situações de exceção\nprevistas no respetivo regulamento aplicando -se os prazos nele fixados.",
           "page_start": 4,
           "page_end": 4,
           "metadata": {
             "article_number": "6",
-            "article_title": "Prazos de matrícula e de inscrição | As matrículas e inscrições realizam -se nos prazos fixados no calendário escolar, com exceção",
+            "article_title": "Prazos de matrícula e de inscrição",
             "parent_type": "ANNEX",
             "parent_label": "ANEXO",
             "parent_title": "Regulamento de Matrículas e Inscrições do Instituto Politécnico do Porto | Regulamento P.PORTO/P -005/2023",
             "document_part": "regulation_annex"
           },
-          "children": []
+          "children": [
+            {
+              "node_type": "LETTERED_ITEM",
+              "label": "a",
+              "title": "",
+              "text": "a) Estudantes colocados ao abrigo do Concurso Nacional de Acesso — os prazos de matrículas\ne inscrições são os fixados no respetivo regulamento aprovado pela Tutela;",
+              "page_start": 4,
+              "page_end": 4,
+              "metadata": {
+                "parent_type": "ARTICLE",
+                "parent_label": "ART_6",
+                "document_part": "regulation_annex",
+                "article_label": "ART_6",
+                "article_number": "6",
+                "article_title": "Prazos de matrícula e de inscrição"
+              },
+              "children": []
+            },
+            {
+              "node_type": "LETTERED_ITEM",
+              "label": "b",
+              "title": "",
+              "text": "b) Estudantes colocados ao abrigo dos Regimes Especiais de Acesso — os prazos são os\nfixados no respetivo regulamento aprovado pela Tutela;",
+              "page_start": 4,
+              "page_end": 4,
+              "metadata": {
+                "parent_type": "ARTICLE",
+                "parent_label": "ART_6",
+                "document_part": "regulation_annex",
+                "article_label": "ART_6",
+                "article_number": "6",
+                "article_title": "Prazos de matrícula e de inscrição"
+              },
+              "children": []
+            },
+            {
+              "node_type": "LETTERED_ITEM",
+              "label": "c",
+              "title": "",
+              "text": "c) Estudantes colocados ao abrigo dos Concursos Especiais e Regimes de Mudança de Par\nInstituição/Curso e Reingresso — os prazos são os fixados no respetivo edital do concurso;",
+              "page_start": 4,
+              "page_end": 4,
+              "metadata": {
+                "parent_type": "ARTICLE",
+                "parent_label": "ART_6",
+                "document_part": "regulation_annex",
+                "article_label": "ART_6",
+                "article_number": "6",
+                "article_title": "Prazos de matrícula e de inscrição"
+              },
+              "children": []
+            },
+            {
+              "node_type": "LETTERED_ITEM",
+              "label": "d",
+              "title": "",
+              "text": "d) Estudantes colocados ao abrigo de outros Concursos Institucionais — os prazos são os\nfixados no respetivo edital do concurso;",
+              "page_start": 4,
+              "page_end": 4,
+              "metadata": {
+                "parent_type": "ARTICLE",
+                "parent_label": "ART_6",
+                "document_part": "regulation_annex",
+                "article_label": "ART_6",
+                "article_number": "6",
+                "article_title": "Prazos de matrícula e de inscrição"
+              },
+              "children": []
+            },
+            {
+              "node_type": "LETTERED_ITEM",
+              "label": "e",
+              "title": "",
+              "text": "e) Estudantes que realizam exames ao abrigo de estatutos especiais nas situações de exceção\nprevistas no respetivo regulamento aplicando -se os prazos nele fixados.",
+              "page_start": 4,
+              "page_end": 4,
+              "metadata": {
+                "parent_type": "ARTICLE",
+                "parent_label": "ART_6",
+                "document_part": "regulation_annex",
+                "article_label": "ART_6",
+                "article_number": "6",
+                "article_title": "Prazos de matrícula e de inscrição"
+              },
+              "children": []
+            }
+          ]
         },
         {
           "node_type": "ARTICLE",
           "label": "ART_7",
-          "title": "Condições para realização da matrícula | Para a realização da matrícula é necessária a verificação cumulativa das seguintes condições:",
-          "text": "a) A admissão do estudante à Escola ao abrigo dos concursos regulamentarmente referidos\nno artigo anterior;\nb) A inexistência de qualquer valor em débito ao P.PORTO, incluindo as escolas, independentemente da sua natureza, ou em caso de existência de um valor em débito, este esteja a ser\ndevidamente liquidado através de um plano de regularização, de acordo com o estabelecido no\nRegulamento de Propinas do P.PORTO;\nc) O estudante não se encontrar impedido de realizar a matrícula em resultado do regime de\nprescrições.",
+          "title": "Condições para realização da matrícula",
+          "text": "Para a realização da matrícula é necessária a verificação cumulativa das seguintes condições:\na) A admissão do estudante à Escola ao abrigo dos concursos regulamentarmente referidos\nno artigo anterior;\nb) A inexistência de qualquer valor em débito ao P.PORTO, incluindo as escolas, independentemente da sua natureza, ou em caso de existência de um valor em débito, este esteja a ser\ndevidamente liquidado através de um plano de regularização, de acordo com o estabelecido no\nRegulamento de Propinas do P.PORTO;\nc) O estudante não se encontrar impedido de realizar a matrícula em resultado do regime de\nprescrições.",
           "page_start": 4,
           "page_end": 4,
           "metadata": {
             "article_number": "7",
-            "article_title": "Condições para realização da matrícula | Para a realização da matrícula é necessária a verificação cumulativa das seguintes condições:",
+            "article_title": "Condições para realização da matrícula",
             "parent_type": "ANNEX",
             "parent_label": "ANEXO",
             "parent_title": "Regulamento de Matrículas e Inscrições do Instituto Politécnico do Porto | Regulamento P.PORTO/P -005/2023",
             "document_part": "regulation_annex"
           },
-          "children": []
+          "children": [
+            {
+              "node_type": "LETTERED_ITEM",
+              "label": "a",
+              "title": "",
+              "text": "a) A admissão do estudante à Escola ao abrigo dos concursos regulamentarmente referidos\nno artigo anterior;",
+              "page_start": 4,
+              "page_end": 4,
+              "metadata": {
+                "parent_type": "ARTICLE",
+                "parent_label": "ART_7",
+                "document_part": "regulation_annex",
+                "article_label": "ART_7",
+                "article_number": "7",
+                "article_title": "Condições para realização da matrícula"
+              },
+              "children": []
+            },
+            {
+              "node_type": "LETTERED_ITEM",
+              "label": "b",
+              "title": "",
+              "text": "b) A inexistência de qualquer valor em débito ao P.PORTO, incluindo as escolas, independentemente da sua natureza, ou em caso de existência de um valor em débito, este esteja a ser\ndevidamente liquidado através de um plano de regularização, de acordo com o estabelecido no\nRegulamento de Propinas do P.PORTO;",
+              "page_start": 4,
+              "page_end": 4,
+              "metadata": {
+                "parent_type": "ARTICLE",
+                "parent_label": "ART_7",
+                "document_part": "regulation_annex",
+                "article_label": "ART_7",
+                "article_number": "7",
+                "article_title": "Condições para realização da matrícula"
+              },
+              "children": []
+            },
+            {
+              "node_type": "LETTERED_ITEM",
+              "label": "c",
+              "title": "",
+              "text": "c) O estudante não se encontrar impedido de realizar a matrícula em resultado do regime de\nprescrições.",
+              "page_start": 4,
+              "page_end": 4,
+              "metadata": {
+                "parent_type": "ARTICLE",
+                "parent_label": "ART_7",
+                "document_part": "regulation_annex",
+                "article_label": "ART_7",
+                "article_number": "7",
+                "article_title": "Condições para realização da matrícula"
+              },
+              "children": []
+            }
+          ]
         },
         {
           "node_type": "ARTICLE",
@@ -675,7 +948,9 @@
                 "article_label": "ART_8",
                 "article_number": "8",
                 "article_title": "Condições para realização da inscrição",
-                "document_part": "regulation_annex"
+                "document_part": "regulation_annex",
+                "parent_type": "ARTICLE",
+                "parent_label": "ART_8"
               },
               "children": []
             },
@@ -690,7 +965,9 @@
                 "article_label": "ART_8",
                 "article_number": "8",
                 "article_title": "Condições para realização da inscrição",
-                "document_part": "regulation_annex"
+                "document_part": "regulation_annex",
+                "parent_type": "ARTICLE",
+                "parent_label": "ART_8"
               },
               "children": []
             },
@@ -705,7 +982,9 @@
                 "article_label": "ART_8",
                 "article_number": "8",
                 "article_title": "Condições para realização da inscrição",
-                "document_part": "regulation_annex"
+                "document_part": "regulation_annex",
+                "parent_type": "ARTICLE",
+                "parent_label": "ART_8"
               },
               "children": []
             },
@@ -720,7 +999,9 @@
                 "article_label": "ART_8",
                 "article_number": "8",
                 "article_title": "Condições para realização da inscrição",
-                "document_part": "regulation_annex"
+                "document_part": "regulation_annex",
+                "parent_type": "ARTICLE",
+                "parent_label": "ART_8"
               },
               "children": []
             },
@@ -735,7 +1016,9 @@
                 "article_label": "ART_8",
                 "article_number": "8",
                 "article_title": "Condições para realização da inscrição",
-                "document_part": "regulation_annex"
+                "document_part": "regulation_annex",
+                "parent_type": "ARTICLE",
+                "parent_label": "ART_8"
               },
               "children": []
             },
@@ -750,7 +1033,9 @@
                 "article_label": "ART_8",
                 "article_number": "8",
                 "article_title": "Condições para realização da inscrição",
-                "document_part": "regulation_annex"
+                "document_part": "regulation_annex",
+                "parent_type": "ARTICLE",
+                "parent_label": "ART_8"
               },
               "children": []
             },
@@ -765,7 +1050,9 @@
                 "article_label": "ART_8",
                 "article_number": "8",
                 "article_title": "Condições para realização da inscrição",
-                "document_part": "regulation_annex"
+                "document_part": "regulation_annex",
+                "parent_type": "ARTICLE",
+                "parent_label": "ART_8"
               },
               "children": []
             },
@@ -780,7 +1067,9 @@
                 "article_label": "ART_8",
                 "article_number": "8",
                 "article_title": "Condições para realização da inscrição",
-                "document_part": "regulation_annex"
+                "document_part": "regulation_annex",
+                "parent_type": "ARTICLE",
+                "parent_label": "ART_8"
               },
               "children": []
             },
@@ -795,7 +1084,9 @@
                 "article_label": "ART_8",
                 "article_number": "8",
                 "article_title": "Condições para realização da inscrição",
-                "document_part": "regulation_annex"
+                "document_part": "regulation_annex",
+                "parent_type": "ARTICLE",
+                "parent_label": "ART_8"
               },
               "children": []
             }
@@ -821,13 +1112,13 @@
         {
           "node_type": "ARTICLE",
           "label": "ART_10",
-          "title": "Número de créditos ECTS a que os estudantes se podem inscrever",
-          "text": "1 — Os estudantes inscritos no 1.º ano de um ciclo de estudos podem inscrever -se, no máximo,\nao número de créditos do ano curricular completo, se inscritos em regime de tempo integral, ou\na menos de 51 % do número de créditos do ano curricular completo, se inscritos em regime de\ntempo parcial.\n2 — Os estudantes dos anos mais avançados podem, em cada ano letivo, inscrever -se, no\nmáximo, a 80 ECTS ou a 40 ECTS, conforme estejam inscritos em regime de tempo integral ou\nparcial, respetivamente, o que corresponde a 1,3(3) vezes o número de créditos ECTS de referência\nno regime de inscrição.\n3 — A inscrição em unidades extracurriculares não é considerada para os limites referidos\nnos números anteriores.\n4 — É permitida a inscrição para além dos limites fixados nos números anteriores aos estudantes a quem falte para a conclusão do ciclo de estudos um máximo de 12 créditos ECTS.\n5 — É ainda permitida a inscrição para além dos limites fixados nos números anteriores aos\nestudantes que estejam inscritos em planos de estudo individuais de preparação para frequência\ndo 2.º ciclo.\n6 — Pela inscrição a créditos ECTS para além dos limites fixados, quando permitido no âmbito\ndos números 3 e 4, são devidas propinas calculadas nos termos fixados por deliberação do Conselho Geral.",
+          "title": "",
+          "text": "Número de créditos ECTS a que os estudantes se podem inscrever\n1 — Os estudantes inscritos no 1.º ano de um ciclo de estudos podem inscrever -se, no máximo,\nao número de créditos do ano curricular completo, se inscritos em regime de tempo integral, ou\na menos de 51 % do número de créditos do ano curricular completo, se inscritos em regime de\ntempo parcial.\n2 — Os estudantes dos anos mais avançados podem, em cada ano letivo, inscrever -se, no\nmáximo, a 80 ECTS ou a 40 ECTS, conforme estejam inscritos em regime de tempo integral ou\nparcial, respetivamente, o que corresponde a 1,3(3) vezes o número de créditos ECTS de referência\nno regime de inscrição.\n3 — A inscrição em unidades extracurriculares não é considerada para os limites referidos\nnos números anteriores.\n4 — É permitida a inscrição para além dos limites fixados nos números anteriores aos estudantes a quem falte para a conclusão do ciclo de estudos um máximo de 12 créditos ECTS.\n5 — É ainda permitida a inscrição para além dos limites fixados nos números anteriores aos\nestudantes que estejam inscritos em planos de estudo individuais de preparação para frequência\ndo 2.º ciclo.\n6 — Pela inscrição a créditos ECTS para além dos limites fixados, quando permitido no âmbito\ndos números 3 e 4, são devidas propinas calculadas nos termos fixados por deliberação do Conselho Geral.",
           "page_start": 5,
           "page_end": 6,
           "metadata": {
             "article_number": "10",
-            "article_title": "Número de créditos ECTS a que os estudantes se podem inscrever",
+            "article_title": "",
             "parent_type": "ANNEX",
             "parent_label": "ANEXO",
             "parent_title": "Regulamento de Matrículas e Inscrições do Instituto Politécnico do Porto | Regulamento P.PORTO/P -005/2023",
@@ -844,8 +1135,10 @@
               "metadata": {
                 "article_label": "ART_10",
                 "article_number": "10",
-                "article_title": "Número de créditos ECTS a que os estudantes se podem inscrever",
-                "document_part": "regulation_annex"
+                "article_title": "",
+                "document_part": "regulation_annex",
+                "parent_type": "ARTICLE",
+                "parent_label": "ART_10"
               },
               "children": []
             },
@@ -859,8 +1152,10 @@
               "metadata": {
                 "article_label": "ART_10",
                 "article_number": "10",
-                "article_title": "Número de créditos ECTS a que os estudantes se podem inscrever",
-                "document_part": "regulation_annex"
+                "article_title": "",
+                "document_part": "regulation_annex",
+                "parent_type": "ARTICLE",
+                "parent_label": "ART_10"
               },
               "children": []
             },
@@ -874,8 +1169,10 @@
               "metadata": {
                 "article_label": "ART_10",
                 "article_number": "10",
-                "article_title": "Número de créditos ECTS a que os estudantes se podem inscrever",
-                "document_part": "regulation_annex"
+                "article_title": "",
+                "document_part": "regulation_annex",
+                "parent_type": "ARTICLE",
+                "parent_label": "ART_10"
               },
               "children": []
             },
@@ -889,8 +1186,10 @@
               "metadata": {
                 "article_label": "ART_10",
                 "article_number": "10",
-                "article_title": "Número de créditos ECTS a que os estudantes se podem inscrever",
-                "document_part": "regulation_annex"
+                "article_title": "",
+                "document_part": "regulation_annex",
+                "parent_type": "ARTICLE",
+                "parent_label": "ART_10"
               },
               "children": []
             },
@@ -904,8 +1203,10 @@
               "metadata": {
                 "article_label": "ART_10",
                 "article_number": "10",
-                "article_title": "Número de créditos ECTS a que os estudantes se podem inscrever",
-                "document_part": "regulation_annex"
+                "article_title": "",
+                "document_part": "regulation_annex",
+                "parent_type": "ARTICLE",
+                "parent_label": "ART_10"
               },
               "children": []
             },
@@ -919,8 +1220,10 @@
               "metadata": {
                 "article_label": "ART_10",
                 "article_number": "10",
-                "article_title": "Número de créditos ECTS a que os estudantes se podem inscrever",
-                "document_part": "regulation_annex"
+                "article_title": "",
+                "document_part": "regulation_annex",
+                "parent_type": "ARTICLE",
+                "parent_label": "ART_10"
               },
               "children": []
             }
@@ -953,7 +1256,9 @@
                 "article_label": "ART_11",
                 "article_number": "11",
                 "article_title": "Inscrição fora de prazo",
-                "document_part": "regulation_annex"
+                "document_part": "regulation_annex",
+                "parent_type": "ARTICLE",
+                "parent_label": "ART_11"
               },
               "children": []
             },
@@ -968,7 +1273,9 @@
                 "article_label": "ART_11",
                 "article_number": "11",
                 "article_title": "Inscrição fora de prazo",
-                "document_part": "regulation_annex"
+                "document_part": "regulation_annex",
+                "parent_type": "ARTICLE",
+                "parent_label": "ART_11"
               },
               "children": []
             }
@@ -1001,7 +1308,9 @@
                 "article_label": "ART_12",
                 "article_number": "12",
                 "article_title": "Alterações da inscrição",
-                "document_part": "regulation_annex"
+                "document_part": "regulation_annex",
+                "parent_type": "ARTICLE",
+                "parent_label": "ART_12"
               },
               "children": []
             },
@@ -1016,7 +1325,9 @@
                 "article_label": "ART_12",
                 "article_number": "12",
                 "article_title": "Alterações da inscrição",
-                "document_part": "regulation_annex"
+                "document_part": "regulation_annex",
+                "parent_type": "ARTICLE",
+                "parent_label": "ART_12"
               },
               "children": []
             },
@@ -1031,7 +1342,9 @@
                 "article_label": "ART_12",
                 "article_number": "12",
                 "article_title": "Alterações da inscrição",
-                "document_part": "regulation_annex"
+                "document_part": "regulation_annex",
+                "parent_type": "ARTICLE",
+                "parent_label": "ART_12"
               },
               "children": []
             },
@@ -1046,7 +1359,9 @@
                 "article_label": "ART_12",
                 "article_number": "12",
                 "article_title": "Alterações da inscrição",
-                "document_part": "regulation_annex"
+                "document_part": "regulation_annex",
+                "parent_type": "ARTICLE",
+                "parent_label": "ART_12"
               },
               "children": []
             }
@@ -1079,7 +1394,9 @@
                 "article_label": "ART_13",
                 "article_number": "13",
                 "article_title": "Mudança de regime",
-                "document_part": "regulation_annex"
+                "document_part": "regulation_annex",
+                "parent_type": "ARTICLE",
+                "parent_label": "ART_13"
               },
               "children": []
             },
@@ -1094,7 +1411,9 @@
                 "article_label": "ART_13",
                 "article_number": "13",
                 "article_title": "Mudança de regime",
-                "document_part": "regulation_annex"
+                "document_part": "regulation_annex",
+                "parent_type": "ARTICLE",
+                "parent_label": "ART_13"
               },
               "children": []
             },
@@ -1109,7 +1428,9 @@
                 "article_label": "ART_13",
                 "article_number": "13",
                 "article_title": "Mudança de regime",
-                "document_part": "regulation_annex"
+                "document_part": "regulation_annex",
+                "parent_type": "ARTICLE",
+                "parent_label": "ART_13"
               },
               "children": []
             },
@@ -1124,7 +1445,9 @@
                 "article_label": "ART_13",
                 "article_number": "13",
                 "article_title": "Mudança de regime",
-                "document_part": "regulation_annex"
+                "document_part": "regulation_annex",
+                "parent_type": "ARTICLE",
+                "parent_label": "ART_13"
               },
               "children": []
             }
@@ -1157,7 +1480,9 @@
                 "article_label": "ART_14",
                 "article_number": "14",
                 "article_title": "Anulação da matrícula",
-                "document_part": "regulation_annex"
+                "document_part": "regulation_annex",
+                "parent_type": "ARTICLE",
+                "parent_label": "ART_14"
               },
               "children": []
             },
@@ -1172,7 +1497,9 @@
                 "article_label": "ART_14",
                 "article_number": "14",
                 "article_title": "Anulação da matrícula",
-                "document_part": "regulation_annex"
+                "document_part": "regulation_annex",
+                "parent_type": "ARTICLE",
+                "parent_label": "ART_14"
               },
               "children": []
             },
@@ -1187,7 +1514,9 @@
                 "article_label": "ART_14",
                 "article_number": "14",
                 "article_title": "Anulação da matrícula",
-                "document_part": "regulation_annex"
+                "document_part": "regulation_annex",
+                "parent_type": "ARTICLE",
+                "parent_label": "ART_14"
               },
               "children": []
             },
@@ -1202,7 +1531,9 @@
                 "article_label": "ART_14",
                 "article_number": "14",
                 "article_title": "Anulação da matrícula",
-                "document_part": "regulation_annex"
+                "document_part": "regulation_annex",
+                "parent_type": "ARTICLE",
+                "parent_label": "ART_14"
               },
               "children": []
             }
@@ -1235,7 +1566,9 @@
                 "article_label": "ART_15",
                 "article_number": "15",
                 "article_title": "Inscrições em unidades curriculares optativas",
-                "document_part": "regulation_annex"
+                "document_part": "regulation_annex",
+                "parent_type": "ARTICLE",
+                "parent_label": "ART_15"
               },
               "children": []
             },
@@ -1250,7 +1583,9 @@
                 "article_label": "ART_15",
                 "article_number": "15",
                 "article_title": "Inscrições em unidades curriculares optativas",
-                "document_part": "regulation_annex"
+                "document_part": "regulation_annex",
+                "parent_type": "ARTICLE",
+                "parent_label": "ART_15"
               },
               "children": []
             },
@@ -1265,7 +1600,9 @@
                 "article_label": "ART_15",
                 "article_number": "15",
                 "article_title": "Inscrições em unidades curriculares optativas",
-                "document_part": "regulation_annex"
+                "document_part": "regulation_annex",
+                "parent_type": "ARTICLE",
+                "parent_label": "ART_15"
               },
               "children": []
             }
@@ -1303,23 +1640,7 @@
             "parent_title": "Regulamento de Matrículas e Inscrições do Instituto Politécnico do Porto | Regulamento P.PORTO/P -005/2023",
             "document_part": "regulation_annex"
           },
-          "children": [
-            {
-              "node_type": "SECTION",
-              "label": "1",
-              "title": "",
-              "text": "1 — O presente artigo regulamenta as medidas de apoio aos licenciados e mestres, previstas no",
-              "page_start": 7,
-              "page_end": 7,
-              "metadata": {
-                "article_label": "ART_17",
-                "article_number": "17",
-                "article_title": "Inscrições em “estágio profissional”",
-                "document_part": "regulation_annex"
-              },
-              "children": []
-            }
-          ]
+          "children": []
         },
         {
           "node_type": "ARTICLE",
@@ -1348,7 +1669,9 @@
                 "article_label": "ART_46",
                 "article_number": "46",
                 "article_title": "B do Decreto -Lei n.º 74/2006, de 24 de março, republicado pelo Decreto -Lei n.º 115/2013",
-                "document_part": "regulation_annex"
+                "document_part": "regulation_annex",
+                "parent_type": "ARTICLE",
+                "parent_label": "ART_46"
               },
               "children": []
             },
@@ -1363,7 +1686,9 @@
                 "article_label": "ART_46",
                 "article_number": "46",
                 "article_title": "B do Decreto -Lei n.º 74/2006, de 24 de março, republicado pelo Decreto -Lei n.º 115/2013",
-                "document_part": "regulation_annex"
+                "document_part": "regulation_annex",
+                "parent_type": "ARTICLE",
+                "parent_label": "ART_46"
               },
               "children": []
             },
@@ -1378,7 +1703,9 @@
                 "article_label": "ART_46",
                 "article_number": "46",
                 "article_title": "B do Decreto -Lei n.º 74/2006, de 24 de março, republicado pelo Decreto -Lei n.º 115/2013",
-                "document_part": "regulation_annex"
+                "document_part": "regulation_annex",
+                "parent_type": "ARTICLE",
+                "parent_label": "ART_46"
               },
               "children": []
             },
@@ -1393,7 +1720,9 @@
                 "article_label": "ART_46",
                 "article_number": "46",
                 "article_title": "B do Decreto -Lei n.º 74/2006, de 24 de março, republicado pelo Decreto -Lei n.º 115/2013",
-                "document_part": "regulation_annex"
+                "document_part": "regulation_annex",
+                "parent_type": "ARTICLE",
+                "parent_label": "ART_46"
               },
               "children": []
             },
@@ -1401,14 +1730,33 @@
               "node_type": "SECTION",
               "label": "6",
               "title": "",
-              "text": "6 — A inscrição é válida para o período de realização do estágio e até ao prazo máximo de\n24 meses após a obtenção do grau.",
+              "text": "6 — A inscrição é válida para o período de realização do estágio e até ao prazo máximo de",
               "page_start": 7,
               "page_end": 8,
               "metadata": {
                 "article_label": "ART_46",
                 "article_number": "46",
                 "article_title": "B do Decreto -Lei n.º 74/2006, de 24 de março, republicado pelo Decreto -Lei n.º 115/2013",
-                "document_part": "regulation_annex"
+                "document_part": "regulation_annex",
+                "parent_type": "ARTICLE",
+                "parent_label": "ART_46"
+              },
+              "children": []
+            },
+            {
+              "node_type": "SECTION",
+              "label": "24",
+              "title": "",
+              "text": "24 meses após a obtenção do grau.",
+              "page_start": 7,
+              "page_end": 8,
+              "metadata": {
+                "article_label": "ART_46",
+                "article_number": "46",
+                "article_title": "B do Decreto -Lei n.º 74/2006, de 24 de março, republicado pelo Decreto -Lei n.º 115/2013",
+                "document_part": "regulation_annex",
+                "parent_type": "ARTICLE",
+                "parent_label": "ART_46"
               },
               "children": []
             },
@@ -1423,7 +1771,9 @@
                 "article_label": "ART_46",
                 "article_number": "46",
                 "article_title": "B do Decreto -Lei n.º 74/2006, de 24 de março, republicado pelo Decreto -Lei n.º 115/2013",
-                "document_part": "regulation_annex"
+                "document_part": "regulation_annex",
+                "parent_type": "ARTICLE",
+                "parent_label": "ART_46"
               },
               "children": []
             }
@@ -1432,13 +1782,13 @@
         {
           "node_type": "ARTICLE",
           "label": "ART_18",
-          "title": "Dúvidas e omissões | As dúvidas e omissões resultantes da aplicação do presente regulamento serão resolvidas",
-          "text": "por despacho do Presidente do P.PORTO.",
+          "title": "Dúvidas e omissões",
+          "text": "As dúvidas e omissões resultantes da aplicação do presente regulamento serão resolvidas\npor despacho do Presidente do P.PORTO.",
           "page_start": 8,
           "page_end": 8,
           "metadata": {
             "article_number": "18",
-            "article_title": "Dúvidas e omissões | As dúvidas e omissões resultantes da aplicação do presente regulamento serão resolvidas",
+            "article_title": "Dúvidas e omissões",
             "parent_type": "ANNEX",
             "parent_label": "ANEXO",
             "parent_title": "Regulamento de Matrículas e Inscrições do Instituto Politécnico do Porto | Regulamento P.PORTO/P -005/2023",
