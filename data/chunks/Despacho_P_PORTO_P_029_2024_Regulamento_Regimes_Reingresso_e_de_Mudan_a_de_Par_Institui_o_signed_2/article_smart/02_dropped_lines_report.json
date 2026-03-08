@@ -1,7 +1,10 @@
 {
   "inline_page_counter": 14,
   "empty_line": 92,
-  "index_like_line": 5,
-  "repeated_line": 37,
+  "signature_line": 3,
+  "cover_line": 14,
+  "index_like_line": 12,
+  "index_block_line": 12,
+  "repeated_line": 24,
   "dr_editorial_line": 4
 }
