@@ -15,6 +15,7 @@ class StructureFirstChunkingStrategy(BaseChunkingStrategy):
     - prefer the smallest meaningful legal block already recognized
       by the parser
     - SECTION nodes are preferred when they exist
+    - LETTERED_ITEM nodes are used when sections do not exist
     - otherwise ARTICLE nodes are used
     - PREAMBLE is kept separate from the regulation body
     - metadata should remain rich even when text stays clean
@@ -76,11 +77,14 @@ class StructureFirstChunkingStrategy(BaseChunkingStrategy):
             if not article_text:
                 continue
 
-            chapter_meta = {
+            article_meta = {
                 "parent_type": article.metadata.get("parent_type"),
                 "parent_label": article.metadata.get("parent_label"),
                 "parent_title": article.metadata.get("parent_title"),
                 "document_part": article.metadata.get("document_part"),
+                "article_label": article.label,
+                "article_title": article.title,
+                "article_number": article.metadata.get("article_number"),
             }
 
             section_children = [
@@ -123,11 +127,8 @@ class StructureFirstChunkingStrategy(BaseChunkingStrategy):
                                     page_start=article.page_start,
                                     page_end=article.page_end,
                                     metadata={
-                                        **chapter_meta,
+                                        **article_meta,
                                         "node_type": "SECTION_GROUP",
-                                        "article_label": article.label,
-                                        "article_title": article.title,
-                                        "article_number": article.metadata.get("article_number"),
                                         "section_labels": section_labels,
                                         "source_span_type": "section_group_paragraph_split",
                                     },
@@ -143,11 +144,8 @@ class StructureFirstChunkingStrategy(BaseChunkingStrategy):
                                 page_start=article.page_start,
                                 page_end=article.page_end,
                                 metadata={
-                                    **chapter_meta,
+                                    **article_meta,
                                     "node_type": "SECTION_GROUP",
-                                    "article_label": article.label,
-                                    "article_title": article.title,
-                                    "article_number": article.metadata.get("article_number"),
                                     "section_labels": section_labels,
                                     "source_span_type": "section_group",
                                 },
@@ -158,8 +156,54 @@ class StructureFirstChunkingStrategy(BaseChunkingStrategy):
                 continue
 
             # ---------------------------------------------------------
-            # If there are no sections, keep the article whole when it
-            # is reasonably sized; otherwise split it carefully.
+            # If there are no sections, try LETTERED_ITEM nodes.
+            # ---------------------------------------------------------
+            lettered_children = [
+                child
+                for child in article.children
+                if child.node_type == "LETTERED_ITEM" and child.text.strip()
+            ]
+
+            if lettered_children:
+                lettered_groups = self._group_lettered_items(lettered_children)
+
+                for lettered_group in lettered_groups:
+                    group_text = normalize_block_whitespace(
+                        "\n\n".join(
+                            item.text
+                            for item in lettered_group
+                            if item.text.strip()
+                        )
+                    )
+
+                    if not group_text:
+                        continue
+
+                    lettered_labels = [item.label for item in lettered_group]
+
+                    chunks.append(
+                        self._chunk(
+                            sequence=sequence,
+                            document_metadata=document_metadata,
+                            text=group_text,
+                            page_start=article.page_start,
+                            page_end=article.page_end,
+                            metadata={
+                                **article_meta,
+                                "node_type": "LETTERED_GROUP",
+                                "lettered_labels": lettered_labels,
+                                "source_span_type": "lettered_group",
+                            },
+                        )
+                    )
+                    sequence += 1
+
+                continue
+
+            # ---------------------------------------------------------
+            # If there are no sections or lettered items, keep the
+            # article whole when it is reasonably sized; otherwise split
+            # it carefully.
             # ---------------------------------------------------------
             if len(article_text) <= self.settings.target_chunk_chars:
                 chunks.append(
@@ -170,11 +214,8 @@ class StructureFirstChunkingStrategy(BaseChunkingStrategy):
                         page_start=article.page_start,
                         page_end=article.page_end,
                         metadata={
-                            **chapter_meta,
+                            **article_meta,
                             "node_type": "ARTICLE",
-                            "article_label": article.label,
-                            "article_title": article.title,
-                            "article_number": article.metadata.get("article_number"),
                             "source_span_type": "article",
                         },
                     )
@@ -193,11 +234,8 @@ class StructureFirstChunkingStrategy(BaseChunkingStrategy):
                             page_start=article.page_start,
                             page_end=article.page_end,
                             metadata={
-                                **chapter_meta,
+                                **article_meta,
                                 "node_type": "ARTICLE_PART",
-                                "article_label": article.label,
-                                "article_title": article.title,
-                                "article_number": article.metadata.get("article_number"),
                                 "part_index": part_index,
                                 "source_span_type": "article_part",
                             },
@@ -272,14 +310,55 @@ class StructureFirstChunkingStrategy(BaseChunkingStrategy):
 
         return groups
 
+    def _group_lettered_items(self, items: List[StructuralNode]) -> List[List[StructuralNode]]:
+        """
+        Group lettered items into chunk-sized bundles.
+        """
+        if not items:
+            return []
+
+        groups: List[List[StructuralNode]] = []
+        current_group: List[StructuralNode] = []
+
+        for item in items:
+            if not current_group:
+                current_group = [item]
+                continue
+
+            current_text = "\n\n".join(node.text for node in current_group if node.text.strip())
+            candidate_text = "\n\n".join(
+                node.text for node in (current_group + [item]) if node.text.strip()
+            )
+
+            should_flush = (
+                len(candidate_text) > self.settings.target_chunk_chars
+                and len(current_text) >= self.settings.min_chunk_chars
+            )
+
+            if should_flush:
+                groups.append(current_group)
+                current_group = [item]
+            else:
+                current_group.append(item)
+
+        if current_group:
+            groups.append(current_group)
+
+        if len(groups) >= 2:
+            last_group_text = "\n\n".join(node.text for node in groups[-1] if node.text.strip())
+            if len(last_group_text) < self.settings.min_chunk_chars:
+                groups[-2].extend(groups[-1])
+                groups.pop()
+
+        return groups
+
     def _split_large_text(self, text: str) -> List[str]:
         """
         Split large text blocks conservatively.
 
         Preferred split points:
         - paragraph boundaries
-        - sentence boundaries
-        - only then fallback to a hard character window
+        - only then fallback to a chunk-sized grouping
 
         This is used only when structure is missing or insufficient.
         """
