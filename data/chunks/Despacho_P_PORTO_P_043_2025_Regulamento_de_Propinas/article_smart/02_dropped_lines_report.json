@@ -1,6 +1,8 @@
 {
   "inline_page_counter": 15,
-  "index_like_line": 24,
-  "repeated_line": 28,
-  "empty_line": 55
+  "signature_line": 3,
+  "cover_line": 15,
+  "repeated_line": 14,
+  "empty_line": 55,
+  "index_like_line": 64
 }
