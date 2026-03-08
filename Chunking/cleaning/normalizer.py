@@ -33,16 +33,35 @@ INLINE_PAGE_COUNTER_RE = re.compile(r"^\s*\d+\s*\|\s*\d+\s*$")
 PURE_NUMERIC_NOISE_RE = re.compile(r"^\s*\d{6,}\s*$")
 
 # Typical Diário da República editorial lines or related page furniture.
-# We keep this conservative because we do not want to drop real content.
 DR_EDITORIAL_RE = re.compile(
     r"^\s*(N\.?\s*º|PARTE\s+[A-Z]|Diário da República)\b",
     re.IGNORECASE,
 )
 
-# Very simple heuristic for "table of contents / index-like" lines.
-# This is intentionally not aggressive.
+# Likely signature / signing lines that should not pollute chunks.
+SIGNATURE_LINE_RE = re.compile(
+    r"^\s*(Assinado por:|Num\.?\s+de\s+Identificação:|Data:\s*\d{4}\.\d{2}\.\d{2})",
+    re.IGNORECASE,
+)
+
+# Sometimes there are pure document-cover lines that are not useful for QA.
+# We keep this conservative and use it only for very specific patterns.
+COVER_NOISE_RE = re.compile(
+    r"^\s*(DESPACHO\s+P\.PORTO\/P-|REGULAMENTO\s+P\.PORTO\/P-)\S*",
+    re.IGNORECASE,
+)
+
+# Used to detect obvious "dot leader" table-of-contents lines.
 INDEX_DOT_LEADER_RE = re.compile(r"\.{3,}")
+
+# Used to detect short "title + page number" lines.
 INDEX_TRAILING_PAGE_RE = re.compile(r".+\s+\d{1,4}\s*$")
+
+# Title-like index entries.
+INDEX_HEADING_RE = re.compile(
+    r"^\s*(CAP[ÍI]TULO|ARTIGO|ANEXO|ÍNDICE)\b",
+    re.IGNORECASE,
+)
 
 # Normalize inner whitespace for comparison and reporting.
 MULTISPACE_RE = re.compile(r"\s+")
@@ -78,6 +97,11 @@ class TextNormalizer:
     - lettered items
 
     If we flatten the text too early, the parser loses the clues it needs.
+
+    Another important design principle:
+    We favor "safe cleanup" over "aggressive cleanup".
+    In legal documents, it is usually better to keep a little noise than
+    to accidentally drop real normative content.
     """
 
     def normalize(self, pages: List[PageText]) -> NormalizedDocument:
@@ -87,8 +111,9 @@ class TextNormalizer:
         Main phases:
         1. Detect repeated short lines that likely behave like headers/footers.
         2. Clean line by line, preserving structural line boundaries.
-        3. Rebuild each page text with minimal whitespace cleanup.
-        4. Concatenate pages into a single debug-friendly full_text.
+        3. Remove likely table-of-contents blocks.
+        4. Rebuild each page text with minimal whitespace cleanup.
+        5. Concatenate pages into a single debug-friendly full_text.
         """
         repeated_lines = self._find_repeated_noise_candidates(pages)
         cleaned_pages: List[PageText] = []
@@ -105,11 +130,18 @@ class TextNormalizer:
                     continue
 
                 if line is None:
-                    # Defensive guard. In practice we only reach this if
-                    # a line was intentionally neutralized.
                     continue
 
                 cleaned_lines.append(line)
+
+            # ---------------------------------------------------------
+            # Remove likely index blocks after line-level cleanup.
+            #
+            # This is done at block level because a TOC is often easier
+            # to detect as a cluster of lines than one line at a time.
+            # ---------------------------------------------------------
+            cleaned_lines, block_drop_report = self._remove_index_blocks(cleaned_lines)
+            dropped_counter.update(block_drop_report)
 
             cleaned_text = self._finalize_page_text(cleaned_lines)
 
@@ -150,16 +182,10 @@ class TextNormalizer:
         line = raw_line.strip()
 
         if not line:
-            # Empty lines are not "dropped noise"; they are simply ignored here.
             return None, "empty_line"
 
         # -------------------------------------------------------------
         # Remove leading page marker if present.
-        #
-        # Example:
-        # "Pág. 363 INSTITUTO POLITÉCNICO DO PORTO ..."
-        # becomes
-        # "INSTITUTO POLITÉCNICO DO PORTO ..."
         # -------------------------------------------------------------
         new_line = LEADING_PAGE_MARKER_RE.sub("", line).strip()
         if new_line != line:
@@ -168,26 +194,38 @@ class TextNormalizer:
                 return None, "page_marker_only"
 
         # -------------------------------------------------------------
-        # Remove pure inline page counters such as "3|14".
-        # These are almost always layout-only noise.
+        # Remove inline page counters like "3|14".
         # -------------------------------------------------------------
         if INLINE_PAGE_COUNTER_RE.match(line):
             return None, "inline_page_counter"
 
         # -------------------------------------------------------------
-        # Remove long numeric publication/layout tails.
-        # Example: "316552597"
+        # Remove long numeric layout tails.
         # -------------------------------------------------------------
         if PURE_NUMERIC_NOISE_RE.match(line):
             return None, "trailing_numeric_code"
 
         # -------------------------------------------------------------
-        # Remove obvious DR editorial lines.
-        #
-        # Keep this cautious. We only drop lines that look purely editorial.
+        # Remove pure Diário da República editorial lines.
         # -------------------------------------------------------------
-        if DR_EDITORIAL_RE.match(line) and len(line) <= 120:
+        if DR_EDITORIAL_RE.match(line) and len(line) <= 140:
             return None, "dr_editorial_line"
+
+        # -------------------------------------------------------------
+        # Remove signature/signing metadata from body text.
+        #
+        # These lines are often useful as document-level metadata, but
+        # they are usually harmful inside chunks.
+        # -------------------------------------------------------------
+        if SIGNATURE_LINE_RE.match(line):
+            return None, "signature_line"
+
+        # -------------------------------------------------------------
+        # Remove some obvious cover-only lines.
+        # This remains conservative on purpose.
+        # -------------------------------------------------------------
+        if COVER_NOISE_RE.match(line) and len(line) <= 140:
+            return None, "cover_line"
 
         # -------------------------------------------------------------
         # Remove repeated short lines detected across multiple pages.
@@ -198,7 +236,10 @@ class TextNormalizer:
             return None, "repeated_line"
 
         # -------------------------------------------------------------
-        # Remove likely table-of-contents / index-like lines.
+        # Remove very obvious index-like lines early.
+        #
+        # We still also do block-level index removal later because not all
+        # TOC lines are easy to classify one by one.
         # -------------------------------------------------------------
         if self._looks_like_index_line(line):
             return None, "index_like_line"
@@ -247,8 +288,6 @@ class TextNormalizer:
                 if len(line) <= 120:
                     counter[line] += 1
 
-        # A line becomes a repeated-noise candidate if it appears in at least
-        # 2 pages, or in half the document pages for longer documents.
         threshold = max(2, total_pages // 2)
 
         repeated = {
@@ -279,19 +318,94 @@ class TextNormalizer:
         - dot leaders are a strong signal
         - short title + trailing number is a moderate signal
         """
-        if len(line) > 180:
+        if len(line) > 220:
             return False
 
         if INDEX_DOT_LEADER_RE.search(line):
             return True
 
-        # Example:
-        # "Artigo 3.º .............. 5"
-        # "Condições de inscrição 7"
         if INDEX_TRAILING_PAGE_RE.match(line):
             words = line.split()
-            if len(words) <= 12:
+
+            # A short heading followed by a page number often behaves like TOC.
+            if len(words) <= 14 and INDEX_HEADING_RE.match(line):
                 return True
+
+        return False
+
+    def _remove_index_blocks(self, lines: List[str]) -> Tuple[List[str], Counter[str]]:
+        """
+        Remove likely table-of-contents blocks.
+
+        Why block-level detection matters:
+        a TOC is often composed of many consecutive lines that individually
+        might look harmless, but together clearly behave like an index.
+
+        Heuristic:
+        - scan consecutive windows of lines
+        - if enough lines in the window look like TOC lines,
+          drop the whole block
+        """
+        if not lines:
+            return [], Counter()
+
+        kept_lines: List[str] = []
+        dropped_counter: Counter[str] = Counter()
+
+        index = 0
+        while index < len(lines):
+            # Try to detect a contiguous block of likely TOC lines.
+            block_start = index
+            toc_score = 0
+            block_lines: List[str] = []
+
+            while index < len(lines):
+                line = lines[index]
+                is_toc_like = self._is_toc_block_candidate(line)
+
+                if not is_toc_like and not block_lines:
+                    break
+
+                if not is_toc_like and block_lines:
+                    # Stop the block when the TOC pattern is broken.
+                    break
+
+                block_lines.append(line)
+                toc_score += 1
+                index += 1
+
+            # Decide whether the captured block is actually an index block.
+            if block_lines and toc_score >= 4:
+                dropped_counter["index_block_line"] += len(block_lines)
+                continue
+
+            # If not a TOC block, emit the original first line and continue.
+            if block_lines:
+                kept_lines.extend(block_lines)
+                continue
+
+            kept_lines.append(lines[index])
+            index += 1
+
+        return kept_lines, dropped_counter
+
+    def _is_toc_block_candidate(self, line: str) -> bool:
+        """
+        Decide whether a line looks like part of a table of contents block.
+
+        Strong signals:
+        - dot leaders
+        - "CAPÍTULO", "ARTIGO", "ÍNDICE"
+        - heading + trailing page number
+        """
+        if INDEX_DOT_LEADER_RE.search(line):
+            return True
+
+        if INDEX_HEADING_RE.match(line):
+            return True
+
+        if INDEX_TRAILING_PAGE_RE.match(line) and len(line.split()) <= 16:
+            return True
 
         return False
 
