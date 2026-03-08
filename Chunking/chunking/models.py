@@ -42,6 +42,7 @@ class StructuralNode:
     - CHAPTER
     - ARTICLE
     - SECTION
+    - LETTERED_ITEM
 
     Important principle:
     The node text should contain only the textual content that belongs to
