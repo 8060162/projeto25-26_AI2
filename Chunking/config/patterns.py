@@ -1,47 +1,71 @@
 """
 Regex and text patterns used by the pipeline.
 
-These patterns are intentionally centralized here so that the team can tune
-or extend them without needing to modify parsing or chunking code directly.
+These patterns are intentionally centralized here so they can be tuned
+without changing multiple parser or normalizer modules.
+
+Important:
+This file should only exist if it is treated as a real source of truth.
+If parser and normalizer keep their own independent regexes, this module
+should be removed to avoid drift.
 """
+
+from __future__ import annotations
 
 import re
 
-# Page counters commonly found in institutional PDFs, such as "3|14".
-PAGE_COUNTER_RE = re.compile(r"\b\d+\s*\|\s*\d+\b")
+# ---------------------------------------------------------------------
+# Generic cleanup patterns
+# ---------------------------------------------------------------------
 
-# Whitespace cleanup.
+PAGE_COUNTER_RE = re.compile(r"^\s*\d+\s*\|\s*\d+\s*$")
 MULTI_SPACE_RE = re.compile(r"[ \t]{2,}")
 MULTI_NEWLINE_RE = re.compile(r"\n{3,}")
 
-# Common chapter / article / annex patterns.
+# ---------------------------------------------------------------------
+# Structural headings
+# ---------------------------------------------------------------------
+
 CHAPTER_RE = re.compile(
-    r"^(CAP[IÍ]TULO\s+[IVXLCDM0-9]+)\s*(?:[-–—:]\s*)?(.*)$",
+    r"^\s*CAP[ÍI]TULO\s+([IVXLCDM0-9]+)\s*(?:[-–—:]\s*(.*))?\s*$",
     flags=re.IGNORECASE,
 )
 
 ARTICLE_RE = re.compile(
-    r"^(?:ARTIGO|ART\.?)[\s\-]*([0-9]+(?:\.[0-9]+)?)\s*(?:\.º|º|o)?\s*(.*)$",
+    r"^\s*(?:ARTIGO|ART\.?)\s+([0-9]+(?:\.[0-9]+)?)"
+    r"(?:\s*\.?\s*[ºo])?\s*(?:[-–—:]\s*(.*))?\s*$",
     flags=re.IGNORECASE,
 )
 
 ANNEX_RE = re.compile(
-    r"^(ANEXO\s+[IVXLCDM0-9A-Z\-]*)\s*(?:[-–—:]\s*)?(.*)$",
+    r"^\s*(ANEXO(?:\s+[IVXLCDM0-9A-Z\-]+)?)\s*(?:[-–—:]\s*(.*))?\s*$",
     flags=re.IGNORECASE,
 )
 
-# Numbered blocks inside articles: 1. 2. 2.1 2.2 etc.
+# ---------------------------------------------------------------------
+# Internal structural blocks
+# ---------------------------------------------------------------------
+
 NUMBERED_BLOCK_RE = re.compile(
-    r"(?m)^(\d+(?:\.\d+)*)\.\s+",
+    r"(?m)^(?P<label>\d+(?:\.\d+)*)(?:\.)?\s*(?:[—–\-]\s*)?"
 )
 
-# Legal-style alíneas: a) b) c)
 LETTER_ITEM_RE = re.compile(
-    r"(?m)^([a-z])\)\s+",
+    r"(?m)^(?P<label>[a-z])\)\s+",
     flags=re.IGNORECASE,
 )
 
-# Detect likely table of contents / index lines.
-INDEX_HINT_RE = re.compile(
-    r"(?i)(cap[ií]tulo|artigo|anexo).{0,80}(p[aá]g|\b\d+\b)"
+# ---------------------------------------------------------------------
+# TOC / index hints
+# ---------------------------------------------------------------------
+
+INDEX_DOT_LEADER_RE = re.compile(r"\.{3,}")
+
+INDEX_TRAILING_PAGE_RE = re.compile(
+    r"^.+\s+\d{1,4}\s*$"
+)
+
+INDEX_HEADING_RE = re.compile(
+    r"^\s*(CAP[ÍI]TULO|ARTIGO|ANEXO|ÍNDICE)\b",
+    flags=re.IGNORECASE,
 )
