@@ -9,8 +9,10 @@ from Chunking.chunking.models import StructuralNode
 # -------------------------------------------------------------------------
 # Structure-aware regexes for Portuguese legal / regulatory documents.
 #
-# We keep them inside this file so the parser becomes self-contained and
-# easier to evolve without depending on another module.
+# Design note:
+# We keep these regexes local to the parser so that the parser remains
+# self-contained and easier to evolve. This is especially useful while
+# iterating on real-world PDF extraction quirks.
 # -------------------------------------------------------------------------
 
 # Accept variants like:
@@ -18,8 +20,13 @@ from Chunking.chunking.models import StructuralNode
 # "Artigo 1.º"
 # "Artigo 1"
 # "Artigo 1 - Título"
+#
+# IMPORTANT:
+# We anchor this to a full line and require the line to end after the
+# optional inline title. This prevents matching body references such as:
+# "artigo 46.º-B do Decreto-Lei ..."
 ARTICLE_HEADER_RE = re.compile(
-    r"^\s*ARTIGO\s+(\d+)(?:\s*\.?\s*[ºo])?\s*(?:[—–\-:]\s*(.*))?\s*$",
+    r"^\s*ARTIGO\s+(\d+)(?:\s*\.?\s*[ºo]\.?)?\s*(?:[—–\-:]\s*(.*))?\s*$",
     re.IGNORECASE,
 )
 
@@ -41,15 +48,26 @@ ANNEX_HEADER_RE = re.compile(
     re.IGNORECASE,
 )
 
-# Accept numbered blocks like:
-# "1."
-# "2."
-# "2.1"
-# "2.1."
-# "2.1 -"
-# "2.1 —"
+# Accept numbered blocks that truly look like list/section starters.
+#
+# Supported examples:
+# "1 — ..."
+# "1. ..."
+# "2.1 — ..."
+# "2.1. ..."
+#
+# IMPORTANT:
+# We intentionally REQUIRE one of the following after the label:
+# - dash
+# - dot + whitespace
+# - immediate whitespace
+#
+# This is what prevents false positives such as:
+# "60 créditos ECTS."
+# because there is no dash, no "60. ", and no "60 " starting a true block
+# with the expected structural shape.
 NUMBERED_BLOCK_RE = re.compile(
-    r"(?m)^(?P<label>\d+(?:\.\d+)*)(?:\.)?\s*(?:[—–\-]\s*)?"
+    r"(?m)^(?P<label>\d+(?:\.\d+)*)(?:\.)?(?=(?:\s*[—–\-]\s+)|(?:\.\s+)|(?:\s+))"
 )
 
 # Accept lettered items like:
@@ -64,8 +82,19 @@ LETTERED_BLOCK_RE = re.compile(
 UPPERCASE_HEAVY_RE = re.compile(r"^[A-ZÁÀÂÃÉÈÊÍÌÎÓÒÔÕÚÙÛÇ0-9 /().,\-–—ºª]+$")
 
 # Body-like lines often start like this.
+#
+# We keep this conservative because a false "body" detection is safer
+# than accidentally swallowing paragraph text into a title.
 BODY_START_RE = re.compile(
-    r"^\s*(\d+(?:\.\d+)*\.?\s*|[a-z]\)\s+|O\s|A\s|Os\s|As\s|Nos\s|Na\s|No\s|Considera-se\s)",
+    r"^\s*(\d+(?:\.\d+)*\s*[—–\-\.]?\s+|[a-z]\)\s+|O\s|A\s|Os\s|As\s|Nos\s|Na\s|No\s|Considera-se\s)",
+    re.IGNORECASE,
+)
+
+# References to legal provisions inside body text.
+#
+# These must never be interpreted as structural headers.
+LEGAL_REFERENCE_RE = re.compile(
+    r"\bartigo\s+\d+(?:\.\d+)?(?:\s*\.?\s*[ºo]\.?)?(?:-[A-Z])?\b",
     re.IGNORECASE,
 )
 
@@ -189,9 +218,19 @@ class StructureParser:
 
             # ---------------------------------------------------------
             # Article detection
+            #
+            # Defensive rule:
+            # A line is only treated as an article header when it matches
+            # the header pattern as a standalone structural line.
+            #
+            # This avoids false positives such as:
+            # "artigo 46.º-B do Decreto-Lei ..."
+            # appearing inside normal body text.
             # ---------------------------------------------------------
-            article_match = ARTICLE_HEADER_RE.match(line)
-            if article_match:
+            if self._is_article_header_line(line):
+                article_match = ARTICLE_HEADER_RE.match(line)
+                assert article_match is not None
+
                 first_article_seen = True
 
                 article_number = article_match.group(1).strip()
@@ -263,6 +302,7 @@ class StructureParser:
             root.children.insert(0, preamble_node)
 
         self._post_process_nodes(root)
+        self._finalize_document_ranges(root)
         return root
 
     def _collect_lines(self, pages_text: List[Tuple[int, str]]) -> List[Tuple[int, str]]:
@@ -283,6 +323,62 @@ class StructureParser:
 
         return lines
 
+    def _is_article_header_line(self, line: str) -> bool:
+        """
+        Decide whether a line is a true ARTICLE header.
+
+        Why this extra guard exists:
+        a pure regex match is not enough, because legal prose often contains
+        article references such as:
+        - "artigo 46.º-B do Decreto-Lei ..."
+        - "artigo 5.º do regulamento ..."
+        These are body references, not structural article headers.
+
+        We therefore only accept lines that look like standalone headers.
+        """
+        match = ARTICLE_HEADER_RE.match(line)
+        if not match:
+            return False
+
+        lowered = line.lower().strip()
+
+        # Reject obvious body references such as:
+        # "artigo 46.º-b do decreto-lei ..."
+        # "artigo 5.º do regulamento ..."
+        #
+        # A real header line normally ends after the article marker, or after
+        # a short inline title introduced by dash/colon.
+        disqualifying_body_fragments = (
+            " do ",
+            " da ",
+            " de ",
+            " no ",
+            " na ",
+            " previsto ",
+            " prevista ",
+            " previstos ",
+            " previstas ",
+            " referido ",
+            " referida ",
+            " referidos ",
+            " referidas ",
+        )
+
+        # If the regex matched but the whole line contains clear body-like
+        # legal reference phrasing, reject it.
+        if any(fragment in lowered for fragment in disqualifying_body_fragments):
+            # Allow very short standalone headers such as "Artigo 3.º"
+            # or "Artigo 3.º - Definições".
+            # If there is " do / da / de " after the article marker, this is
+            # almost certainly body text, not a header.
+            if "artigo" in lowered:
+                marker_end = match.end()
+                trailing = lowered[marker_end:].strip()
+                if trailing:
+                    return False
+
+        return True
+
     def _consume_following_title_lines(
         self,
         lines: List[Tuple[int, str]],
@@ -292,9 +388,14 @@ class StructureParser:
         """
         Consume a small number of title-like lines after a structural header.
 
-        Important change:
-        This version is more conservative than before and tries hard not to
-        absorb the first body sentence into the title.
+        Important:
+        This version is conservative and tries hard not to absorb the first
+        body sentence into the title.
+
+        Practical effect:
+        - it fixes cases like Article 1 / Article 3 where the first sentence
+          was previously being swallowed into the title
+        - while still capturing real two-line titles such as Article 10
         """
         collected: List[str] = []
         index = start_index
@@ -319,17 +420,18 @@ class StructureParser:
         - "ÂMBITO"
         - "Definições"
         - "Condições para realização da inscrição"
+        - "Número de créditos ECTS a que os estudantes se podem inscrever"
         - "Regulamento P.PORTO/P-005/2023"
 
         Negative examples:
-        - "1. O presente regulamento ..."
+        - "1 — O presente regulamento ..."
         - "a) O estudante ..."
         - "O presente regulamento aplica-se ..."
         """
         if not line:
             return False
 
-        if ARTICLE_HEADER_RE.match(line):
+        if self._is_article_header_line(line):
             return False
 
         if CHAPTER_HEADER_RE.match(line):
@@ -345,10 +447,10 @@ class StructureParser:
             return False
 
         # Strongly reject obvious paragraph-like lines.
-        if len(line) > 120:
+        if len(line) > 160:
             return False
 
-        if len(line.split()) > 14:
+        if len(line.split()) > 18:
             return False
 
         # If it clearly looks like body prose, reject it.
@@ -364,24 +466,40 @@ class StructureParser:
             "mediante ",
             "deverá ",
             "deverão ",
+            "para a ",
+            "para o ",
+            "é o ato",
+            "são os ",
+            "são as ",
+            "têm ",
+            "fica ",
+            "ficam ",
         )
         if lowered.startswith(body_starters):
             return False
 
-        # First consumed title line may be uppercase-heavy or short title case.
-        # A second title line is only accepted if still clearly title-like.
-        if line.endswith(".") or line.endswith(";") or line.endswith(":"):
+        # Titles normally do not end like completed prose.
+        if line.endswith(".") or line.endswith(";"):
             return False
 
+        # A colon can be valid in titles, but a trailing colon often signals
+        # the introduction of body text, not a title.
+        if line.endswith(":"):
+            return False
+
+        # Strong signal: uppercase-heavy lines.
         if UPPERCASE_HEAVY_RE.match(line):
             return True
 
-        # Title case / mixed case short line can still be a valid title.
-        if len(line.split()) <= 10 and collected_count == 0:
+        # Strong signal: short or medium non-body lines.
+        #
+        # This specifically fixes cases like:
+        # "Número de créditos ECTS a que os estudantes se podem inscrever"
+        # which is not uppercase-heavy but is still clearly a title.
+        if collected_count == 0 and len(line.split()) <= 14:
             return True
 
-        # A second title line should be stricter.
-        if len(line.split()) <= 8 and collected_count == 1:
+        if collected_count == 1 and len(line.split()) <= 10:
             return True
 
         return False
@@ -440,6 +558,28 @@ class StructureParser:
                 for child in node.children
             )
 
+    def _finalize_document_ranges(self, root: StructuralNode) -> None:
+        """
+        Ensure the root node reflects the full document span.
+
+        This fixes cases where the DOCUMENT node was left with incorrect
+        page_start/page_end values after parsing.
+        """
+        all_starts: List[int] = []
+        all_ends: List[int] = []
+
+        for child in root.children:
+            if child.page_start is not None:
+                all_starts.append(child.page_start)
+            if child.page_end is not None:
+                all_ends.append(child.page_end)
+
+        if all_starts:
+            root.page_start = min(all_starts)
+
+        if all_ends:
+            root.page_end = max(all_ends)
+
     def _normalize_node_text(self, text: str) -> str:
         """
         Normalize node text while preserving structural line boundaries.
@@ -458,16 +598,18 @@ class StructureParser:
         Split article text into numbered sub-blocks.
 
         Supported examples:
+        - "1 — ..."
         - "1. ..."
-        - "2. ..."
-        - "2.1 ..."
-        - "2.2 ..."
-        - "2.1 - ..."
         - "2.1 — ..."
+        - "2.1. ..."
 
-        Why this matters:
-        - section-level metadata becomes richer
-        - large articles can be chunked more intelligently
+        Important defensive rule:
+        We only start a new numbered section when the matched label behaves
+        like a real block starter at line start.
+
+        This prevents false positives such as:
+        - "60 créditos ECTS."
+        - years and values that appear at line start after PDF wrapping
         """
         text = article.text.strip()
         if not text:
@@ -475,18 +617,30 @@ class StructureParser:
 
         matches = list(NUMBERED_BLOCK_RE.finditer(text))
 
-        # Only treat the text as sectioned if we found at least 2 blocks.
-        # This avoids creating a useless single SECTION for articles that
-        # only begin with one numbered line.
-        if len(matches) < 2:
+        validated_matches = []
+        for match in matches:
+            label = match.group("label")
+            line_fragment = text[match.start():].split("\n", 1)[0].strip()
+
+            if not self._is_valid_numbered_block_start(label=label, line=line_fragment):
+                continue
+
+            validated_matches.append(match)
+
+        # Only treat the text as sectioned if we found at least 2 valid blocks.
+        if len(validated_matches) < 2:
             return []
 
         children: List[StructuralNode] = []
 
-        for match_index, match in enumerate(matches):
+        for match_index, match in enumerate(validated_matches):
             label = match.group("label")
             start = match.start()
-            end = matches[match_index + 1].start() if match_index + 1 < len(matches) else len(text)
+            end = (
+                validated_matches[match_index + 1].start()
+                if match_index + 1 < len(validated_matches)
+                else len(text)
+            )
             block_text = text[start:end].strip()
 
             children.append(
@@ -509,6 +663,44 @@ class StructureParser:
             )
 
         return children
+
+    def _is_valid_numbered_block_start(self, label: str, line: str) -> bool:
+        """
+        Validate whether a numbered match is a true section/block starter.
+
+        Why this exists:
+        PDF line wrapping can place ordinary values at the beginning of a line,
+        for example:
+        - "60 créditos ECTS."
+        - "24 meses ..."
+        These are not new numbered sections.
+
+        Current validation strategy:
+        - accept labels that are followed by a structural separator or by
+          content patterns typical of legal enumerations
+        - reject obvious measurement/value continuations
+        """
+        stripped = line.strip()
+
+        # Accept canonical numbered legal starters.
+        if re.match(rf"^{re.escape(label)}(?:\.)?\s*[—–\-]\s+", stripped):
+            return True
+
+        if re.match(rf"^{re.escape(label)}\.\s+", stripped):
+            return True
+
+        # Accept patterns like:
+        # "1 O estudante ..."
+        # though these are less common than dash-based ones.
+        if re.match(rf"^{re.escape(label)}(?:\.)?\s+[A-ZÁÀÂÃÉÈÊÍÌÎÓÒÔÕÚÙÛÇOAsNosNaNo]", stripped):
+            # Reject obvious measurement/value continuations such as:
+            # "60 créditos ECTS."
+            lowered = stripped.lower()
+            if re.match(r"^\d+(?:\.)?\s+(créditos?|ects|meses|anos|dias)\b", lowered):
+                return False
+            return True
+
+        return False
 
     def _extract_lettered_children(self, node: StructuralNode) -> List[StructuralNode]:
         """
@@ -551,7 +743,10 @@ class StructureParser:
                         "parent_type": node.node_type,
                         "parent_label": node.label,
                         "document_part": node.metadata.get("document_part"),
-                        "article_label": node.metadata.get("article_label", node.label if node.node_type == "ARTICLE" else None),
+                        "article_label": node.metadata.get(
+                            "article_label",
+                            node.label if node.node_type == "ARTICLE" else None,
+                        ),
                         "article_number": node.metadata.get("article_number"),
                         "article_title": node.metadata.get("article_title", node.title),
                     },
