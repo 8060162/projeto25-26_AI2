@@ -6,58 +6,78 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
 from Chunking.chunking.models import PageText
-from Chunking.utils.text import join_hyphenated_linebreaks
+from Chunking.utils.text import (
+    join_hyphenated_linebreaks,
+    normalize_block_whitespace,
+    normalize_line_endings,
+    strip_control_characters,
+)
 
 
 # -------------------------------------------------------------------------
-# Regexes used by the normalizer.
+# Regexes used by the normalizer
+# -------------------------------------------------------------------------
 #
-# The goal here is not to perfectly understand the document semantics.
-# The goal is to remove obvious PDF/editorial noise while preserving
-# structural line breaks that are useful for the parser.
+# The goal of this module is not to fully understand document semantics.
+# Its job is narrower and very important:
+# - remove obvious PDF / layout / editorial noise
+# - preserve structural line boundaries useful for the parser
+# - avoid destructive cleanup that could silently remove legal content
+#
+# This module acts before the structure parser, so it must be conservative.
 # -------------------------------------------------------------------------
 
 # Example:
 # "Pág. 363"
 # "Pág. 364"
+#
+# We strip this marker only when it appears at the beginning of the line.
 LEADING_PAGE_MARKER_RE = re.compile(r"^\s*Pág\.\s*\d+\s*", re.IGNORECASE)
 
 # Example:
 # "3|14"
 # "10 | 14"
+#
+# These are classic page counters extracted from PDF footers / headers.
 INLINE_PAGE_COUNTER_RE = re.compile(r"^\s*\d+\s*\|\s*\d+\s*$")
 
 # Example:
 # "316552597"
+#
 # Long pure numeric tails are often publication / layout noise.
 PURE_NUMERIC_NOISE_RE = re.compile(r"^\s*\d{6,}\s*$")
 
-# Typical Diário da República editorial lines or related page furniture.
+# Typical Diário da República editorial lines or similar page furniture.
 DR_EDITORIAL_RE = re.compile(
     r"^\s*(N\.?\s*º|PARTE\s+[A-Z]|Diário da República)\b",
     re.IGNORECASE,
 )
 
 # Likely signature / signing lines that should not pollute chunks.
+#
+# These can still be preserved elsewhere as document metadata if needed,
+# but they are usually harmful inside retrieval text.
 SIGNATURE_LINE_RE = re.compile(
     r"^\s*(Assinado por:|Num\.?\s+de\s+Identificação:|Data:\s*\d{4}\.\d{2}\.\d{2})",
     re.IGNORECASE,
 )
 
-# Sometimes there are pure document-cover lines that are not useful for QA.
-# We keep this conservative and use it only for very specific patterns.
+# Document-cover patterns that often behave like decorative cover lines,
+# not normative body content.
+#
+# This pattern remains intentionally conservative.
 COVER_NOISE_RE = re.compile(
     r"^\s*(DESPACHO\s+P\.PORTO\/P-|REGULAMENTO\s+P\.PORTO\/P-)\S*",
     re.IGNORECASE,
 )
 
-# Used to detect obvious "dot leader" table-of-contents lines.
+# Detect obvious "dot leader" table-of-contents lines.
 INDEX_DOT_LEADER_RE = re.compile(r"\.{3,}")
 
-# Used to detect short "title + page number" lines.
+# Detect short lines ending with a page number, often TOC style.
 INDEX_TRAILING_PAGE_RE = re.compile(r".+\s+\d{1,4}\s*$")
 
-# Title-like index entries.
+# Typical heading-like TOC entries.
 INDEX_HEADING_RE = re.compile(
     r"^\s*(CAP[ÍI]TULO|ARTIGO|ANEXO|ÍNDICE)\b",
     re.IGNORECASE,
@@ -72,8 +92,10 @@ class NormalizedDocument:
     """
     Intermediate normalized document representation.
 
-    It keeps page-level cleaned text and a document-level consolidated body.
-    This is useful for debugging and for exporting intermediate snapshots.
+    It keeps:
+    - page-level cleaned text
+    - a document-level consolidated body
+    - a dropped-lines report useful for inspection and debugging
     """
 
     pages: List[PageText]
@@ -86,7 +108,7 @@ class TextNormalizer:
     Remove PDF layout noise before structure parsing and chunking.
 
     Important design choice:
-    We DO NOT aggressively unwrap all single newlines here.
+    we DO NOT aggressively unwrap all single newlines here.
 
     Why?
     Because for legal / regulatory PDFs, line breaks often carry structure:
@@ -99,7 +121,7 @@ class TextNormalizer:
     If we flatten the text too early, the parser loses the clues it needs.
 
     Another important design principle:
-    We favor "safe cleanup" over "aggressive cleanup".
+    we favor safe cleanup over aggressive cleanup.
     In legal documents, it is usually better to keep a little noise than
     to accidentally drop real normative content.
     """
@@ -112,8 +134,12 @@ class TextNormalizer:
         1. Detect repeated short lines that likely behave like headers/footers.
         2. Clean line by line, preserving structural line boundaries.
         3. Remove likely table-of-contents blocks.
-        4. Rebuild each page text with minimal whitespace cleanup.
-        5. Concatenate pages into a single debug-friendly full_text.
+        4. Rebuild each page text with conservative whitespace cleanup.
+        5. Concatenate pages into a debug-friendly full_text.
+
+        Important:
+        repeated-line detection is performed before page-by-page cleaning so
+        that repeated layout furniture can be recognized globally.
         """
         repeated_lines = self._find_repeated_noise_candidates(pages)
         cleaned_pages: List[PageText] = []
@@ -135,10 +161,10 @@ class TextNormalizer:
                 cleaned_lines.append(line)
 
             # ---------------------------------------------------------
-            # Remove likely index blocks after line-level cleanup.
+            # Remove likely TOC / index blocks after line-level cleanup.
             #
-            # This is done at block level because a TOC is often easier
-            # to detect as a cluster of lines than one line at a time.
+            # This is done at block level because a table of contents is
+            # often easier to detect as a cluster of lines than line by line.
             # ---------------------------------------------------------
             cleaned_lines, block_drop_report = self._remove_index_blocks(cleaned_lines)
             dropped_counter.update(block_drop_report)
@@ -173,16 +199,27 @@ class TextNormalizer:
         - (None, "reason") when the line should be dropped
 
         Notes:
-        - We first strip page markers like "Pág. 363" from the beginning
-          of the line instead of dropping the entire line, because the same
-          line may still contain useful legal content after that marker.
-        - We preserve line-level structure because the downstream parser
-          needs it.
+        - We strip page markers like "Pág. 363" from the beginning of the line
+          instead of dropping the entire line, because useful legal content may
+          still exist after that marker.
+        - We preserve line-level structure because the downstream parser needs it.
+        - We remove control characters early so heuristics and regexes operate
+          over cleaner text.
         """
-        line = raw_line.strip()
+        line = normalize_line_endings(raw_line).strip()
 
         if not line:
             return None, "empty_line"
+
+        # -------------------------------------------------------------
+        # Remove non-printable control-character noise.
+        #
+        # This helps avoid invisible garbage interfering with pattern
+        # matching and later chunk text quality.
+        # -------------------------------------------------------------
+        line = strip_control_characters(line).strip()
+        if not line:
+            return None, "control_char_only"
 
         # -------------------------------------------------------------
         # Remove leading page marker if present.
@@ -207,46 +244,52 @@ class TextNormalizer:
 
         # -------------------------------------------------------------
         # Remove pure Diário da República editorial lines.
+        #
+        # We keep this bounded by line length to avoid over-matching
+        # legitimate long content that happens to start similarly.
         # -------------------------------------------------------------
         if DR_EDITORIAL_RE.match(line) and len(line) <= 140:
             return None, "dr_editorial_line"
 
         # -------------------------------------------------------------
-        # Remove signature/signing metadata from body text.
+        # Remove signature / signing metadata from body text.
         #
-        # These lines are often useful as document-level metadata, but
-        # they are usually harmful inside chunks.
+        # These lines are usually useful as document metadata, but harmful
+        # inside retrieval chunks.
         # -------------------------------------------------------------
         if SIGNATURE_LINE_RE.match(line):
             return None, "signature_line"
 
         # -------------------------------------------------------------
-        # Remove some obvious cover-only lines.
-        # This remains conservative on purpose.
+        # Remove obvious cover-only lines.
+        #
+        # This remains conservative by design.
         # -------------------------------------------------------------
         if COVER_NOISE_RE.match(line) and len(line) <= 140:
             return None, "cover_line"
 
         # -------------------------------------------------------------
         # Remove repeated short lines detected across multiple pages.
-        # These are often headers, footers or institutional banners.
+        #
+        # These are often headers, footers, institutional banners, or
+        # repeated regulation identifiers.
         # -------------------------------------------------------------
         normalized_for_compare = self._normalize_for_comparison(line)
         if normalized_for_compare in repeated_lines:
             return None, "repeated_line"
 
         # -------------------------------------------------------------
-        # Remove very obvious index-like lines early.
+        # Remove very obvious TOC-like lines early.
         #
-        # We still also do block-level index removal later because not all
-        # TOC lines are easy to classify one by one.
+        # We still do block-level TOC removal later because not all
+        # index lines are easy to classify individually.
         # -------------------------------------------------------------
         if self._looks_like_index_line(line):
             return None, "index_like_line"
 
         # -------------------------------------------------------------
-        # Normalize inner whitespace, but DO NOT remove the fact that
-        # this is still a separate line.
+        # Normalize inner whitespace, but do NOT remove the fact that
+        # this is still a separate structural line.
         # -------------------------------------------------------------
         line = MULTISPACE_RE.sub(" ", line).strip()
 
@@ -265,8 +308,12 @@ class TextNormalizer:
         - page furniture repeated on many pages
 
         Important:
-        We normalize candidates before counting them so that superficial
+        we normalize candidates before counting them so that superficial
         whitespace differences do not prevent detection.
+
+        Heuristic:
+        - only relatively short lines are considered
+        - a candidate must appear on at least a meaningful fraction of pages
         """
         counter: Counter[str] = Counter()
         total_pages = max(1, len(pages))
@@ -284,10 +331,12 @@ class TextNormalizer:
 
                 # We only consider relatively short lines for repeated-noise
                 # detection. This avoids accidentally marking legitimate long
-                # content as "repeated".
+                # content as repeated.
                 if len(line) <= 120:
                     counter[line] += 1
 
+        # Require appearance in at least half the document pages, but never
+        # less than two pages.
         threshold = max(2, total_pages // 2)
 
         repeated = {
@@ -303,9 +352,10 @@ class TextNormalizer:
         Normalize a line specifically for repeated-line detection.
 
         We remove very common layout artifacts here to make repeated headers
-        easier to detect.
+        easier to detect while keeping the comparison logic deterministic.
         """
-        line = line.strip()
+        line = normalize_line_endings(line).strip()
+        line = strip_control_characters(line).strip()
         line = LEADING_PAGE_MARKER_RE.sub("", line).strip()
         line = MULTISPACE_RE.sub(" ", line).strip()
         return line
@@ -316,7 +366,10 @@ class TextNormalizer:
 
         The heuristic is intentionally conservative:
         - dot leaders are a strong signal
-        - short title + trailing number is a moderate signal
+        - short heading + trailing page number is a moderate signal
+
+        This method is used only for obvious single-line TOC cases.
+        More ambiguous cases are handled later at block level.
         """
         if len(line) > 220:
             return False
@@ -342,9 +395,8 @@ class TextNormalizer:
         might look harmless, but together clearly behave like an index.
 
         Heuristic:
-        - scan consecutive windows of lines
-        - if enough lines in the window look like TOC lines,
-          drop the whole block
+        - scan consecutive runs of TOC-like lines
+        - if a sufficiently large run is found, drop the whole block
         """
         if not lines:
             return [], Counter()
@@ -354,9 +406,6 @@ class TextNormalizer:
 
         index = 0
         while index < len(lines):
-            # Try to detect a contiguous block of likely TOC lines.
-            block_start = index
-            toc_score = 0
             block_lines: List[str] = []
 
             while index < len(lines):
@@ -371,15 +420,15 @@ class TextNormalizer:
                     break
 
                 block_lines.append(line)
-                toc_score += 1
                 index += 1
 
-            # Decide whether the captured block is actually an index block.
-            if block_lines and toc_score >= 4:
+            # Drop only blocks large enough to look like a real TOC cluster.
+            if block_lines and len(block_lines) >= 4:
                 dropped_counter["index_block_line"] += len(block_lines)
                 continue
 
-            # If not a TOC block, emit the original first line and continue.
+            # If a short candidate block was captured but is not large enough
+            # to be treated as a real TOC block, keep it.
             if block_lines:
                 kept_lines.extend(block_lines)
                 continue
@@ -391,12 +440,12 @@ class TextNormalizer:
 
     def _is_toc_block_candidate(self, line: str) -> bool:
         """
-        Decide whether a line looks like part of a table of contents block.
+        Decide whether a line looks like part of a table-of-contents block.
 
         Strong signals:
         - dot leaders
-        - "CAPÍTULO", "ARTIGO", "ÍNDICE"
-        - heading + trailing page number
+        - explicit structural headings such as "CAPÍTULO", "ARTIGO", "ÍNDICE"
+        - short heading ending with a page number
         """
         if INDEX_DOT_LEADER_RE.search(line):
             return True
@@ -414,12 +463,12 @@ class TextNormalizer:
         Rebuild the cleaned page text.
 
         Important:
-        We preserve line breaks because the structure parser relies on them.
+        we preserve line breaks because the structure parser relies on them.
 
-        We still perform some safe cleanup:
+        We still perform conservative cleanup:
         - join broken hyphenation across line breaks
-        - trim spaces around line breaks
-        - collapse many blank lines into at most one blank separator
+        - normalize block whitespace without flattening structure
+        - keep the result readable and parser-friendly
         """
         if not cleaned_lines:
             return ""
@@ -430,12 +479,8 @@ class TextNormalizer:
         # "matrí-\ncula" -> "matrícula"
         text = join_hyphenated_linebreaks(text)
 
-        # Normalize spaces before/after newlines without flattening structure.
-        text = re.sub(r"[ \t]+\n", "\n", text)
-        text = re.sub(r"\n[ \t]+", "\n", text)
-
-        # Collapse excessive blank lines but keep paragraph separation.
-        text = re.sub(r"\n{3,}", "\n\n", text)
+        # Apply shared conservative block cleanup.
+        text = normalize_block_whitespace(text)
 
         return text.strip()
 
@@ -449,4 +494,5 @@ class TextNormalizer:
         non_empty_pages = [page.text.strip() for page in pages if page.text.strip()]
         if not non_empty_pages:
             return ""
+
         return "\n\n".join(non_empty_pages).strip()
