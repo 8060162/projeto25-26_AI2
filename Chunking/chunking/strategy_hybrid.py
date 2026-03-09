@@ -14,7 +14,7 @@ class HybridChunkingStrategy(BaseChunkingStrategy):
 
     Decision principle:
     - use structure-first when the parser produced a sufficiently rich
-      hierarchy of articles and/or sections
+      hierarchy inside the regulation body
     - fall back to article-smart when the structure is weaker
 
     Why this exists:
@@ -35,25 +35,22 @@ class HybridChunkingStrategy(BaseChunkingStrategy):
         annex_count = self._count_node_type(root, "ANNEX")
         chapter_count = self._count_node_type(root, "CHAPTER")
 
-        # -------------------------------------------------------------
-        # Heuristic selection.
-        #
-        # We choose structure-first when:
-        # - the parser found a reasonable number of articles, and
-        # - there is at least some additional hierarchy (sections,
-        #   lettered items, annexes, or chapters)
-        #
-        # Otherwise we use article-smart, which is more forgiving.
-        # -------------------------------------------------------------
+        # Prefer structure-first only when there is evidence that the parser
+        # captured meaningful hierarchy inside articles, not merely container
+        # nodes like ANNEX or CHAPTER.
         has_good_article_backbone = article_count >= 3
-        has_additional_structure = (
-            (section_count >= 2)
-            or (lettered_count >= 3)
-            or (annex_count >= 1)
-            or (chapter_count >= 1)
+        has_internal_structure = (section_count >= 2) or (lettered_count >= 3)
+        has_container_structure = (annex_count >= 1) or (chapter_count >= 1)
+
+        use_structure_first = (
+            has_good_article_backbone
+            and (
+                has_internal_structure
+                or (has_container_structure and article_count >= 6)
+            )
         )
 
-        if has_good_article_backbone and has_additional_structure:
+        if use_structure_first:
             return StructureFirstChunkingStrategy(self.settings).build_chunks(
                 document_metadata,
                 root,
