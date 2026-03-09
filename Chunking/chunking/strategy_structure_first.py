@@ -34,12 +34,6 @@ class StructureFirstChunkingStrategy(BaseChunkingStrategy):
         chunks: List[Chunk] = []
         sequence = 1
 
-        # -------------------------------------------------------------
-        # 1) Handle PREAMBLE nodes separately.
-        #
-        # Even in a structure-first strategy, the preamble / dispatch
-        # should not be mixed with the normative article body.
-        # -------------------------------------------------------------
         for preamble in self._iter_nodes_by_type(root, "PREAMBLE"):
             if not preamble.text.strip():
                 continue
@@ -49,29 +43,23 @@ class StructureFirstChunkingStrategy(BaseChunkingStrategy):
                 preamble_groups = [preamble.text]
 
             for group_text in preamble_groups:
-                chunks.append(
-                    self._chunk(
-                        sequence=sequence,
-                        document_metadata=document_metadata,
-                        text=group_text,
-                        page_start=preamble.page_start,
-                        page_end=preamble.page_end,
-                        metadata={
-                            "node_type": "PREAMBLE",
-                            "label": preamble.label,
-                            "document_part": preamble.metadata.get("document_part"),
-                            "source_span_type": "preamble",
-                        },
-                    )
+                chunk = self._chunk(
+                    sequence=sequence,
+                    document_metadata=document_metadata,
+                    text=group_text,
+                    page_start=preamble.page_start,
+                    page_end=preamble.page_end,
+                    metadata={
+                        "node_type": "PREAMBLE",
+                        "label": preamble.label,
+                        "document_part": preamble.metadata.get("document_part"),
+                        "source_span_type": "preamble",
+                    },
                 )
-                sequence += 1
+                if chunk is not None:
+                    chunks.append(chunk)
+                    sequence += 1
 
-        # -------------------------------------------------------------
-        # 2) Handle ARTICLE nodes.
-        #
-        # This recursive traversal is more robust than assuming that
-        # articles always live under root.children -> top.children.
-        # -------------------------------------------------------------
         for article in self._iter_nodes_by_type(root, "ARTICLE"):
             article_text = normalize_block_whitespace(article.text)
             if not article_text:
@@ -93,11 +81,6 @@ class StructureFirstChunkingStrategy(BaseChunkingStrategy):
                 if child.node_type == "SECTION" and child.text.strip()
             ]
 
-            # ---------------------------------------------------------
-            # If the parser extracted sections, use them as the primary
-            # chunking units, but never discard small sections.
-            # Instead, group them.
-            # ---------------------------------------------------------
             if section_children:
                 section_groups = self._group_sections(section_children)
 
@@ -115,49 +98,49 @@ class StructureFirstChunkingStrategy(BaseChunkingStrategy):
 
                     section_labels = [section.label for section in section_group]
 
-                    # If a grouped section block still becomes too large,
-                    # split it by paragraphs as a fallback.
                     if len(group_text) > self.settings.hard_max_chunk_chars:
-                        for paragraph_group in self._paragraph_grouping(group_text):
-                            chunks.append(
-                                self._chunk(
-                                    sequence=sequence,
-                                    document_metadata=document_metadata,
-                                    text=paragraph_group,
-                                    page_start=article.page_start,
-                                    page_end=article.page_end,
-                                    metadata={
-                                        **article_meta,
-                                        "node_type": "SECTION_GROUP",
-                                        "section_labels": section_labels,
-                                        "source_span_type": "section_group_paragraph_split",
-                                    },
-                                )
-                            )
-                            sequence += 1
-                    else:
-                        chunks.append(
-                            self._chunk(
+                        paragraph_groups = self._paragraph_grouping(group_text)
+                        for part_index, paragraph_group in enumerate(paragraph_groups, start=1):
+                            chunk = self._chunk(
                                 sequence=sequence,
                                 document_metadata=document_metadata,
-                                text=group_text,
+                                text=paragraph_group,
                                 page_start=article.page_start,
                                 page_end=article.page_end,
                                 metadata={
                                     **article_meta,
                                     "node_type": "SECTION_GROUP",
                                     "section_labels": section_labels,
-                                    "source_span_type": "section_group",
+                                    "group_size": len(section_group),
+                                    "part_index": part_index,
+                                    "part_count": len(paragraph_groups),
+                                    "source_span_type": "section_group_paragraph_split",
                                 },
                             )
+                            if chunk is not None:
+                                chunks.append(chunk)
+                                sequence += 1
+                    else:
+                        chunk = self._chunk(
+                            sequence=sequence,
+                            document_metadata=document_metadata,
+                            text=group_text,
+                            page_start=article.page_start,
+                            page_end=article.page_end,
+                            metadata={
+                                **article_meta,
+                                "node_type": "SECTION_GROUP",
+                                "section_labels": section_labels,
+                                "group_size": len(section_group),
+                                "source_span_type": "section_group",
+                            },
                         )
-                        sequence += 1
+                        if chunk is not None:
+                            chunks.append(chunk)
+                            sequence += 1
 
                 continue
 
-            # ---------------------------------------------------------
-            # If there are no sections, try LETTERED_ITEM nodes.
-            # ---------------------------------------------------------
             lettered_children = [
                 child
                 for child in article.children
@@ -181,67 +164,62 @@ class StructureFirstChunkingStrategy(BaseChunkingStrategy):
 
                     lettered_labels = [item.label for item in lettered_group]
 
-                    chunks.append(
-                        self._chunk(
-                            sequence=sequence,
-                            document_metadata=document_metadata,
-                            text=group_text,
-                            page_start=article.page_start,
-                            page_end=article.page_end,
-                            metadata={
-                                **article_meta,
-                                "node_type": "LETTERED_GROUP",
-                                "lettered_labels": lettered_labels,
-                                "source_span_type": "lettered_group",
-                            },
-                        )
-                    )
-                    sequence += 1
-
-                continue
-
-            # ---------------------------------------------------------
-            # If there are no sections or lettered items, keep the
-            # article whole when it is reasonably sized; otherwise split
-            # it carefully.
-            # ---------------------------------------------------------
-            if len(article_text) <= self.settings.target_chunk_chars:
-                chunks.append(
-                    self._chunk(
+                    chunk = self._chunk(
                         sequence=sequence,
                         document_metadata=document_metadata,
-                        text=article_text,
+                        text=group_text,
                         page_start=article.page_start,
                         page_end=article.page_end,
                         metadata={
                             **article_meta,
-                            "node_type": "ARTICLE",
-                            "source_span_type": "article",
+                            "node_type": "LETTERED_GROUP",
+                            "lettered_labels": lettered_labels,
+                            "group_size": len(lettered_group),
+                            "source_span_type": "lettered_group",
                         },
                     )
+                    if chunk is not None:
+                        chunks.append(chunk)
+                        sequence += 1
+
+                continue
+
+            if len(article_text) <= self.settings.target_chunk_chars:
+                chunk = self._chunk(
+                    sequence=sequence,
+                    document_metadata=document_metadata,
+                    text=article_text,
+                    page_start=article.page_start,
+                    page_end=article.page_end,
+                    metadata={
+                        **article_meta,
+                        "node_type": "ARTICLE",
+                        "source_span_type": "article",
+                    },
                 )
-                sequence += 1
-            else:
-                for part_index, part_text in enumerate(
-                    self._split_large_text(article_text),
-                    start=1,
-                ):
-                    chunks.append(
-                        self._chunk(
-                            sequence=sequence,
-                            document_metadata=document_metadata,
-                            text=part_text,
-                            page_start=article.page_start,
-                            page_end=article.page_end,
-                            metadata={
-                                **article_meta,
-                                "node_type": "ARTICLE_PART",
-                                "part_index": part_index,
-                                "source_span_type": "article_part",
-                            },
-                        )
-                    )
+                if chunk is not None:
+                    chunks.append(chunk)
                     sequence += 1
+            else:
+                parts = self._split_large_text(article_text)
+                for part_index, part_text in enumerate(parts, start=1):
+                    chunk = self._chunk(
+                        sequence=sequence,
+                        document_metadata=document_metadata,
+                        text=part_text,
+                        page_start=article.page_start,
+                        page_end=article.page_end,
+                        metadata={
+                            **article_meta,
+                            "node_type": "ARTICLE_PART",
+                            "part_index": part_index,
+                            "part_count": len(parts),
+                            "source_span_type": "article_part",
+                        },
+                    )
+                    if chunk is not None:
+                        chunks.append(chunk)
+                        sequence += 1
 
         return chunks
 
@@ -250,12 +228,6 @@ class StructureFirstChunkingStrategy(BaseChunkingStrategy):
         node: StructuralNode,
         node_type: str,
     ) -> Iterator[StructuralNode]:
-        """
-        Recursively yield all nodes of a given type.
-
-        This makes the strategy robust against parser variations in the
-        hierarchy layout.
-        """
         if node.node_type == node_type:
             yield node
 
@@ -263,14 +235,6 @@ class StructureFirstChunkingStrategy(BaseChunkingStrategy):
             yield from self._iter_nodes_by_type(child, node_type)
 
     def _group_sections(self, sections: List[StructuralNode]) -> List[List[StructuralNode]]:
-        """
-        Group section nodes into chunk-sized bundles.
-
-        Why grouping is important:
-        - some sections are too small to stand alone
-        - some articles contain many short numbered items
-        - legal meaning is often preserved better by grouping adjacent sections
-        """
         if not sections:
             return []
 
@@ -301,7 +265,6 @@ class StructureFirstChunkingStrategy(BaseChunkingStrategy):
         if current_group:
             groups.append(current_group)
 
-        # Merge a very small trailing group into the previous one.
         if len(groups) >= 2:
             last_group_text = "\n\n".join(item.text for item in groups[-1] if item.text.strip())
             if len(last_group_text) < self.settings.min_chunk_chars:
@@ -311,9 +274,6 @@ class StructureFirstChunkingStrategy(BaseChunkingStrategy):
         return groups
 
     def _group_lettered_items(self, items: List[StructuralNode]) -> List[List[StructuralNode]]:
-        """
-        Group lettered items into chunk-sized bundles.
-        """
         if not items:
             return []
 
@@ -353,15 +313,6 @@ class StructureFirstChunkingStrategy(BaseChunkingStrategy):
         return groups
 
     def _split_large_text(self, text: str) -> List[str]:
-        """
-        Split large text blocks conservatively.
-
-        Preferred split points:
-        - paragraph boundaries
-        - only then fallback to a chunk-sized grouping
-
-        This is used only when structure is missing or insufficient.
-        """
         paragraphs = split_paragraphs(text)
         if not paragraphs:
             return [text]
@@ -385,7 +336,6 @@ class StructureFirstChunkingStrategy(BaseChunkingStrategy):
         if current:
             parts.append("\n\n".join(current))
 
-        # Merge a very small trailing part into the previous one.
         if len(parts) >= 2 and len(parts[-1]) < self.settings.min_chunk_chars:
             parts[-2] = f"{parts[-2]}\n\n{parts[-1]}".strip()
             parts.pop()
@@ -393,9 +343,6 @@ class StructureFirstChunkingStrategy(BaseChunkingStrategy):
         return parts
 
     def _paragraph_grouping(self, text: str) -> List[str]:
-        """
-        Group preamble paragraphs into reasonable chunks.
-        """
         paragraphs = split_paragraphs(text)
         if not paragraphs:
             return []
@@ -429,15 +376,19 @@ class StructureFirstChunkingStrategy(BaseChunkingStrategy):
         page_start: int | None,
         page_end: int | None,
         metadata: dict,
-    ) -> Chunk:
+    ) -> Chunk | None:
         """
         Build a final chunk object with stable chunk ids.
         """
+        normalized_text = normalize_block_whitespace(text)
+        if not normalized_text:
+            return None
+
         return Chunk(
             chunk_id=f"{document_metadata.doc_id}_chunk_{sequence:04d}",
             doc_id=document_metadata.doc_id,
             strategy=self.name,
-            text=normalize_block_whitespace(text),
+            text=normalized_text,
             page_start=page_start,
             page_end=page_end,
             metadata=metadata,
