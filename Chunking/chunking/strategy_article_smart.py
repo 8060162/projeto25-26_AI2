@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Iterator, List
+from typing import Any, Dict, Iterator, List
 
 from Chunking.chunking.models import Chunk, DocumentMetadata, StructuralNode
 from Chunking.chunking.strategy_base import BaseChunkingStrategy
@@ -9,21 +9,29 @@ from Chunking.utils.text import normalize_block_whitespace, split_paragraphs
 
 class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
     """
-    Article-aware chunking strategy.
+    Chunking strategy centered on ARTICLE nodes.
 
-    Core idea:
-    - Use ARTICLE as the primary semantic unit.
-    - If an article is short enough, keep it as one chunk.
-    - If an article is long, prefer splitting by SECTION nodes already
-      extracted by the structure parser.
-    - If needed, use LETTERED_ITEM nodes as a secondary structure layer.
-    - If there is still no usable structure, fall back to paragraph grouping.
+    Strategy philosophy:
+    - treat each article as the primary legal retrieval unit
+    - keep short articles intact whenever possible
+    - for larger articles, prefer already parsed internal structure
+      such as numbered SECTION nodes
+    - if numbered sections are unavailable, fall back to LETTERED_ITEM nodes
+    - if the parser did not extract usable internal structure, fall back to
+      paragraph grouping
 
-    Why this fits regulatory documents well:
-    - articles are usually stable and legally meaningful
-    - section numbering often maps to coherent sub-rules
-    - metadata remains easy to interpret downstream
-    - the strategy stays resilient when structure is only partial
+    Why this strategy is a strong default for legal and regulatory documents:
+    - articles usually represent stable normative units
+    - article metadata is highly interpretable downstream
+    - internal numbering often maps to coherent sub-rules
+    - the strategy remains resilient even when parsing is only partially
+      successful
+
+    Important:
+    this strategy assumes the structure parser already did the heavy work of
+    identifying ARTICLE / SECTION / LETTERED_ITEM nodes. The role here is
+    to convert that structure into retrieval-friendly chunks while preserving
+    semantic coherence and useful metadata.
     """
 
     name = "article_smart"
@@ -33,21 +41,45 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
         document_metadata: DocumentMetadata,
         root: StructuralNode,
     ) -> List[Chunk]:
+        """
+        Build chunks from a parsed document tree.
+
+        Processing order:
+        1. Export PREAMBLE content first, separately from the regulation body
+        2. Process each ARTICLE node in document order
+        3. Prefer whole-article chunks for short articles
+        4. Prefer grouped SECTION chunks for longer articles
+        5. Fall back to grouped LETTERED_ITEM chunks when sections do not exist
+        6. Fall back to paragraph grouping when no finer structure is available
+
+        Important:
+        chunk ids are generated in a stable sequential order for easier
+        debugging and DOCX/JSON inspection.
+        """
         chunks: List[Chunk] = []
         sequence = 1
 
-        # -------------------------------------------------------------
+        # -----------------------------------------------------------------
         # 1) Chunk the preamble / dispatch separately if present.
         #
-        # We intentionally keep it apart from the regulation body.
-        # -------------------------------------------------------------
+        # We intentionally keep preamble text isolated from the regulation
+        # body because:
+        # - it has different semantic meaning
+        # - it often contains approval / revocation context
+        # - it should not be mixed with normative article content
+        # -----------------------------------------------------------------
         for preamble in self._iter_nodes_by_type(root, "PREAMBLE"):
-            if not preamble.text.strip():
+            preamble_text = normalize_block_whitespace(preamble.text)
+            if not preamble_text:
                 continue
 
-            preamble_groups = self._paragraph_grouping(preamble.text)
+            preamble_groups = self._paragraph_grouping(preamble_text)
+
+            # Fallback:
+            # if paragraph grouping returns nothing for any reason, keep the
+            # full preamble as a single chunk rather than dropping it.
             if not preamble_groups:
-                preamble_groups = [preamble.text]
+                preamble_groups = [preamble_text]
 
             for group_text in preamble_groups:
                 chunks.append(
@@ -67,9 +99,9 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
                 )
                 sequence += 1
 
-        # -------------------------------------------------------------
+        # -----------------------------------------------------------------
         # 2) Chunk article content.
-        # -------------------------------------------------------------
+        # -----------------------------------------------------------------
         for article in self._iter_nodes_by_type(root, "ARTICLE"):
             article_text = normalize_block_whitespace(article.text)
             if not article_text:
@@ -77,13 +109,15 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
 
             article_meta = self._article_metadata(article)
 
-            # ---------------------------------------------------------
+            # -----------------------------------------------------------------
             # Case A:
-            # Short article -> keep as a single chunk.
+            # Keep short articles as a single chunk.
             #
-            # We keep this simple because a short article is often already
-            # semantically complete and legally meaningful.
-            # ---------------------------------------------------------
+            # Why:
+            # - a short article is often already a complete legal unit
+            # - preserving the whole article improves interpretability
+            # - unnecessary splitting reduces retrieval quality
+            # -----------------------------------------------------------------
             if len(article_text) <= self.settings.target_chunk_chars:
                 chunks.append(
                     self._make_chunk(
@@ -101,10 +135,13 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
                 sequence += 1
                 continue
 
-            # ---------------------------------------------------------
+            # -----------------------------------------------------------------
             # Case B:
-            # Larger article -> prefer SECTION nodes if available.
-            # ---------------------------------------------------------
+            # Large article with SECTION nodes available.
+            #
+            # This is the preferred split path because numbered sections usually
+            # correspond to meaningful internal rules.
+            # -----------------------------------------------------------------
             section_children = [
                 child
                 for child in article.children
@@ -128,12 +165,20 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
 
                     group_labels = [section.label for section in group]
 
-                    # -------------------------------------------------
-                    # If a grouped section block is still too large,
-                    # try paragraph grouping as a safe fallback.
-                    # -------------------------------------------------
+                    # ---------------------------------------------------------
+                    # If grouped sections are still too large, fall back to
+                    # paragraph grouping inside that grouped span.
+                    #
+                    # We keep the article + section metadata so the chunk
+                    # remains structurally traceable even after fallback split.
+                    # ---------------------------------------------------------
                     if len(group_text) > self.settings.hard_max_chunk_chars:
-                        for paragraph_group in self._paragraph_grouping(group_text):
+                        paragraph_groups = self._paragraph_grouping(group_text)
+
+                        if not paragraph_groups:
+                            paragraph_groups = [group_text]
+
+                        for paragraph_group in paragraph_groups:
                             chunks.append(
                                 self._make_chunk(
                                     sequence=sequence,
@@ -168,13 +213,13 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
 
                 continue
 
-            # ---------------------------------------------------------
+            # -----------------------------------------------------------------
             # Case C:
-            # No SECTION nodes -> try LETTERED_ITEM nodes.
+            # No SECTION nodes, but LETTERED_ITEM nodes are available.
             #
-            # This can help articles that use "a)", "b)", "c)" structure
-            # without formal numbered sections.
-            # ---------------------------------------------------------
+            # This helps documents whose article structure is based on alíneas
+            # such as "a)", "b)", "c)" rather than numbered sections.
+            # -----------------------------------------------------------------
             lettered_children = [
                 child
                 for child in article.children
@@ -198,29 +243,65 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
 
                     group_labels = [item.label for item in group]
 
-                    chunks.append(
-                        self._make_chunk(
-                            sequence=sequence,
-                            document_metadata=document_metadata,
-                            text=group_text,
-                            page_start=article.page_start,
-                            page_end=article.page_end,
-                            metadata={
-                                **article_meta,
-                                "lettered_labels": group_labels,
-                                "source_span_type": "article_lettered_group",
-                            },
+                    # ---------------------------------------------------------
+                    # In most cases grouped lettered items should remain small
+                    # enough. If not, we still have the paragraph fallback to
+                    # avoid producing oversized retrieval units.
+                    # ---------------------------------------------------------
+                    if len(group_text) > self.settings.hard_max_chunk_chars:
+                        paragraph_groups = self._paragraph_grouping(group_text)
+
+                        if not paragraph_groups:
+                            paragraph_groups = [group_text]
+
+                        for paragraph_group in paragraph_groups:
+                            chunks.append(
+                                self._make_chunk(
+                                    sequence=sequence,
+                                    document_metadata=document_metadata,
+                                    text=paragraph_group,
+                                    page_start=article.page_start,
+                                    page_end=article.page_end,
+                                    metadata={
+                                        **article_meta,
+                                        "lettered_labels": group_labels,
+                                        "source_span_type": "article_lettered_group_paragraph_split",
+                                    },
+                                )
+                            )
+                            sequence += 1
+                    else:
+                        chunks.append(
+                            self._make_chunk(
+                                sequence=sequence,
+                                document_metadata=document_metadata,
+                                text=group_text,
+                                page_start=article.page_start,
+                                page_end=article.page_end,
+                                metadata={
+                                    **article_meta,
+                                    "lettered_labels": group_labels,
+                                    "source_span_type": "article_lettered_group",
+                                },
+                            )
                         )
-                    )
-                    sequence += 1
+                        sequence += 1
 
                 continue
 
-            # ---------------------------------------------------------
+            # -----------------------------------------------------------------
             # Case D:
-            # No usable structure -> paragraph-based fallback.
-            # ---------------------------------------------------------
-            for paragraph_group in self._paragraph_grouping(article_text):
+            # No usable internal structure.
+            #
+            # This is the safety fallback for imperfect parsing or documents
+            # whose internal formatting is too weak/inconsistent.
+            # -----------------------------------------------------------------
+            paragraph_groups = self._paragraph_grouping(article_text)
+
+            if not paragraph_groups:
+                paragraph_groups = [article_text]
+
+            for paragraph_group in paragraph_groups:
                 chunks.append(
                     self._make_chunk(
                         sequence=sequence,
@@ -245,6 +326,11 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
     ) -> Iterator[StructuralNode]:
         """
         Recursively yield all nodes of a given type.
+
+        Why recursion is used here:
+        the tree layout may vary slightly depending on parser success
+        and document structure. A recursive traversal is more robust than
+        assuming a fixed path such as DOCUMENT -> CHAPTER -> ARTICLE.
         """
         if node.node_type == node_type:
             yield node
@@ -254,14 +340,18 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
 
     def _group_sections(self, sections: List[StructuralNode]) -> List[List[StructuralNode]]:
         """
-        Group section nodes into chunk-sized bundles.
+        Group adjacent SECTION nodes into chunk-sized bundles.
 
         Grouping policy:
-        - try to stay around target_chunk_chars
-        - avoid creating very small final groups when possible
-        - preserve original section order
+        - preserve original order
+        - try to stay near target_chunk_chars
+        - avoid flushing too early when the current group is still too small
+        - merge very small trailing groups into the previous group
 
-        This is intentionally simple and predictable.
+        Why grouping is necessary:
+        some sections are too small to stand alone as useful retrieval units.
+        Grouping adjacent sections often preserves meaning better than splitting
+        too aggressively.
         """
         if not sections:
             return []
@@ -274,7 +364,9 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
                 current_group = [section]
                 continue
 
-            current_text = "\n\n".join(item.text for item in current_group if item.text.strip())
+            current_text = "\n\n".join(
+                item.text for item in current_group if item.text.strip()
+            )
             candidate_text = "\n\n".join(
                 item.text for item in (current_group + [section]) if item.text.strip()
             )
@@ -296,9 +388,11 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
         if current_group:
             groups.append(current_group)
 
-        # Merge a very small trailing group into the previous one.
+        # Merge an undersized trailing group into the previous group.
         if len(groups) >= 2:
-            last_group_text = "\n\n".join(item.text for item in groups[-1] if item.text.strip())
+            last_group_text = "\n\n".join(
+                item.text for item in groups[-1] if item.text.strip()
+            )
             if len(last_group_text) < self.settings.min_chunk_chars:
                 groups[-2].extend(groups[-1])
                 groups.pop()
@@ -307,9 +401,11 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
 
     def _group_lettered_items(self, items: List[StructuralNode]) -> List[List[StructuralNode]]:
         """
-        Group lettered items into chunk-sized bundles.
+        Group adjacent LETTERED_ITEM nodes into chunk-sized bundles.
 
-        This mirrors section grouping, but on a smaller structural unit.
+        This mirrors section grouping, but operates on a smaller structural
+        unit. It is useful for articles whose internal logic is expressed as
+        legal alíneas instead of numbered sections.
         """
         if not items:
             return []
@@ -322,7 +418,9 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
                 current_group = [item]
                 continue
 
-            current_text = "\n\n".join(node.text for node in current_group if node.text.strip())
+            current_text = "\n\n".join(
+                node.text for node in current_group if node.text.strip()
+            )
             candidate_text = "\n\n".join(
                 node.text for node in (current_group + [item]) if node.text.strip()
             )
@@ -341,8 +439,11 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
         if current_group:
             groups.append(current_group)
 
+        # Merge an undersized trailing group into the previous group.
         if len(groups) >= 2:
-            last_group_text = "\n\n".join(node.text for node in groups[-1] if node.text.strip())
+            last_group_text = "\n\n".join(
+                node.text for node in groups[-1] if node.text.strip()
+            )
             if len(last_group_text) < self.settings.min_chunk_chars:
                 groups[-2].extend(groups[-1])
                 groups.pop()
@@ -353,8 +454,16 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
         """
         Group paragraphs into chunk-sized blocks.
 
-        This is the fallback when article sections are unavailable or when
-        a section group is still too large.
+        This method is the generic fallback when:
+        - article sections are unavailable
+        - grouped sections are still too large
+        - grouped lettered items are still too large
+        - preamble content needs subdivision
+
+        Design goal:
+        keep paragraph boundaries whenever possible, because paragraph
+        boundaries are usually safer semantic split points than raw
+        character slicing.
         """
         paragraphs = split_paragraphs(text)
         if not paragraphs:
@@ -366,11 +475,13 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
         for paragraph in paragraphs:
             candidate = "\n\n".join(current + [paragraph]).strip()
 
-            if (
+            should_flush = (
                 current
                 and len(candidate) > self.settings.target_chunk_chars
                 and len("\n\n".join(current)) >= self.settings.min_chunk_chars
-            ):
+            )
+
+            if should_flush:
                 groups.append("\n\n".join(current))
                 current = [paragraph]
             else:
@@ -379,16 +490,26 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
         if current:
             groups.append("\n\n".join(current))
 
-        # Merge a very small trailing paragraph group into the previous one.
+        # Merge a very small trailing paragraph group into the previous group.
         if len(groups) >= 2 and len(groups[-1]) < self.settings.min_chunk_chars:
             groups[-2] = f"{groups[-2]}\n\n{groups[-1]}".strip()
             groups.pop()
 
         return groups
 
-    def _article_metadata(self, node: StructuralNode) -> dict:
+    def _article_metadata(self, node: StructuralNode) -> Dict[str, Any]:
         """
-        Build rich article-level metadata without polluting the chunk text.
+        Build article-level metadata for chunk export.
+
+        Important:
+        metadata is the primary carrier of structural identity, while the
+        chunk text remains as clean as possible.
+
+        This allows downstream consumers to understand:
+        - which article the chunk came from
+        - the article number and title
+        - the parent structural container
+        - whether the content belongs to the regulation body or annexes
         """
         return {
             "node_type": node.node_type,
@@ -408,16 +529,21 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
         text: str,
         page_start: int | None,
         page_end: int | None,
-        metadata: dict,
+        metadata: Dict[str, Any],
     ) -> Chunk:
         """
-        Build a final chunk object.
+        Build a final Chunk object.
 
-        Chunk text is normalized, but metadata remains the main vehicle for:
-        - article identity
-        - parent structure
-        - source span type
-        - page range
+        Important:
+        - chunk text is normalized before export
+        - chunk ids remain stable and sequential
+        - metadata preserves source structure and source span type
+
+        The chunk id format is intentionally deterministic because it helps:
+        - JSON inspection
+        - DOCX inspection
+        - regression testing
+        - debugging across pipeline runs
         """
         return Chunk(
             chunk_id=f"{document_metadata.doc_id}_chunk_{sequence:04d}",
