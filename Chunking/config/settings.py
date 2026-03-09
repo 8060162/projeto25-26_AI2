@@ -23,15 +23,12 @@ class PipelineSettings:
     Central runtime configuration.
 
     This class intentionally keeps the knobs explicit and easy to tune.
-    You will likely adjust these values after the first inspection of the
-    generated chunk DOCX files.
+    You will likely adjust these values after inspection of the generated
+    chunk outputs and intermediate debug files.
     """
 
     # ---------------------------------------------------------
     # Input / Output folders
-    #
-    # These are now resolved relative to the project root so the
-    # pipeline works correctly on Windows, Linux, and macOS.
     # ---------------------------------------------------------
     raw_dir: Path = PROJECT_ROOT / "data" / "raw"
     output_dir: Path = PROJECT_ROOT / "data" / "chunks"
@@ -41,37 +38,40 @@ class PipelineSettings:
     #
     # Character-based splitting for now. This keeps the system
     # lightweight without introducing tokenizer dependencies.
-    #
-    # Later this can be upgraded to token-aware splitting.
     # ---------------------------------------------------------
     target_chunk_chars: int = 1800
     hard_max_chunk_chars: int = 2600
     min_chunk_chars: int = 350
+
+    # Reserved for future overlap-aware chunking strategies.
     overlap_chars: int = 180
 
     # ---------------------------------------------------------
     # Export options
-    #
-    # DOCX inspection files are extremely useful for validating
-    # chunk quality manually.
     # ---------------------------------------------------------
     export_docx: bool = True
     export_json: bool = True
     export_intermediate_text: bool = True
 
     # ---------------------------------------------------------
-    # Common repeated institutional phrases that often behave
-    # like layout noise (headers / footers).
-    #
-    # These are not always removed automatically, but are used
-    # as signals during normalization.
+    # Normalization / parsing heuristics
     # ---------------------------------------------------------
-    likely_noise_markers: List[str] = field(
+    repeated_line_max_chars: int = 120
+    toc_block_min_lines: int = 4
+    title_max_chars: int = 120
+    title_max_words: int = 14
+
+    # ---------------------------------------------------------
+    # Repeated institutional lines that may help identify
+    # headers / footers when combined with repetition logic.
+    #
+    # These are only hints, not direct drop rules.
+    # ---------------------------------------------------------
+    repeated_header_footer_hints: List[str] = field(
         default_factory=lambda: [
+            "INSTITUTO POLITÉCNICO DO PORTO",
             "POLITÉCNICO DO PORTO",
-            "P.PORTO",
-            "REGULAMENTO",
-            "DESPACHO",
+            "DIÁRIO DA REPÚBLICA",
         ]
     )
 
