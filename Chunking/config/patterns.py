@@ -1,14 +1,22 @@
 """
-Regex and text patterns used by the pipeline.
+Regex and text patterns shared across the pipeline.
 
-These patterns are intentionally centralized here so that the team can tune
-or extend them without needing to modify parsing or chunking code directly.
+Why this module exists
+----------------------
+These patterns are intentionally centralized here so the team can tune or
+extend common low-level behavior without editing multiple modules.
 
-Important design principle:
-this module should contain shared, low-level patterns only.
-Document-specific parsing rules that are tightly coupled to the legal
+Design principle
+----------------
+This module should contain only:
+- shared
+- generic
+- low-level
+patterns.
+
+Document-specific structural rules that are tightly coupled to the legal
 structure parser may still live inside the parser module when that keeps the
-logic clearer and more maintainable.
+logic clearer and safer.
 """
 
 from __future__ import annotations
@@ -38,13 +46,13 @@ MULTI_NEWLINE_RE = re.compile(r"\n{3,}")
 # Shared structural heading patterns
 # -------------------------------------------------------------------------
 #
-# These patterns are generic and intentionally broader than the stricter ones
-# used by the dedicated structure parser.
+# These patterns are intentionally broader than the stricter patterns used
+# inside the dedicated structure parser.
 #
 # They are useful for:
 # - exploratory preprocessing
-# - generic diagnostics
-# - lightweight structure detection in utilities
+# - diagnostics
+# - lightweight structural hints in utility code
 # -------------------------------------------------------------------------
 
 # Example matches:
@@ -52,6 +60,15 @@ MULTI_NEWLINE_RE = re.compile(r"\n{3,}")
 # "CAPITULO IV - Disposições Gerais"
 CHAPTER_RE = re.compile(
     r"^(CAP[IÍ]TULO\s+[IVXLCDM0-9]+)\s*(?:[-–—:]\s*)?(.*)$",
+    flags=re.IGNORECASE,
+)
+
+# Example matches:
+# "SECÇÃO I"
+# "SUBSECÇÃO II"
+# "TÍTULO III - Disposições Gerais"
+SECTION_CONTAINER_RE = re.compile(
+    r"^(SECÇÃO|SUBSECÇÃO|TÍTULO)\s+([IVXLCDM0-9A-Z]+)\s*(?:[-–—:]\s*)?(.*)$",
     flags=re.IGNORECASE,
 )
 
@@ -87,10 +104,16 @@ ANNEX_RE = re.compile(
 # "2."
 # "2.1."
 # "2.1"
+# "1)"
+# "1 -"
+# "1 —"
+# "n.º 1"
 #
 # This pattern is intentionally generic and line-based.
 NUMBERED_BLOCK_RE = re.compile(
-    r"(?m)^(\d+(?:\.\d+)*)\.?\s+",
+    r"(?m)^((?:n\.?\s*[ºo]\s*)?\d+(?:\.\d+)*)"
+    r"(?:\.\s+|\)\s+|\s+[—–\-]\s+|\s+)",
+    flags=re.IGNORECASE,
 )
 
 # Legal-style alíneas:
@@ -111,6 +134,11 @@ LETTER_ITEM_RE = re.compile(
 # It is only a lightweight shared hint pattern for modules that want a quick
 # signal that a line may belong to an index-like block.
 # -------------------------------------------------------------------------
+
+# Example matches:
+# "CAPÍTULO I ........ 3"
+# "ARTIGO 2 5"
+# "ANEXO A pág. 12"
 INDEX_HINT_RE = re.compile(
-    r"(?i)(cap[ií]tulo|artigo|anexo).{0,80}(p[aá]g|\b\d+\b)"
+    r"(?i)(cap[ií]tulo|secção|subsecção|título|artigo|anexo).{0,80}(p[aá]g|\b\d+\b)"
 )
