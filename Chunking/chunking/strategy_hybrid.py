@@ -12,18 +12,37 @@ class HybridChunkingStrategy(BaseChunkingStrategy):
     """
     Hybrid chunking strategy.
 
-    Decision principle:
+    Decision principle
+    ------------------
     - use the structure-first strategy when the parser produced a sufficiently
-      rich and trustworthy hierarchy inside the regulation body
+      rich and trustworthy hierarchy
     - fall back to the article-smart strategy when the parsed structure is
-      weaker, partial, or likely too shallow to justify aggressive
-      structure-first chunking
+      weaker, shallower, or likely too incomplete for strong structure-first
+      chunking
 
-    Why this strategy exists:
-    - some documents are highly regular and benefit from stricter
-      structure-preserving chunking
-    - others are only partially parsed and need a more resilient strategy
-      that still produces useful output
+    Why this strategy exists
+    ------------------------
+    Some documents are highly regular and benefit from stricter
+    structure-preserving chunking, while others are only partially parsed
+    and need a more forgiving strategy.
+
+    Design philosophy
+    -----------------
+    The hybrid strategy should remain pragmatic and lightweight:
+    - no expensive scoring system
+    - no dependency on external diagnostics
+    - but more intelligent than simple node counting
+
+    Compared with the previous implementation
+    -----------------------------------------
+    This version makes the decision using richer structural signals:
+    - total article count
+    - article title coverage
+    - number of articles with internal structure
+    - total internal structure volume
+    - presence of larger structural containers
+
+    This makes the hybrid strategy more robust on noisy or partially parsed PDFs.
     """
 
     name = "hybrid"
@@ -36,29 +55,62 @@ class HybridChunkingStrategy(BaseChunkingStrategy):
         """
         Choose the most suitable chunking strategy for the current document.
 
-        Heuristic overview:
-        - ARTICLE count tells us whether there is a stable legal backbone
-        - SECTION / LETTERED_ITEM counts tell us whether the parser captured
-          meaningful internal structure inside articles
-        - CHAPTER / ANNEX counts are weaker signals because they are useful
-          containers, but by themselves do not guarantee that article content
-          was segmented well enough for strict structure-first chunking
+        Heuristic overview
+        ------------------
+        We derive a few lightweight structural quality signals:
 
-        Selection logic:
-        - prefer structure-first when there is a good article backbone and:
-            * meaningful internal article structure exists, or
-            * container structure exists together with a larger article volume
-        - otherwise use article-smart, which is more forgiving and robust
+        1. Article backbone quality
+           A document needs a meaningful set of ARTICLE nodes to justify
+           structure-first chunking.
 
-        This makes the hybrid strategy safer on noisy PDFs:
-        it avoids choosing structure-first merely because a document contains
-        chapters or annexes, when internal article segmentation is still weak.
+        2. Internal structure coverage
+           We check whether a useful proportion of articles contains internal
+           structure such as SECTION or LETTERED_ITEM nodes.
+
+        3. Article title coverage
+           Good title coverage is a weak but useful signal that parsing quality
+           is reasonable.
+
+        4. Container structure
+           CHAPTER, ANNEX, and SECTION_CONTAINER nodes provide supporting
+           evidence, but they are weaker than article-internal structure.
+
+        Decision policy
+        ---------------
+        Prefer structure-first when:
+        - the document has a solid article backbone, and
+        - internal structure coverage is meaningful
+
+        Otherwise:
+        - use article-smart, which is more forgiving and resilient
+
+        Parameters
+        ----------
+        document_metadata : DocumentMetadata
+            Source document metadata.
+        root : StructuralNode
+            Parsed structural tree.
+
+        Returns
+        -------
+        List[Chunk]
+            Final chunk list built by the selected strategy.
         """
-        article_count = self._count_node_type(root, "ARTICLE")
+        articles = list(self._iter_nodes_by_type(root, "ARTICLE"))
+        article_count = len(articles)
+
         section_count = self._count_node_type(root, "SECTION")
         lettered_count = self._count_node_type(root, "LETTERED_ITEM")
         annex_count = self._count_node_type(root, "ANNEX")
         chapter_count = self._count_node_type(root, "CHAPTER")
+        section_container_count = self._count_node_type(root, "SECTION_CONTAINER")
+
+        titled_article_count = sum(1 for article in articles if (article.title or "").strip())
+        articles_with_internal_structure = sum(
+            1
+            for article in articles
+            if self._article_has_internal_structure(article)
+        )
 
         # -----------------------------------------------------------------
         # Signal 1:
@@ -68,55 +120,96 @@ class HybridChunkingStrategy(BaseChunkingStrategy):
         # Why threshold >= 3:
         # a couple of detected articles may still reflect weak parsing or
         # partial extraction. Three or more articles usually indicates that
-        # the parser found a meaningful legal structure.
+        # the parser found a meaningful legal backbone.
         # -----------------------------------------------------------------
         has_good_article_backbone = article_count >= 3
 
         # -----------------------------------------------------------------
         # Signal 2:
-        # determine whether the parser captured internal structure inside
-        # articles, such as numbered sections or legal alíneas.
+        # compute article title coverage.
         #
-        # These are the strongest signals for using structure-first because
-        # they directly support smaller and semantically coherent chunks.
+        # Why this matters:
+        # article titles are not mandatory for every document, but when the
+        # parser consistently captures them, it usually indicates healthier
+        # line boundaries and better structural recognition.
         # -----------------------------------------------------------------
-        has_internal_structure = (
+        article_title_coverage = (
+            titled_article_count / article_count
+            if article_count > 0
+            else 0.0
+        )
+
+        # -----------------------------------------------------------------
+        # Signal 3:
+        # compute article-level internal structure coverage.
+        #
+        # This is stronger than raw SECTION / LETTERED_ITEM counts because it
+        # asks a more useful question:
+        #
+        #   "How many articles actually benefited from internal parsing?"
+        #
+        # That is more meaningful than merely counting all structural nodes.
+        # -----------------------------------------------------------------
+        article_internal_structure_coverage = (
+            articles_with_internal_structure / article_count
+            if article_count > 0
+            else 0.0
+        )
+
+        # -----------------------------------------------------------------
+        # Signal 4:
+        # total internal structure volume.
+        #
+        # This remains useful as supporting evidence, especially for longer
+        # documents with many sectioned provisions.
+        # -----------------------------------------------------------------
+        has_meaningful_internal_structure_volume = (
             section_count >= 2
             or lettered_count >= 3
         )
 
         # -----------------------------------------------------------------
-        # Signal 3:
-        # determine whether the parser captured larger structural containers
-        # such as chapters or annexes.
+        # Signal 5:
+        # supporting container structure.
         #
-        # These are useful signals, but they are weaker than SECTION or
-        # LETTERED_ITEM detection because they do not necessarily mean the
-        # article body was segmented well.
+        # Containers are helpful, but weaker than article-internal structure.
+        # They should only push the decision toward structure-first when the
+        # rest of the tree already looks reasonably healthy.
         # -----------------------------------------------------------------
         has_container_structure = (
             annex_count >= 1
             or chapter_count >= 1
+            or section_container_count >= 1
         )
 
         # -----------------------------------------------------------------
-        # Final decision:
+        # Final decision policy
         #
-        # Use structure-first when:
-        # - the document clearly has an article backbone, and
+        # Prefer structure-first when:
+        # - article backbone is good, and
         # - either:
-        #   1) it has internal article structure, or
-        #   2) it has container structure and enough articles to justify
-        #      trusting the parsed hierarchy more strongly
+        #   1) internal structure coverage is meaningfully high, or
+        #   2) internal structure volume is present with decent title coverage,
+        #   3) or container structure exists together with larger article volume
         #
-        # The second branch is intentionally stricter because container-only
-        # structure is not enough on its own for small documents.
+        # Why these thresholds are intentionally moderate:
+        # the structure-first strategy should be chosen only when there is
+        # enough evidence that parser output is useful, but not so rarely that
+        # the hybrid strategy becomes pointless.
         # -----------------------------------------------------------------
         use_structure_first = (
             has_good_article_backbone
             and (
-                has_internal_structure
-                or (has_container_structure and article_count >= 6)
+                article_internal_structure_coverage >= 0.35
+                or (
+                    has_meaningful_internal_structure_volume
+                    and article_title_coverage >= 0.40
+                )
+                or (
+                    has_container_structure
+                    and article_count >= 6
+                    and article_title_coverage >= 0.30
+                )
             )
         )
 
@@ -131,13 +224,63 @@ class HybridChunkingStrategy(BaseChunkingStrategy):
             root,
         )
 
+    def _iter_nodes_by_type(
+        self,
+        node: StructuralNode,
+        node_type: str,
+    ) -> List[StructuralNode]:
+        """
+        Collect all nodes of a given type from the structural tree.
+
+        Why this helper exists
+        ----------------------
+        The hybrid decision needs more than raw counts. It also needs direct
+        access to ARTICLE nodes so it can inspect properties such as:
+        - whether the article has a title
+        - whether the article has internal structure
+
+        Parameters
+        ----------
+        node : StructuralNode
+            Current node.
+        node_type : str
+            Node type to collect.
+
+        Returns
+        -------
+        List[StructuralNode]
+            Matching nodes found recursively.
+        """
+        matches: List[StructuralNode] = []
+
+        if node.node_type == node_type:
+            matches.append(node)
+
+        for child in node.children:
+            matches.extend(self._iter_nodes_by_type(child, node_type))
+
+        return matches
+
     def _count_node_type(self, node: StructuralNode, node_type: str) -> int:
         """
         Recursively count how many nodes of a given type exist in the tree.
 
-        Why recursion is used:
-        parser output may vary in hierarchy depth, so counting only immediate
+        Why recursion is used
+        ---------------------
+        Parser output may vary in hierarchy depth, so counting only immediate
         children would be fragile and incomplete.
+
+        Parameters
+        ----------
+        node : StructuralNode
+            Current node.
+        node_type : str
+            Node type to count.
+
+        Returns
+        -------
+        int
+            Total count of matching nodes.
         """
         count = 1 if node.node_type == node_type else 0
 
@@ -145,3 +288,36 @@ class HybridChunkingStrategy(BaseChunkingStrategy):
             count += self._count_node_type(child, node_type)
 
         return count
+
+    def _article_has_internal_structure(self, article: StructuralNode) -> bool:
+        """
+        Decide whether an article has meaningful internal parsed structure.
+
+        Current definition
+        ------------------
+        An article is considered internally structured when it contains at least
+        one child of type:
+        - SECTION
+        - LETTERED_ITEM
+
+        Why this helper matters
+        -----------------------
+        The hybrid decision should not rely only on global SECTION and
+        LETTERED_ITEM counts. It is more useful to know how many articles
+        actually benefited from internal parsing.
+
+        Parameters
+        ----------
+        article : StructuralNode
+            Article node to inspect.
+
+        Returns
+        -------
+        bool
+            True when the article contains meaningful internal structure.
+        """
+        for child in article.children:
+            if child.node_type in {"SECTION", "LETTERED_ITEM"} and child.text.strip():
+                return True
+
+        return False
