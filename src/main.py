@@ -18,23 +18,3 @@ if __name__ == "__main__":
 
 
 
-
-##Chunking/extraction/pdf_reader.py
-
-#Chunking/cleaning/normalizer.py
-
-#Chunking/parsing/structure_parser.py
-
-#Chunking/chunking/models.py
-
-#Chunking/chunking/strategy_article_smart.py
-
-#Chunking/chunking/strategy_structure_first.py
-
-#Chunking/chunking/strategy_hybrid.py
-
-#Chunking/export/docx_exporter.py
-
-#Chunking/pipeline.py
-
-#ajustes finais em config/settings.py e config/patterns.py
