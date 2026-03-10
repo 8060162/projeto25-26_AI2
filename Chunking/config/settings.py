@@ -28,15 +28,29 @@ class PipelineSettings:
     """
     Central runtime configuration for the chunking pipeline.
 
-    Design goals:
+    Design goals
+    ------------
     - keep configuration explicit and easy to inspect
     - avoid magic numbers spread across multiple modules
     - support fast tuning after real output inspection
-    - provide settings that remain generic across legal/regulatory PDFs
+    - remain generic across legal / regulatory PDF corpora
+    - keep the current implementation lightweight and pragmatic
 
-    Important:
-    chunk sizes are currently character-based, not token-based.
-    This keeps the implementation lightweight and deterministic.
+    Important note
+    --------------
+    Chunk sizes are currently character-based, not token-based.
+
+    Why this is still acceptable for now
+    ------------------------------------
+    - it keeps the implementation deterministic
+    - it avoids adding tokenizer dependencies too early
+    - it is sufficient for the current iteration of the project
+
+    Future evolution
+    ----------------
+    If the team later wants tighter LLM-oriented control, these settings can
+    evolve toward token-based sizing without changing the overall pipeline
+    architecture.
     """
 
     # ---------------------------------------------------------------------
@@ -53,20 +67,21 @@ class PipelineSettings:
     # Chunk sizing configuration
     # ---------------------------------------------------------------------
     #
-    # Why these values:
+    # Why these values
+    # ----------------
     # - target_chunk_chars:
     #   preferred chunk size for semantically coherent retrieval units
     #
     # - hard_max_chunk_chars:
-    #   safety ceiling used when a structural unit becomes too large
+    #   hard safety ceiling used when a structural unit becomes too large
     #
     # - min_chunk_chars:
     #   avoids generating very small chunks with weak standalone meaning
     #
     # - overlap_chars:
-    #   reserved for strategies that may later support overlap-based fallback
+    #   reserved for future overlap-based fallback strategies
     #
-    # These values are intentionally conservative for legal documents:
+    # These defaults are intentionally conservative for legal documents:
     # large enough to preserve context, but small enough to remain retrievable.
     # ---------------------------------------------------------------------
     target_chunk_chars: int = 1800
@@ -75,54 +90,105 @@ class PipelineSettings:
     overlap_chars: int = 180
 
     # ---------------------------------------------------------------------
-    # Structural parsing / chunking behavior
+    # Repeated-line detection behavior
     # ---------------------------------------------------------------------
     #
-    # These switches help the pipeline remain explicit and tunable without
-    # requiring code changes in parser or strategy modules.
+    # These settings support page-furniture removal such as repeated headers
+    # and footers. The current normalizer focuses repeated-line detection on
+    # page margins to reduce accidental removal of valid body text.
     # ---------------------------------------------------------------------
 
-    # Minimum number of repeated page occurrences required for a short line
-    # to be considered likely header/footer noise.
+    # Minimum number of page occurrences required before a short line can be
+    # considered repeated layout furniture.
     repeated_line_min_occurrences: int = 2
 
-    # Fraction of document pages in which a short line must appear before it
-    # is considered repeated layout noise.
+    # Minimum page-ratio threshold for repeated layout furniture.
     #
     # Example:
     # 0.5 means "appears in at least half the pages".
     repeated_line_min_page_ratio: float = 0.5
 
-    # Maximum length of a line considered eligible for repeated-noise
-    # detection. This protects real long content from accidental removal.
+    # Maximum line length eligible for repeated-line detection.
+    # This helps protect real long content from accidental removal.
     repeated_line_max_chars: int = 120
 
-    # Minimum number of consecutive TOC-like lines required before a block is
-    # removed as a probable index/table-of-contents block.
+    # Number of top / bottom non-empty lines inspected per page when looking
+    # for repeated page furniture.
+    repeated_line_margin_window: int = 4
+
+    # ---------------------------------------------------------------------
+    # Table-of-contents / front-matter cleanup behavior
+    # ---------------------------------------------------------------------
+    #
+    # These settings help the normalizer remain explicit and tunable without
+    # requiring code changes in cleanup logic.
+    # ---------------------------------------------------------------------
+
+    # Minimum number of consecutive TOC-like lines before a candidate block is
+    # considered a probable index / table-of-contents block.
     toc_block_min_lines: int = 4
 
-    # Maximum number of title lines consumed after a chapter header.
+    # Maximum number of early pages where aggressive TOC cleanup is allowed.
+    # This protects later legitimate structural content from being removed.
+    max_toc_scan_pages: int = 5
+
+    # ---------------------------------------------------------------------
+    # Title-consumption behavior
+    # ---------------------------------------------------------------------
+    #
+    # These values are used when the parser consumes title lines immediately
+    # following structural headers.
+    # ---------------------------------------------------------------------
     max_chapter_title_lines: int = 2
-
-    # Maximum number of title lines consumed after an annex header.
     max_annex_title_lines: int = 3
-
-    # Maximum number of title lines consumed after an article header.
     max_article_title_lines: int = 2
+    max_section_container_title_lines: int = 2
+
+    # ---------------------------------------------------------------------
+    # Strategy execution behavior
+    # ---------------------------------------------------------------------
+    #
+    # These flags are useful for future tuning and explicit pipeline behavior.
+    # Even when not fully used everywhere yet, keeping them here makes the
+    # intended execution model clearer.
+    # ---------------------------------------------------------------------
+
+    # Allow the CLI to run all strategies in a single execution.
+    allow_all_strategies: bool = True
 
     # ---------------------------------------------------------------------
     # Export options
     # ---------------------------------------------------------------------
     #
-    # DOCX inspection files are extremely useful for validating:
+    # Inspection files are extremely useful for validating:
     # - chunk boundaries
     # - metadata quality
     # - parser decisions
     # - normalization side effects
+    # - strategy comparison
     # ---------------------------------------------------------------------
     export_docx: bool = True
     export_json: bool = True
     export_intermediate_text: bool = True
+
+    # Export an additional lightweight JSON quality summary for each
+    # document/strategy run.
+    export_quality_summary: bool = True
+
+    # ---------------------------------------------------------------------
+    # Chunk enrichment behavior
+    # ---------------------------------------------------------------------
+    #
+    # These settings reflect the newer chunk model that supports both:
+    # - visible text
+    # - text enriched for embeddings
+    # ---------------------------------------------------------------------
+
+    # Include structure-enriched text_for_embedding in the final chunk model.
+    include_text_for_embedding: bool = True
+
+    # Link neighboring chunks using prev_chunk_id / next_chunk_id.
+    enable_chunk_neighbor_links: bool = True
 
     # ---------------------------------------------------------------------
     # Noise markers
@@ -131,8 +197,9 @@ class PipelineSettings:
     # Common institutional phrases that often behave like layout noise
     # (headers / footers / cover furniture).
     #
-    # These markers are not automatically removed by themselves, but they are
-    # useful signals for heuristics and future tuning.
+    # Important:
+    # these markers should be treated as weak signals only, not as automatic
+    # deletion rules by themselves.
     # ---------------------------------------------------------------------
     likely_noise_markers: List[str] = field(
         default_factory=lambda: [
@@ -140,6 +207,8 @@ class PipelineSettings:
             "P.PORTO",
             "REGULAMENTO",
             "DESPACHO",
+            "DIÁRIO DA REPÚBLICA",
+            "ÍNDICE",
         ]
     )
 
