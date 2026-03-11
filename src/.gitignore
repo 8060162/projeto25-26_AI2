@@ -1,1 +1,33 @@
 .env
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Ignore all __pycache__ folders anywhere
+**/__pycache__/
+
+# Ignore compiled python files
+*.pyc
+*.pyo
+*.pyd
+
+# Data artifacts
+../data/chunks/
+
+# Optional: ignore all generated data
+../data/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
