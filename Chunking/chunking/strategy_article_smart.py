@@ -228,7 +228,7 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
 
                     group_labels = [section.label for section in group]
                     hierarchy_path = self._merge_hierarchy_path(
-                        article.hierarchy_path,
+                        getattr(article, "hierarchy_path", []),
                         [f"SECTION:{label}" for label in group_labels],
                     )
 
@@ -312,7 +312,7 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
 
                     group_labels = [item.label for item in group]
                     hierarchy_path = self._merge_hierarchy_path(
-                        article.hierarchy_path,
+                        getattr(article, "hierarchy_path", []),
                         [f"LETTERED_ITEM:{label}" for label in group_labels],
                     )
 
@@ -794,7 +794,27 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
             Final chunk object ready for export.
         """
         visible_text = normalize_block_whitespace(text)
-        effective_hierarchy_path = hierarchy_path or list(source_node.hierarchy_path)
+
+        if not visible_text:
+            return Chunk(
+                chunk_id=f"{document_metadata.doc_id}_chunk_{sequence:04d}",
+                doc_id=document_metadata.doc_id,
+                strategy=self.name,
+                text="",
+                text_for_embedding="",
+                page_start=page_start,
+                page_end=page_end,
+                source_node_type=getattr(source_node, "node_type", ""),
+                source_node_label=getattr(source_node, "label", ""),
+                hierarchy_path=list(hierarchy_path or getattr(source_node, "hierarchy_path", [])),
+                chunk_reason=chunk_reason,
+                char_count=0,
+                metadata=metadata,
+            )
+
+        effective_hierarchy_path = list(
+            hierarchy_path or getattr(source_node, "hierarchy_path", [])
+        )
 
         return Chunk(
             chunk_id=f"{document_metadata.doc_id}_chunk_{sequence:04d}",
@@ -807,8 +827,8 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
             ),
             page_start=page_start,
             page_end=page_end,
-            source_node_type=source_node.node_type,
-            source_node_label=source_node.label,
+            source_node_type=getattr(source_node, "node_type", ""),
+            source_node_label=getattr(source_node, "label", ""),
             hierarchy_path=effective_hierarchy_path,
             chunk_reason=chunk_reason,
             char_count=len(visible_text),
