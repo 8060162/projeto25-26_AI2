@@ -118,6 +118,22 @@ class StructureParser:
     articles, titles, numbered sections, and lettered items.
     """
 
+    def __init__(self) -> None:
+        """
+        Initialize the parser state.
+
+        Why this exists
+        ---------------
+        The parser now creates explicit structural identity metadata such as:
+        - node_id
+        - parent_node_id
+        - hierarchy_path
+
+        Keeping an internal counter makes those identifiers stable within one
+        parsing run and easy to inspect in JSON outputs.
+        """
+        self._node_sequence = 0
+
     def parse(self, pages_text: List[tuple[int, str]]) -> StructuralNode:
         """
         Parse normalized page text into a structural tree.
@@ -145,18 +161,41 @@ class StructureParser:
         - Articles are attached to the current structural container.
         - ARTICLE.text remains canonical fallback text even when SECTION and
           LETTERED_ITEM children are later derived from it.
+
+        Parameters
+        ----------
+        pages_text : List[tuple[int, str]]
+            Ordered list of page_number/page_text pairs.
+
+        Returns
+        -------
+        StructuralNode
+            Root DOCUMENT node containing the parsed tree.
         """
-        root = StructuralNode(
+        root = self._make_node(
             node_type="DOCUMENT",
             label="DOCUMENT",
+            title="",
+            text="",
+            page_start=None,
+            page_end=None,
             metadata={
                 "document_part": "regulation_body",
             },
+            parent=None,
         )
 
         lines = self._collect_lines(pages_text)
 
-        current_container: StructuralNode = root
+        # Container stack design
+        # ----------------------
+        # The stack always keeps currently active structural containers.
+        # Example:
+        #   DOCUMENT -> CHAPTER -> SECTION_CONTAINER
+        #
+        # ARTICLE nodes are NOT kept in this stack because body text routing
+        # already tracks them separately through current_article.
+        container_stack: List[StructuralNode] = [root]
         current_article: Optional[StructuralNode] = None
 
         pre_article_lines: List[Tuple[int, str]] = []
@@ -182,20 +221,26 @@ class StructureParser:
 
                 chapter_title = inline_title or consumed_title
 
-                chapter_node = StructuralNode(
+                # Chapters live directly under the root document.
+                container_stack = [root]
+                current_parent = container_stack[-1]
+
+                chapter_node = self._make_node(
                     node_type="CHAPTER",
                     label=f"CAP_{chapter_number}",
                     title=chapter_title,
+                    text="",
                     page_start=page_number,
                     page_end=page_number,
                     metadata={
                         "chapter_number": chapter_number,
                         "document_part": "regulation_body",
                     },
+                    parent=current_parent,
                 )
 
-                root.children.append(chapter_node)
-                current_container = chapter_node
+                current_parent.children.append(chapter_node)
+                container_stack.append(chapter_node)
                 current_article = None
                 index = next_index
                 continue
@@ -208,7 +253,7 @@ class StructureParser:
             # - SUBSECÇÃO II
             # - TÍTULO III
             #
-            # We attach them below the current container when possible.
+            # We attach them below the nearest suitable non-article container.
             # ---------------------------------------------------------
             section_container_match = SECTION_CONTAINER_RE.match(line)
             if section_container_match:
@@ -224,27 +269,35 @@ class StructureParser:
 
                 container_title = inline_title or consumed_title
 
-                container_node = StructuralNode(
+                # Nested container policy
+                # -----------------------
+                # A new SECTION_CONTAINER should attach to the nearest
+                # non-article container currently active.
+                current_parent = container_stack[-1]
+
+                container_node = self._make_node(
                     node_type="SECTION_CONTAINER",
                     label=f"{container_type}_{container_number}",
                     title=container_title,
+                    text="",
                     page_start=page_number,
                     page_end=page_number,
                     metadata={
                         "container_type": container_type,
                         "container_number": container_number,
-                        "document_part": current_container.metadata.get(
+                        "document_part": current_parent.metadata.get(
                             "document_part",
                             "regulation_body",
                         ),
-                        "parent_type": current_container.node_type,
-                        "parent_label": current_container.label,
-                        "parent_title": current_container.title,
+                        "parent_type": current_parent.node_type,
+                        "parent_label": current_parent.label,
+                        "parent_title": current_parent.title,
                     },
+                    parent=current_parent,
                 )
 
-                current_container.children.append(container_node)
-                current_container = container_node
+                current_parent.children.append(container_node)
+                container_stack.append(container_node)
                 current_article = None
                 index = next_index
                 continue
@@ -265,19 +318,25 @@ class StructureParser:
 
                 annex_title = inline_title or consumed_title
 
-                annex_node = StructuralNode(
+                # Annexes attach directly to the root document.
+                container_stack = [root]
+                current_parent = container_stack[-1]
+
+                annex_node = self._make_node(
                     node_type="ANNEX",
                     label=annex_label,
                     title=annex_title,
+                    text="",
                     page_start=page_number,
                     page_end=page_number,
                     metadata={
                         "document_part": "regulation_annex",
                     },
+                    parent=current_parent,
                 )
 
-                root.children.append(annex_node)
-                current_container = annex_node
+                current_parent.children.append(annex_node)
+                container_stack.append(annex_node)
                 current_article = None
                 index = next_index
                 continue
@@ -302,27 +361,30 @@ class StructureParser:
                 )
 
                 article_title = inline_title or consumed_title
+                current_parent = container_stack[-1]
 
-                current_article = StructuralNode(
+                current_article = self._make_node(
                     node_type="ARTICLE",
                     label=f"ART_{article_number}",
                     title=article_title,
+                    text="",
                     page_start=page_number,
                     page_end=page_number,
                     metadata={
                         "article_number": article_number,
                         "article_title": article_title,
-                        "parent_type": current_container.node_type,
-                        "parent_label": current_container.label,
-                        "parent_title": current_container.title,
-                        "document_part": current_container.metadata.get(
+                        "parent_type": current_parent.node_type,
+                        "parent_label": current_parent.label,
+                        "parent_title": current_parent.title,
+                        "document_part": current_parent.metadata.get(
                             "document_part",
                             "regulation_body",
                         ),
                     },
+                    parent=current_parent,
                 )
 
-                current_container.children.append(current_article)
+                current_parent.children.append(current_article)
                 index = next_index
                 continue
 
@@ -336,7 +398,7 @@ class StructureParser:
 
             # After the first article, free text is attached to the current
             # article when one is active; otherwise to the current container.
-            target = current_article or current_container
+            target = current_article or container_stack[-1]
             self._append_text_to_node(
                 node=target,
                 line=line,
@@ -361,6 +423,16 @@ class StructureParser:
         - page_end
         - child-derived page ranges
         - chunk metadata traceability
+
+        Parameters
+        ----------
+        pages_text : List[Tuple[int, str]]
+            Page tuples from the normalization stage.
+
+        Returns
+        -------
+        List[Tuple[int, str]]
+            Ordered flattened line tuples.
         """
         lines: List[Tuple[int, str]] = []
 
@@ -383,21 +455,28 @@ class StructureParser:
 
         Why this helper exists
         ----------------------
-        The previous implementation treated everything before the first article
-        as PREAMBLE. That produced poor results on real PDFs because opening
-        pages often contain:
+        Earlier implementations often treated everything before the first
+        article as PREAMBLE. That behaves poorly on real PDFs because opening
+        pages frequently contain:
         - cover/title material
         - dispatch headers
         - institutional branding
         - index/table-of-contents material
 
-        Those regions are not equivalent to real normative preamble prose.
+        Those regions are not equivalent to genuine normative preamble prose.
 
         Current strategy
         ----------------
         - classify obvious front-matter lines using lightweight heuristics
         - preserve the remaining prose as PREAMBLE
         - keep both nodes separate for downstream chunking and filtering
+
+        Parameters
+        ----------
+        root : StructuralNode
+            Root DOCUMENT node.
+        pre_article_lines : List[Tuple[int, str]]
+            All lines seen before the first detected article.
         """
         if not pre_article_lines:
             return
@@ -416,38 +495,41 @@ class StructureParser:
                 "\n".join(line for _, line in front_lines)
             )
             if front_text:
-                root.children.append(
-                    StructuralNode(
-                        node_type="FRONT_MATTER",
-                        label="FRONT_MATTER",
-                        title="",
-                        text=front_text,
-                        page_start=front_lines[0][0],
-                        page_end=front_lines[-1][0],
-                        metadata={
-                            "document_part": "front_matter",
-                        },
-                    )
+                front_node = self._make_node(
+                    node_type="FRONT_MATTER",
+                    label="FRONT_MATTER",
+                    title="",
+                    text=front_text,
+                    page_start=front_lines[0][0],
+                    page_end=front_lines[-1][0],
+                    metadata={
+                        "document_part": "front_matter",
+                    },
+                    parent=root,
                 )
+                root.children.insert(0, front_node)
 
         if preamble_lines:
             preamble_text = self._normalize_node_text(
                 "\n".join(line for _, line in preamble_lines)
             )
             if preamble_text:
-                root.children.append(
-                    StructuralNode(
-                        node_type="PREAMBLE",
-                        label="PREAMBLE",
-                        title="",
-                        text=preamble_text,
-                        page_start=preamble_lines[0][0],
-                        page_end=preamble_lines[-1][0],
-                        metadata={
-                            "document_part": "dispatch_or_intro",
-                        },
-                    )
+                preamble_node = self._make_node(
+                    node_type="PREAMBLE",
+                    label="PREAMBLE",
+                    title="",
+                    text=preamble_text,
+                    page_start=preamble_lines[0][0],
+                    page_end=preamble_lines[-1][0],
+                    metadata={
+                        "document_part": "dispatch_or_intro",
+                    },
+                    parent=root,
                 )
+
+                # Keep PREAMBLE after FRONT_MATTER when both exist.
+                insert_index = 1 if root.children and root.children[0].node_type == "FRONT_MATTER" else 0
+                root.children.insert(insert_index, preamble_node)
 
     def _looks_like_front_matter_line(self, line: str) -> bool:
         """
@@ -463,9 +545,19 @@ class StructureParser:
 
         Safety philosophy
         -----------------
-        This heuristic should remain lightweight. It is better to leave some
-        front matter inside PREAMBLE than to aggressively remove genuine
-        introductory prose.
+        This heuristic should remain lightweight.
+        It is better to leave some front matter inside PREAMBLE than to
+        aggressively reclassify genuine introductory prose.
+
+        Parameters
+        ----------
+        line : str
+            Candidate line.
+
+        Returns
+        -------
+        bool
+            True when the line looks like front matter.
         """
         if not line:
             return False
@@ -501,6 +593,20 @@ class StructureParser:
         -------------------------
         The logic remains conservative to avoid swallowing the first body
         sentence into metadata.
+
+        Parameters
+        ----------
+        lines : List[Tuple[int, str]]
+            Full flattened line stream.
+        start_index : int
+            Starting index after the structural marker.
+        max_lines : int
+            Maximum number of title lines to consume.
+
+        Returns
+        -------
+        Tuple[str, int]
+            Consumed title text and the next unread index.
         """
         collected: List[str] = []
         index = start_index
@@ -541,6 +647,18 @@ class StructureParser:
         -----------------
         Title detection must remain conservative. A missed title is preferable
         to swallowing normative prose into metadata.
+
+        Parameters
+        ----------
+        line : str
+            Candidate line.
+        collected_count : int, default=0
+            How many title lines have already been consumed.
+
+        Returns
+        -------
+        bool
+            True when the line looks title-like.
         """
         if not line:
             return False
@@ -623,6 +741,15 @@ class StructureParser:
         ----------------------
         It keeps node text accumulation and page-range tracking centralized and
         predictable.
+
+        Parameters
+        ----------
+        node : StructuralNode
+            Target node.
+        line : str
+            Line to append.
+        page_number : int
+            Source page number.
         """
         if node.page_start is None:
             node.page_start = page_number
@@ -647,6 +774,11 @@ class StructureParser:
         ARTICLE nodes keep their full canonical text even after SECTION or
         LETTERED_ITEM children are extracted. This is intentional because the
         chunking layer may still need the full article text as a fallback.
+
+        Parameters
+        ----------
+        node : StructuralNode
+            Current node in recursive traversal.
         """
         if node.text:
             node.text = self._normalize_node_text(node.text)
@@ -687,6 +819,16 @@ class StructureParser:
         The parser still benefits from newline structure, and downstream
         chunking may also rely on retained line boundaries. Therefore
         aggressive flattening does not belong here.
+
+        Parameters
+        ----------
+        text : str
+            Raw node text.
+
+        Returns
+        -------
+        str
+            Conservatively normalized text.
         """
         text = text.strip()
         text = re.sub(r"[ \t]+", " ", text)
@@ -713,6 +855,16 @@ class StructureParser:
         -------------------------
         This method rejects weak or implausible matches so that ordinary body
         lines beginning with numbers are not mistaken for structural sections.
+
+        Parameters
+        ----------
+        article : StructuralNode
+            Article node whose text should be inspected.
+
+        Returns
+        -------
+        List[StructuralNode]
+            Derived SECTION nodes.
         """
         text = article.text.strip()
         if not text:
@@ -740,25 +892,26 @@ class StructureParser:
             )
             block_text = text[start:end].strip()
 
-            children.append(
-                StructuralNode(
-                    node_type="SECTION",
-                    label=normalized_label,
-                    title="",
-                    text=self._normalize_node_text(block_text),
-                    page_start=article.page_start,
-                    page_end=article.page_end,
-                    metadata={
-                        "article_label": article.label,
-                        "article_number": article.metadata.get("article_number"),
-                        "article_title": article.title,
-                        "document_part": article.metadata.get("document_part"),
-                        "parent_type": "ARTICLE",
-                        "parent_label": article.label,
-                        "raw_section_label": raw_label,
-                    },
-                )
+            section_node = self._make_node(
+                node_type="SECTION",
+                label=normalized_label,
+                title="",
+                text=self._normalize_node_text(block_text),
+                page_start=article.page_start,
+                page_end=article.page_end,
+                metadata={
+                    "article_label": article.label,
+                    "article_number": article.metadata.get("article_number"),
+                    "article_title": article.title,
+                    "document_part": article.metadata.get("document_part"),
+                    "parent_type": "ARTICLE",
+                    "parent_label": article.label,
+                    "raw_section_label": raw_label,
+                },
+                parent=article,
             )
+
+            children.append(section_node)
 
         return children
 
@@ -777,6 +930,16 @@ class StructureParser:
         Legal documents often express section labels using "n.º" notation.
         For plausibility checks and metadata consistency, we normalize those
         labels into their numeric core.
+
+        Parameters
+        ----------
+        label : str
+            Raw regex label.
+
+        Returns
+        -------
+        str
+            Normalized numeric label.
         """
         cleaned = re.sub(r"(?i)^n\.?\s*[ºo]\s*", "", label).strip()
         cleaned = re.sub(r"\s+", "", cleaned)
@@ -800,6 +963,16 @@ class StructureParser:
         - labels should form a plausible increasing sequence
         - simple numeric labels such as 1, 2, 3 are strongly preferred
         - decimal labels such as 2.1, 2.2 are accepted when coherent
+
+        Parameters
+        ----------
+        labels : List[str]
+            Normalized numeric labels.
+
+        Returns
+        -------
+        bool
+            True when the sequence looks structurally plausible.
         """
         if len(labels) < 2:
             return False
@@ -847,6 +1020,18 @@ class StructureParser:
         - 2   -> 60
         - 2.1 -> 24
         - 3.1 -> 9.7
+
+        Parameters
+        ----------
+        previous_parts : List[int]
+            Previous numeric label split into integer components.
+        current_parts : List[int]
+            Current numeric label split into integer components.
+
+        Returns
+        -------
+        bool
+            True when the transition looks structurally valid.
         """
         if len(previous_parts) == len(current_parts):
             if previous_parts[:-1] == current_parts[:-1]:
@@ -881,6 +1066,16 @@ class StructureParser:
         Even when lettered items do not become standalone chunks immediately,
         preserving them as explicit structure improves metadata quality and
         future chunking flexibility.
+
+        Parameters
+        ----------
+        node : StructuralNode
+            ARTICLE or SECTION node to inspect.
+
+        Returns
+        -------
+        List[StructuralNode]
+            Derived LETTERED_ITEM nodes.
         """
         text = node.text.strip()
         if not text:
@@ -902,29 +1097,97 @@ class StructureParser:
             )
             block_text = text[start:end].strip()
 
-            children.append(
-                StructuralNode(
-                    node_type="LETTERED_ITEM",
-                    label=label,
-                    title="",
-                    text=self._normalize_node_text(block_text),
-                    page_start=node.page_start,
-                    page_end=node.page_end,
-                    metadata={
-                        "parent_type": node.node_type,
-                        "parent_label": node.label,
-                        "document_part": node.metadata.get("document_part"),
-                        "article_label": node.metadata.get(
-                            "article_label",
-                            node.label if node.node_type == "ARTICLE" else None,
-                        ),
-                        "article_number": node.metadata.get("article_number"),
-                        "article_title": node.metadata.get(
-                            "article_title",
-                            node.title,
-                        ),
-                    },
-                )
+            lettered_node = self._make_node(
+                node_type="LETTERED_ITEM",
+                label=label,
+                title="",
+                text=self._normalize_node_text(block_text),
+                page_start=node.page_start,
+                page_end=node.page_end,
+                metadata={
+                    "parent_type": node.node_type,
+                    "parent_label": node.label,
+                    "document_part": node.metadata.get("document_part"),
+                    "article_label": node.metadata.get(
+                        "article_label",
+                        node.label if node.node_type == "ARTICLE" else None,
+                    ),
+                    "article_number": node.metadata.get("article_number"),
+                    "article_title": node.metadata.get(
+                        "article_title",
+                        node.title,
+                    ),
+                },
+                parent=node,
             )
 
+            children.append(lettered_node)
+
         return children
+
+    def _make_node(
+        self,
+        node_type: str,
+        label: str,
+        title: str,
+        text: str,
+        page_start: Optional[int],
+        page_end: Optional[int],
+        metadata: dict,
+        parent: Optional[StructuralNode],
+    ) -> StructuralNode:
+        """
+        Create one StructuralNode with explicit structural identity fields.
+
+        Why this helper exists
+        ----------------------
+        The project now benefits from richer structural traceability:
+        - stable node identifiers
+        - explicit parent linkage
+        - hierarchy paths for downstream chunking and debugging
+
+        Parameters
+        ----------
+        node_type : str
+            Node type such as DOCUMENT, CHAPTER, ARTICLE, SECTION.
+        label : str
+            Human-readable structural label.
+        title : str
+            Optional title.
+        text : str
+            Optional node text.
+        page_start : Optional[int]
+            Starting page.
+        page_end : Optional[int]
+            Ending page.
+        metadata : dict
+            Arbitrary node metadata.
+        parent : Optional[StructuralNode]
+            Parent node, if any.
+
+        Returns
+        -------
+        StructuralNode
+            Newly created node.
+        """
+        self._node_sequence += 1
+        node_id = f"node_{self._node_sequence:05d}"
+
+        parent_node_id = parent.node_id if parent else None
+
+        hierarchy_path = list(parent.hierarchy_path) if parent else []
+        hierarchy_path.append(f"{node_type}:{label}")
+
+        return StructuralNode(
+            node_type=node_type,
+            label=label,
+            title=title,
+            text=text,
+            page_start=page_start,
+            page_end=page_end,
+            node_id=node_id,
+            parent_node_id=parent_node_id,
+            hierarchy_path=hierarchy_path,
+            metadata=metadata,
+            children=[],
+        )
