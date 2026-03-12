@@ -46,6 +46,14 @@ LEADING_PAGE_MARKER_RE = re.compile(r"^\s*Pág\.\s*\d+\s*", re.IGNORECASE)
 # These are classic page counters extracted from PDF footers / headers.
 INLINE_PAGE_COUNTER_RE = re.compile(r"^\s*\d+\s*\|\s*\d+\s*$")
 
+# Detect page counters even when surrounded by a little surrounding noise.
+#
+# Example:
+# "3|14 "
+# " 3 | 14"
+# "Página 3|14" should NOT match here because that may carry real text.
+LOOSE_PAGE_COUNTER_RE = re.compile(r"^\s*\d+\s*\|\s*\d+\s*[\-–—.]?\s*$")
+
 # Example:
 # "316552597"
 #
@@ -68,6 +76,12 @@ SIGNATURE_LINE_RE = re.compile(
 # normative body content.
 COVER_NOISE_RE = re.compile(
     r"^\s*(DESPACHO\s+P\.PORTO\/P-|REGULAMENTO\s+P\.PORTO\/P-)\S*",
+    re.IGNORECASE,
+)
+
+# Common institutional banner-like lines that often behave as repeated headers.
+INSTITUTIONAL_BANNER_RE = re.compile(
+    r"^\s*(POLIT[ÉE]CNICO\s+DO\s+PORTO|P\.PORTO)\s*$",
     re.IGNORECASE,
 )
 
@@ -129,6 +143,22 @@ PROSE_START_RE = re.compile(
 # Detect line endings that usually indicate completed sentences / boundaries.
 HARD_LINE_END_RE = re.compile(r"[.;:!?]$")
 
+# Detect lines that are almost entirely symbolic and therefore suspicious.
+#
+# This is intentionally conservative and only targets obvious garbage.
+MOSTLY_SYMBOLIC_RE = re.compile(r"^[^\wÀ-ÿ]{6,}$")
+
+# Detect highly suspicious garbled-looking lines.
+#
+# Example:
+# "*+,-*-.-/-1/2*-34+*4/-5/-1/6-/"
+#
+# We do not use this to judge whole-page extraction quality here.
+# We only use it to remove clearly unusable individual lines.
+SUSPICIOUS_GARBLED_LINE_RE = re.compile(
+    r"^[^A-Za-zÀ-ÿ]{0,3}(?:[\*\+\-/=<>\\\[\]\{\}_`~]{2,}|[0-9\W]{12,})$"
+)
+
 
 @dataclass(slots=True)
 class NormalizedDocument:
@@ -170,10 +200,14 @@ class TextNormalizer:
     3. Repair only obvious extraction artifacts
        We do not aggressively flatten the text here.
 
-    4. Be more careful with repeated-line detection
+    4. Be careful with repeated-line detection
        Repeated lines are often headers / footers, but legal text may also
        repeat legitimate phrases. Therefore repeated-line heuristics should
        focus mainly on page margins rather than the full body.
+
+    5. Remove only obviously unusable line-level garbage
+       If a line looks severely corrupted or purely decorative, it should not
+       survive into chunk text.
     """
 
     # Only consider a small top / bottom window of each page when detecting
@@ -308,12 +342,20 @@ class TextNormalizer:
         if INLINE_PAGE_COUNTER_RE.match(line):
             return None, "inline_page_counter"
 
+        # Remove slightly noisier page counter variants.
+        if LOOSE_PAGE_COUNTER_RE.match(line):
+            return None, "loose_page_counter"
+
         # Remove long numeric publication/layout tails.
         if PURE_NUMERIC_NOISE_RE.match(line):
             return None, "trailing_numeric_code"
 
+        # Remove purely institutional banner lines.
+        if INSTITUTIONAL_BANNER_RE.match(line):
+            return None, "institutional_banner"
+
         # Remove pure Diário da República editorial lines.
-        if DR_EDITORIAL_RE.match(line) and len(line) <= 140:
+        if DR_EDITORIAL_RE.match(line) and len(line) <= 160:
             return None, "dr_editorial_line"
 
         # Remove signature metadata from body text.
@@ -321,8 +363,20 @@ class TextNormalizer:
             return None, "signature_line"
 
         # Remove obvious decorative cover lines.
-        if COVER_NOISE_RE.match(line) and len(line) <= 140:
+        if COVER_NOISE_RE.match(line) and len(line) <= 160:
             return None, "cover_line"
+
+        # Remove clearly unusable symbolic garbage lines.
+        if MOSTLY_SYMBOLIC_RE.match(line):
+            return None, "mostly_symbolic_line"
+
+        # Remove strongly suspicious garbled lines.
+        #
+        # Important:
+        # this is intentionally conservative. We only remove obvious line-level
+        # garbage, not whole-page extraction failures.
+        if self._looks_like_garbled_line(line):
+            return None, "garbled_line"
 
         # Remove repeated page furniture lines.
         #
@@ -387,7 +441,7 @@ class TextNormalizer:
                     continue
 
                 # Only short lines are eligible as repeated page furniture.
-                if len(line) <= 120:
+                if len(line) <= 140:
                     counter[line] += 1
 
         # Use a conservative threshold:
@@ -395,10 +449,18 @@ class TextNormalizer:
         # - at least half the pages for larger documents
         threshold = max(2, total_pages // 2)
 
-        return {
+        repeated = {
             line
             for line, count in counter.items()
             if count >= threshold
+        }
+
+        # Additional safeguard:
+        # ignore repeated lines that look too content-heavy or too long.
+        return {
+            line
+            for line in repeated
+            if len(line.split()) <= 12
         }
 
     def _margin_lines(self, lines: List[str]) -> List[str]:
@@ -745,6 +807,58 @@ class TextNormalizer:
             or NUMBERED_ITEM_RE.match(line)
             or LETTERED_ITEM_RE.match(line)
         )
+
+    def _looks_like_garbled_line(self, line: str) -> bool:
+        """
+        Decide whether a single line looks clearly corrupted or non-linguistic.
+
+        Why this helper exists
+        ----------------------
+        Some problematic PDFs produce isolated lines that are obviously unusable,
+        even when the whole document is not handled through OCR fallback.
+
+        Important safety note
+        ---------------------
+        This helper must remain conservative.
+        We only drop lines that look strongly suspicious at line level.
+
+        Parameters
+        ----------
+        line : str
+            Candidate line.
+
+        Returns
+        -------
+        bool
+            True when the line looks clearly garbled.
+        """
+        if not line:
+            return False
+
+        if len(line) < 10:
+            return False
+
+        if SUSPICIOUS_GARBLED_LINE_RE.match(line):
+            return True
+
+        total_len = len(line)
+        alpha_count = sum(1 for ch in line if ch.isalpha())
+        whitespace_count = sum(1 for ch in line if ch.isspace())
+        symbol_like_count = sum(
+            1
+            for ch in line
+            if not ch.isalnum() and not ch.isspace()
+        )
+
+        alpha_ratio = alpha_count / max(total_len, 1)
+        symbol_ratio = symbol_like_count / max(total_len, 1)
+
+        # Strongly suspicious when a line has very little alphabetic content,
+        # many symbols, and almost no visible word separation.
+        if alpha_ratio < 0.20 and symbol_ratio > 0.35 and whitespace_count <= 1:
+            return True
+
+        return False
 
     def _finalize_page_text(self, cleaned_lines: List[str]) -> str:
         """
