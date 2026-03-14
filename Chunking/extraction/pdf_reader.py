@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from Chunking.chunking.models import PageText
 
@@ -13,229 +14,442 @@ except ImportError as exc:  # pragma: no cover
     ) from exc
 
 
+# ============================================================================
+# Intermediate extraction models
+# ============================================================================
+#
+# Why define these models here?
+# -----------------------------
+# At this stage of the project, the pipeline should no longer think in terms
+# of "PDF -> plain text only".
+#
+# Instead, the extraction stage should preserve as much structural information
+# as possible so that downstream parsing can build a canonical JSON tree
+# resembling the target master dictionary structure.
+#
+# These models intentionally represent a richer intermediate document view:
+# - document
+# - pages
+# - blocks
+# - lines
+# - bounding boxes
+# - extraction mode
+# - quality score
+#
+# This is not the final domain JSON yet.
+# It is an intermediate representation specifically designed to support
+# robust structural parsing.
+# ============================================================================
+
+
+@dataclass(slots=True)
+class BoundingBox:
+    """
+    Lightweight bounding box container.
+
+    Coordinates follow the standard PDF-style convention returned by PyMuPDF:
+    (x0, y0, x1, y1)
+
+    Why keep this?
+    --------------
+    Bounding boxes are extremely useful later for:
+    - header/footer detection
+    - title heuristics
+    - identifying isolated structural lines
+    - debugging extraction quality
+    """
+
+    x0: float
+    y0: float
+    x1: float
+    y1: float
+
+
+@dataclass(slots=True)
+class ExtractedLine:
+    """
+    Represents one reconstructed text line from the PDF.
+
+    Notes
+    -----
+    A line is a very important intermediate unit for legal/regulatory PDFs
+    because many structural markers appear on isolated lines, for example:
+    - "CAPÍTULO I"
+    - "Artigo 5.º"
+    - article titles
+    - annex titles
+    - index entries
+    """
+
+    text: str
+    bbox: Optional[BoundingBox] = None
+    block_index: Optional[int] = None
+    line_index: Optional[int] = None
+
+
+@dataclass(slots=True)
+class ExtractedBlock:
+    """
+    Represents one extracted text block.
+
+    Why preserve blocks?
+    --------------------
+    Blocks are often the best compromise between pure text and full layout.
+    They help preserve reading order and frequently isolate semantic regions
+    such as:
+    - title blocks
+    - body paragraphs
+    - footer/header noise
+    - signature areas
+    """
+
+    block_index: int
+    text: str
+    bbox: Optional[BoundingBox] = None
+    lines: List[ExtractedLine] = field(default_factory=list)
+    source_mode: str = "unknown"
+
+
+@dataclass(slots=True)
+class PageExtractionCandidate:
+    """
+    Represents one extraction candidate for a single page.
+
+    Multiple extraction modes may produce different quality results for the
+    same PDF page. This object allows us to compare them explicitly.
+
+    Example candidate sources:
+    - dict
+    - blocks
+    - text
+    """
+
+    source_mode: str
+    text: str
+    quality_score: float
+    blocks: List[ExtractedBlock] = field(default_factory=list)
+    corruption_flags: List[str] = field(default_factory=list)
+
+
+@dataclass(slots=True)
+class ExtractedPage:
+    """
+    Structured representation of one PDF page.
+
+    This model preserves:
+    - the final selected text
+    - the best extraction mode
+    - a quality score
+    - reconstructed blocks and lines
+    - heuristic corruption signals
+
+    Downstream parsing should consume this object instead of depending only on
+    flattened plain text.
+    """
+
+    page_number: int
+    text: str
+    selected_mode: str
+    quality_score: float
+    blocks: List[ExtractedBlock] = field(default_factory=list)
+    corruption_flags: List[str] = field(default_factory=list)
+
+
+@dataclass(slots=True)
+class ExtractedDocument:
+    """
+    Structured representation of the extracted PDF document.
+
+    Important distinction
+    ---------------------
+    This is not yet the final canonical regulation JSON tree.
+    It is the intermediate extraction output that will feed the structure
+    parser.
+
+    The parser should later transform this into a domain-specific JSON
+    structure such as:
+    - PREAMBULO
+    - CAP_I
+    - ART_1
+    - ART_2
+    - ...
+    """
+
+    source_path: str
+    page_count: int
+    pages: List[ExtractedPage] = field(default_factory=list)
+
+    @property
+    def full_text(self) -> str:
+        """
+        Return the document text as a page-joined convenience view.
+
+        Why keep this property?
+        -----------------------
+        Some legacy or debugging flows may still need a concatenated text
+        representation. However, this must be treated as a derived view,
+        not as the primary extraction product.
+        """
+        return "\n\n".join(page.text for page in self.pages if page.text)
+
+
 class PdfReader:
     """
-    Robust PDF text extractor used as the first stage of the chunking pipeline.
+    Robust PDF extraction component for the first stage of the pipeline.
 
-    Design goals
-    ------------
-    This component is intentionally focused on **reliable text extraction**
-    rather than semantic interpretation.
+    Design intent
+    -------------
+    This class is no longer designed as a "plain text extractor only".
+    Instead, it acts as an intermediate structure-preserving PDF reader.
 
-    The responsibilities of this class are:
+    Core responsibilities
+    ---------------------
+    1. Extract content page by page
+    2. Try multiple extraction modes
+    3. Score extraction quality heuristically
+    4. Preserve page/block/line structure when possible
+    5. Provide a strong intermediate representation for downstream parsing
 
-    1. Extract text page-by-page
-    2. Preserve reading order as much as possible
-    3. Avoid flattening layout too early
-    4. Provide clean page-level text to the normalization stage
-    5. Gracefully handle PDFs whose text layer is partially corrupted
-
-    Why page-level extraction?
-    --------------------------
-    Page boundaries are extremely useful later in the pipeline for:
-
-    - page_start / page_end metadata
-    - debugging chunk boundaries
-    - identifying repeated headers / footers
-    - traceability back to the source document
-
-    Why multi-strategy extraction?
+    Important non-responsibilities
     ------------------------------
-    Some PDFs extract well with:
-        page.get_text("blocks")
+    This class does NOT:
+    - perform OCR
+    - interpret legal structure semantically
+    - generate final chunks
+    - build the final master JSON tree
 
-    Others behave better with:
-        page.get_text("dict")
-    or:
-        page.get_text("text")
-
-    Unfortunately, a subset of officially published or institutionally
-    generated PDFs may contain font encodings that make one extraction mode
-    return garbled text while another still returns usable text.
-
-    Because of that, this reader now:
-    - tries multiple extraction modes
-    - evaluates their output quality heuristically
-    - keeps the best candidate
-
-    Important scope note
-    --------------------
-    This class does not perform OCR yet.
-    OCR fallback should be implemented in a separate extraction fallback layer
-    so responsibilities remain clear.
+    Those concerns belong to later pipeline stages.
     """
 
-    def extract_pages(self, pdf_path: Path) -> List[PageText]:
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
+    def extract_document(self, pdf_path: Path) -> ExtractedDocument:
         """
-        Extract text from a PDF document page by page.
+        Extract a PDF into a rich intermediate document representation.
 
         Parameters
         ----------
         pdf_path : Path
-            Path to the PDF file to be processed.
+            Path to the PDF file.
 
         Returns
         -------
-        List[PageText]
-            A list of PageText objects containing:
-            - page_number
-            - extracted page text
+        ExtractedDocument
+            A structured extraction result preserving pages, blocks, lines,
+            extraction modes, and quality signals.
 
-        Important implementation detail
-        -------------------------------
-        This method no longer relies on only one PyMuPDF extraction mode.
-        Instead, it evaluates several candidates and selects the most promising
-        one for each page.
-
-        Why this matters
-        ----------------
-        The entire downstream pipeline depends on extraction quality.
-        If extraction fails, normalization, parsing, and chunking will all
-        produce poor results even if their own logic is correct.
+        Why this method matters
+        -----------------------
+        This method is the correct API for the current project direction.
+        It preserves much more information than a simple page-text list and
+        therefore provides a far better substrate for building the target
+        JSON tree.
         """
-        pages: List[PageText] = []
+        pages: List[ExtractedPage] = []
 
         with fitz.open(pdf_path) as document:
             for page_index, page in enumerate(document, start=1):
-                text = self._extract_best_page_text(page)
+                best_candidate = self._extract_best_page_candidate(page)
 
                 pages.append(
-                    PageText(
+                    ExtractedPage(
                         page_number=page_index,
-                        text=text or "",
+                        text=best_candidate.text or "",
+                        selected_mode=best_candidate.source_mode,
+                        quality_score=best_candidate.quality_score,
+                        blocks=best_candidate.blocks,
+                        corruption_flags=best_candidate.corruption_flags,
                     )
                 )
 
-        return pages
-
-    def _extract_best_page_text(self, page: fitz.Page) -> str:
-        """
-        Extract the best available text candidate for one page.
-
-        Extraction order
-        ----------------
-        1. blocks
-        2. dict-based line reconstruction
-        3. plain text
-
-        Why compare multiple candidates?
-        --------------------------------
-        Different PDFs behave differently across extraction modes.
-        A mode that is excellent on one document may produce unreadable text
-        on another. Therefore this method generates several candidates and
-        keeps the one with the strongest quality score.
-
-        Parameters
-        ----------
-        page : fitz.Page
-            PyMuPDF page object.
-
-        Returns
-        -------
-        str
-            The best available extracted text for the page.
-        """
-        candidates: List[Tuple[str, str]] = []
-
-        # -------------------------------------------------------------
-        # Candidate 1: block-based extraction
-        #
-        # This often behaves well for legal PDFs because blocks usually
-        # preserve reading order more reliably than plain text extraction.
-        # -------------------------------------------------------------
-        try:
-            block_text = self._extract_page_via_blocks(page)
-            candidates.append(("blocks", block_text))
-        except Exception:
-            candidates.append(("blocks", ""))
-
-        # -------------------------------------------------------------
-        # Candidate 2: dict-based extraction with manual reconstruction
-        #
-        # This gives us access to lines and spans. In some documents this
-        # produces better results than block tuples.
-        # -------------------------------------------------------------
-        try:
-            dict_text = self._extract_page_via_dict(page)
-            candidates.append(("dict", dict_text))
-        except Exception:
-            candidates.append(("dict", ""))
-
-        # -------------------------------------------------------------
-        # Candidate 3: plain text extraction
-        #
-        # Although simple, this can still outperform more structured modes
-        # for some PDFs.
-        # -------------------------------------------------------------
-        try:
-            plain_text = page.get_text("text") or ""
-            candidates.append(("text", plain_text))
-        except Exception:
-            candidates.append(("text", ""))
-
-        # -------------------------------------------------------------
-        # Score every candidate and keep the strongest one.
-        #
-        # We do not try to be academically perfect here. The goal is simply
-        # to avoid obviously bad choices such as returning heavily garbled
-        # text when a better candidate exists.
-        # -------------------------------------------------------------
-        scored_candidates = [
-            (name, text, self._score_extracted_text(text))
-            for name, text in candidates
-        ]
-
-        best_name, best_text, _ = max(
-            scored_candidates,
-            key=lambda item: item[2],
+        return ExtractedDocument(
+            source_path=str(pdf_path),
+            page_count=len(pages),
+            pages=pages,
         )
 
-        # -------------------------------------------------------------
-        # Defensive final fallback:
-        # if all candidates are empty, still return an empty string rather
-        # than raising.
-        # -------------------------------------------------------------
-        if not best_text:
-            return ""
-
-        return best_text
-
-    def _extract_page_via_blocks(self, page: fitz.Page) -> str:
+    def extract_pages(self, pdf_path: Path) -> List[PageText]:
         """
-        Extract page text using PyMuPDF block tuples.
+        Legacy compatibility adapter.
 
-        Why this method exists
+        Returns only page-level plain text for older parts of the pipeline.
+
+        Important note
+        --------------
+        This method is intentionally retained for backward compatibility so
+        that existing flows do not break immediately.
+
+        However, new parsing logic should prefer `extract_document()` because
+        it preserves the structure needed to build the canonical JSON tree.
+        """
+        document = self.extract_document(pdf_path)
+
+        return [
+            PageText(
+                page_number=page.page_number,
+                text=page.text,
+            )
+            for page in document.pages
+        ]
+
+    # ------------------------------------------------------------------
+    # Candidate extraction and selection
+    # ------------------------------------------------------------------
+
+    def _extract_best_page_candidate(self, page: fitz.Page) -> PageExtractionCandidate:
+        """
+        Extract and evaluate several candidates for one page.
+
+        Candidate order
+        ---------------
+        1. dict-based extraction
+        2. block-based extraction
+        3. plain text extraction
+
+        Why prefer dict first?
         ----------------------
-        Block-based extraction is often the most practical compromise for
-        legal/regulatory PDFs because it can preserve reading order better
-        than plain text extraction while staying much simpler than a full
-        layout engine.
+        Dict mode provides the richest structure:
+        - blocks
+        - lines
+        - spans
+        - coordinates
 
-        PyMuPDF block tuple format
-        --------------------------
-        A text block usually looks like:
-
-            (x0, y0, x1, y1, text, block_no, block_type)
-
-        We only care about:
-        - block[4] -> text
-        - block[6] -> block type (when available)
-
-        Parameters
-        ----------
-        page : fitz.Page
-            PyMuPDF page object.
+        That makes it the most useful mode for later structural parsing.
 
         Returns
         -------
-        str
-            Reconstructed page text from block tuples.
+        PageExtractionCandidate
+            The best scoring candidate for the page.
         """
-        blocks = page.get_text("blocks")
-        text_parts: List[str] = []
+        candidates: List[PageExtractionCandidate] = []
 
-        for block in blocks:
-            # Defensive validation: malformed tuples should be ignored.
+        # --------------------------------------------------------------
+        # Candidate 1: dict-based extraction
+        #
+        # This is the most valuable mode for structure-aware parsing.
+        # --------------------------------------------------------------
+        try:
+            dict_text, dict_blocks = self._extract_page_via_dict(page)
+            dict_flags = self._detect_corruption_flags(dict_text)
+            dict_score = self._score_extracted_text(dict_text)
+            candidates.append(
+                PageExtractionCandidate(
+                    source_mode="dict",
+                    text=dict_text,
+                    quality_score=dict_score,
+                    blocks=dict_blocks,
+                    corruption_flags=dict_flags,
+                )
+            )
+        except Exception:
+            candidates.append(
+                PageExtractionCandidate(
+                    source_mode="dict",
+                    text="",
+                    quality_score=-1_000_000.0,
+                    blocks=[],
+                    corruption_flags=["dict_extraction_failed"],
+                )
+            )
+
+        # --------------------------------------------------------------
+        # Candidate 2: block-based extraction
+        #
+        # This mode is often robust for legal/regulatory PDFs where text
+        # blocks preserve reading order reasonably well.
+        # --------------------------------------------------------------
+        try:
+            block_text, block_blocks = self._extract_page_via_blocks(page)
+            block_flags = self._detect_corruption_flags(block_text)
+            block_score = self._score_extracted_text(block_text)
+            candidates.append(
+                PageExtractionCandidate(
+                    source_mode="blocks",
+                    text=block_text,
+                    quality_score=block_score,
+                    blocks=block_blocks,
+                    corruption_flags=block_flags,
+                )
+            )
+        except Exception:
+            candidates.append(
+                PageExtractionCandidate(
+                    source_mode="blocks",
+                    text="",
+                    quality_score=-1_000_000.0,
+                    blocks=[],
+                    corruption_flags=["block_extraction_failed"],
+                )
+            )
+
+        # --------------------------------------------------------------
+        # Candidate 3: plain text extraction
+        #
+        # This mode preserves the least structure but still serves as a
+        # useful fallback because some PDFs behave unexpectedly better with
+        # plain text extraction.
+        # --------------------------------------------------------------
+        try:
+            plain_text = page.get_text("text") or ""
+            plain_flags = self._detect_corruption_flags(plain_text)
+            plain_score = self._score_extracted_text(plain_text)
+            candidates.append(
+                PageExtractionCandidate(
+                    source_mode="text",
+                    text=plain_text,
+                    quality_score=plain_score,
+                    blocks=[],
+                    corruption_flags=plain_flags,
+                )
+            )
+        except Exception:
+            candidates.append(
+                PageExtractionCandidate(
+                    source_mode="text",
+                    text="",
+                    quality_score=-1_000_000.0,
+                    blocks=[],
+                    corruption_flags=["plain_text_extraction_failed"],
+                )
+            )
+
+        best_candidate = max(candidates, key=lambda item: item.quality_score)
+
+        # Defensive fallback: always return a candidate object, even if all
+        # extraction modes failed or returned empty content.
+        return best_candidate
+
+    # ------------------------------------------------------------------
+    # Extraction implementations
+    # ------------------------------------------------------------------
+
+    def _extract_page_via_blocks(
+        self,
+        page: fitz.Page,
+    ) -> Tuple[str, List[ExtractedBlock]]:
+        """
+        Extract one page using PyMuPDF block tuples.
+
+        Why keep this method?
+        ---------------------
+        Block extraction is still useful because some PDFs produce better
+        reading order via block tuples than via dict reconstruction.
+
+        Returns
+        -------
+        Tuple[str, List[ExtractedBlock]]
+            - page text reconstructed from blocks
+            - structured block list
+        """
+        raw_blocks = page.get_text("blocks")
+        structured_blocks: List[ExtractedBlock] = []
+        page_text_parts: List[str] = []
+
+        for block_index, block in enumerate(raw_blocks):
+            # PyMuPDF block tuple format is generally:
+            # (x0, y0, x1, y1, text, block_no, block_type)
             if len(block) < 5:
                 continue
 
@@ -243,84 +457,145 @@ class PdfReader:
             if not block_text:
                 continue
 
-            text_parts.append(block_text)
+            bbox = BoundingBox(
+                x0=float(block[0]),
+                y0=float(block[1]),
+                x1=float(block[2]),
+                y1=float(block[3]),
+            )
 
-        return "\n".join(text_parts).strip()
+            # We may not have reliable line-level detail in this mode, so
+            # we store the whole block as text and optionally reconstruct a
+            # naive line split for convenience.
+            lines = [
+                ExtractedLine(
+                    text=line.strip(),
+                    bbox=bbox,
+                    block_index=block_index,
+                    line_index=line_index,
+                )
+                for line_index, line in enumerate(block_text.splitlines())
+                if line.strip()
+            ]
 
-    def _extract_page_via_dict(self, page: fitz.Page) -> str:
+            structured_blocks.append(
+                ExtractedBlock(
+                    block_index=block_index,
+                    text=block_text,
+                    bbox=bbox,
+                    lines=lines,
+                    source_mode="blocks",
+                )
+            )
+            page_text_parts.append(block_text)
+
+        return "\n".join(page_text_parts).strip(), structured_blocks
+
+    def _extract_page_via_dict(
+        self,
+        page: fitz.Page,
+    ) -> Tuple[str, List[ExtractedBlock]]:
         """
-        Extract page text using dict-based layout reconstruction.
+        Extract one page using dict-based layout reconstruction.
 
-        Why this method exists
-        ----------------------
-        Some PDFs behave better in dict mode than in block tuple mode.
-        Dict mode gives access to a richer structure:
+        Why this method is especially important
+        ---------------------------------------
+        Dict mode exposes a richer hierarchy:
+        - blocks
+        - lines
+        - spans
+        - positions
 
-            page
-             └── blocks
-                 └── lines
-                     └── spans
-
-        This can help reconstruct the page in a more controlled way.
-
-        Parameters
-        ----------
-        page : fitz.Page
-            PyMuPDF page object.
+        This makes it the best extraction source for structural parsing.
 
         Returns
         -------
-        str
-            Reconstructed page text.
+        Tuple[str, List[ExtractedBlock]]
+            - page text reconstructed from lines
+            - structured block list with line data
         """
         page_dict = page.get_text("dict")
-        blocks = page_dict.get("blocks", [])
-        reconstructed_lines: List[str] = []
+        raw_blocks = page_dict.get("blocks", [])
 
-        for block in blocks:
-            # Ignore non-text blocks such as images.
+        structured_blocks: List[ExtractedBlock] = []
+        page_text_parts: List[str] = []
+
+        for block_index, block in enumerate(raw_blocks):
+            # Only process text blocks.
             if block.get("type") != 0:
                 continue
 
-            for line in block.get("lines", []):
+            block_lines: List[ExtractedLine] = []
+            block_text_parts: List[str] = []
+
+            block_bbox = self._bbox_from_sequence(block.get("bbox"))
+
+            for line_index, line in enumerate(block.get("lines", [])):
                 spans = line.get("spans", [])
 
-                # Rebuild the line from its spans.
+                # Rebuild line text from spans in reading order.
                 line_text = "".join(span.get("text", "") for span in spans).strip()
+                if not line_text:
+                    continue
 
-                if line_text:
-                    reconstructed_lines.append(line_text)
+                line_bbox = self._bbox_from_sequence(line.get("bbox"))
 
-        return "\n".join(reconstructed_lines).strip()
+                block_lines.append(
+                    ExtractedLine(
+                        text=line_text,
+                        bbox=line_bbox,
+                        block_index=block_index,
+                        line_index=line_index,
+                    )
+                )
+                block_text_parts.append(line_text)
+
+            block_text = "\n".join(block_text_parts).strip()
+            if not block_text:
+                continue
+
+            structured_blocks.append(
+                ExtractedBlock(
+                    block_index=block_index,
+                    text=block_text,
+                    bbox=block_bbox,
+                    lines=block_lines,
+                    source_mode="dict",
+                )
+            )
+            page_text_parts.append(block_text)
+
+        return "\n".join(page_text_parts).strip(), structured_blocks
+
+    # ------------------------------------------------------------------
+    # Heuristics
+    # ------------------------------------------------------------------
 
     def _score_extracted_text(self, text: str) -> float:
         """
-        Score one extracted text candidate heuristically.
+        Score extracted text heuristically.
 
-        Why this helper exists
-        ----------------------
-        The pipeline needs a lightweight way to decide which extraction mode
-        produced the most usable output for a page.
+        Goal
+        ----
+        This scoring function is intentionally heuristic and practical.
+        It is not trying to solve language quality academically; it simply
+        tries to avoid choosing obviously bad extraction results when a better
+        candidate exists.
 
-        Heuristic principles
-        --------------------
-        A good extracted text candidate usually has:
-        - non-trivial length
-        - a healthy amount of alphabetic characters
-        - visible whitespace / word separation
-        - relatively few obviously suspicious symbols
+        Domain-aware heuristics
+        -----------------------
+        Since the target documents are legal / regulatory PDFs, we reward
+        some structural terms often found in healthy extractions:
+        - Artigo
+        - CAPÍTULO / CAPITULO
+        - ANEXO
+        - Regulamento
+        - Despacho
 
-        This is intentionally heuristic, not linguistic perfection.
-
-        Parameters
-        ----------
-        text : str
-            Extracted text candidate.
-
-        Returns
-        -------
-        float
-            Quality score where larger is better.
+        We also penalize:
+        - suspicious replacement glyphs
+        - excessive non-linguistic symbol density
+        - extremely low alphabetic ratio
         """
         if not text or not text.strip():
             return -1_000_000.0
@@ -332,8 +607,10 @@ class PdfReader:
         digit_count = sum(1 for ch in stripped if ch.isdigit())
         whitespace_count = sum(1 for ch in stripped if ch.isspace())
 
-        # Suspicious symbols frequently seen in badly decoded PDFs.
-        suspicious_chars = set("*^_`~\\|<>")
+        # Common suspicious characters seen in degraded extraction output.
+        suspicious_chars = {
+            "*", "^", "_", "`", "~", "\\", "|", "<", ">", "�", "￾", ""
+        }
         suspicious_count = sum(1 for ch in stripped if ch in suspicious_chars)
 
         alpha_ratio = alpha_count / max(total_len, 1)
@@ -342,24 +619,129 @@ class PdfReader:
 
         score = 0.0
 
-        # Reward meaningful length.
+        # Reward non-trivial useful length, but cap the contribution so that
+        # huge noisy text does not dominate purely by size.
         score += min(total_len, 4000) * 0.01
 
         # Reward alphabetic content strongly.
         score += alpha_ratio * 100.0
 
-        # Reward visible word separation a little.
+        # Reward visible word separation slightly.
         score += whitespace_ratio * 20.0
 
-        # Mild penalty for excessive digits.
+        # Penalize pages that are overly numeric unless justified.
         if digit_count / max(total_len, 1) > 0.35:
             score -= 20.0
 
-        # Strong penalty for suspicious symbol density.
-        score -= suspicious_ratio * 150.0
+        # Penalize suspicious symbol density.
+        score -= suspicious_ratio * 180.0
 
-        # Additional penalty for text that looks too non-linguistic.
+        # Penalize text that looks too non-linguistic.
         if alpha_ratio < 0.30:
             score -= 80.0
 
+        # Reward domain-typical structural language.
+        lower_text = stripped.lower()
+        legal_markers = [
+            "artigo",
+            "capítulo",
+            "capitulo",
+            "anexo",
+            "regulamento",
+            "despacho",
+        ]
+        marker_hits = sum(1 for marker in legal_markers if marker in lower_text)
+        score += marker_hits * 8.0
+
+        # Penalize extreme single-character fragmentation, which is often a
+        # symptom of broken extraction or font decoding problems.
+        words = [word for word in stripped.split() if word]
+        if words:
+            single_char_ratio = sum(1 for word in words if len(word) == 1) / len(words)
+            if single_char_ratio > 0.35:
+                score -= 35.0
+
         return score
+
+    def _detect_corruption_flags(self, text: str) -> List[str]:
+        """
+        Detect lightweight corruption signals in extracted text.
+
+        Why flags matter
+        ----------------
+        Downstream stages may use these flags to:
+        - trigger OCR fallback
+        - mark a page as suspicious
+        - produce extraction diagnostics
+        - lower confidence during parsing
+
+        Returns
+        -------
+        List[str]
+            A list of corruption/suspicion signals.
+        """
+        flags: List[str] = []
+
+        if not text or not text.strip():
+            flags.append("empty_text")
+            return flags
+
+        stripped = text.strip()
+        total_len = len(stripped)
+
+        replacement_like_chars = {"�", "￾", ""}
+        replacement_count = sum(1 for ch in stripped if ch in replacement_like_chars)
+
+        if replacement_count > 0:
+            flags.append("replacement_like_characters")
+
+        suspicious_symbol_chars = {"*", "^", "_", "`", "~", "\\", "|", "<", ">"}
+        suspicious_symbol_count = sum(1 for ch in stripped if ch in suspicious_symbol_chars)
+
+        if suspicious_symbol_count / max(total_len, 1) > 0.03:
+            flags.append("high_suspicious_symbol_density")
+
+        alpha_ratio = sum(1 for ch in stripped if ch.isalpha()) / max(total_len, 1)
+        if alpha_ratio < 0.25:
+            flags.append("low_alpha_ratio")
+
+        # Heuristic: many isolated one-character tokens may indicate degraded
+        # extraction, especially if not explained by list formatting.
+        words = [word for word in stripped.split() if word]
+        if words:
+            single_char_ratio = sum(1 for word in words if len(word) == 1) / len(words)
+            if single_char_ratio > 0.35:
+                flags.append("excessive_single_character_tokens")
+
+        return flags
+
+    # ------------------------------------------------------------------
+    # Utility helpers
+    # ------------------------------------------------------------------
+
+    def _bbox_from_sequence(self, value: Any) -> Optional[BoundingBox]:
+        """
+        Convert a PyMuPDF bbox-like sequence into a BoundingBox.
+
+        Parameters
+        ----------
+        value : Any
+            Expected to be a sequence such as [x0, y0, x1, y1].
+
+        Returns
+        -------
+        Optional[BoundingBox]
+            Parsed bounding box, or None if the input is missing/invalid.
+        """
+        if not isinstance(value, (list, tuple)) or len(value) != 4:
+            return None
+
+        try:
+            return BoundingBox(
+                x0=float(value[0]),
+                y0=float(value[1]),
+                x1=float(value[2]),
+                y1=float(value[3]),
+            )
+        except (TypeError, ValueError):
+            return None
