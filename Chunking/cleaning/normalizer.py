@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import re
 from collections import Counter
-from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
-from Chunking.chunking.models import PageText
+from Chunking.chunking.models import ExtractedDocument, ExtractedPage, PageText
 from Chunking.utils.text import (
     join_hyphenated_linebreaks,
     normalize_block_whitespace,
@@ -14,84 +14,78 @@ from Chunking.utils.text import (
 )
 
 
-# -------------------------------------------------------------------------
+# ============================================================================
 # Regexes used by the normalizer
-# -------------------------------------------------------------------------
+# ============================================================================
 #
-# The purpose of this module is intentionally narrow and conservative.
+# Important architectural note
+# ----------------------------
+# This module is intentionally conservative.
 #
-# It is NOT a full legal-structure parser.
+# It is NOT a legal-structure parser.
 # It should:
 # - remove obvious PDF / editorial / layout noise
 # - preserve structural line boundaries useful to the parser
-# - repair some extraction artifacts conservatively
-# - avoid aggressive cleanup that could silently remove legal content
+# - repair obvious extraction artifacts conservatively
+# - avoid aggressive cleanup that could remove legal content
 #
-# This module sits between extraction and structure parsing, so it must be
-# careful: once text is destroyed here, later pipeline stages cannot recover it.
-# -------------------------------------------------------------------------
+# This module sits between extraction and structure parsing.
+# Therefore it must be careful:
+# once text is destroyed here, later stages cannot recover it.
+# ============================================================================
 
 # Example:
 # "Pág. 363"
 # "Pág. 364"
 #
 # We strip this marker only when it appears at the beginning of the line so
-# that useful text after the marker can still survive.
+# that useful content after the marker can still survive.
 LEADING_PAGE_MARKER_RE = re.compile(r"^\s*Pág\.\s*\d+\s*", re.IGNORECASE)
 
 # Example:
 # "3|14"
 # "10 | 14"
 #
-# These are classic page counters extracted from PDF footers / headers.
+# Classic page counters from headers/footers.
 INLINE_PAGE_COUNTER_RE = re.compile(r"^\s*\d+\s*\|\s*\d+\s*$")
 
-# Detect page counters even when surrounded by a little surrounding noise.
-#
-# Example:
-# "3|14 "
-# " 3 | 14"
-# "Página 3|14" should NOT match here because that may carry real text.
+# Slightly looser page counter variants.
 LOOSE_PAGE_COUNTER_RE = re.compile(r"^\s*\d+\s*\|\s*\d+\s*[\-–—.]?\s*$")
 
-# Example:
-# "316552597"
-#
-# Long pure numeric tails are often publication / layout noise.
+# Long pure numeric tails often represent editorial or publication noise.
 PURE_NUMERIC_NOISE_RE = re.compile(r"^\s*\d{6,}\s*$")
 
-# Typical Diário da República editorial lines or similar page furniture.
+# Typical Diário da República editorial furniture.
 DR_EDITORIAL_RE = re.compile(
     r"^\s*(N\.?\s*º|PARTE\s+[A-Z]|Diário da República)\b",
     re.IGNORECASE,
 )
 
-# Likely signature / signing lines that should not pollute retrieval text.
+# Signature or signing metadata lines.
 SIGNATURE_LINE_RE = re.compile(
     r"^\s*(Assinado por:|Num\.?\s+de\s+Identificação:|Data:\s*\d{4}\.\d{2}\.\d{2})",
     re.IGNORECASE,
 )
 
-# Decorative / cover-like lines that often belong to title pages rather than
-# normative body content.
+# Decorative cover lines that often belong to title pages rather than body text.
 COVER_NOISE_RE = re.compile(
     r"^\s*(DESPACHO\s+P\.PORTO\/P-|REGULAMENTO\s+P\.PORTO\/P-)\S*",
     re.IGNORECASE,
 )
 
-# Common institutional banner-like lines that often behave as repeated headers.
+# Repeated institutional banner-like lines.
 INSTITUTIONAL_BANNER_RE = re.compile(
     r"^\s*(POLIT[ÉE]CNICO\s+DO\s+PORTO|P\.PORTO)\s*$",
     re.IGNORECASE,
 )
 
-# Detect obvious dot-leader lines frequently used in tables of contents.
+# Dot leaders typical of table-of-contents lines.
 INDEX_DOT_LEADER_RE = re.compile(r"\.{3,}")
 
-# Detect short lines ending with a page number, often TOC style.
+# Short TOC-like lines ending with a page number.
 INDEX_TRAILING_PAGE_RE = re.compile(r".+\s+\d{1,4}\s*$")
 
-# Typical heading-like TOC entries.
+# Heading-like TOC entries.
 INDEX_HEADING_RE = re.compile(
     r"^\s*(CAP[ÍI]TULO|ARTIGO|ANEXO|ÍNDICE|SECÇÃO|SUBSECÇÃO|TÍTULO)\b",
     re.IGNORECASE,
@@ -100,7 +94,7 @@ INDEX_HEADING_RE = re.compile(
 # Normalize inner whitespace for comparison and reporting.
 MULTISPACE_RE = re.compile(r"\s+")
 
-# Detect common structural markers that should usually remain on their own line.
+# Structural headers that should usually remain on their own line.
 ARTICLE_HEADER_RE = re.compile(
     r"^\s*(?:ARTIGO|ART\.?)\s+\d+(?:\.\d+)?\s*(?:\.?\s*[ºo°])?\b",
     re.IGNORECASE,
@@ -140,24 +134,48 @@ PROSE_START_RE = re.compile(
     re.IGNORECASE,
 )
 
-# Detect line endings that usually indicate completed sentences / boundaries.
+# Detect line endings that usually indicate completed sentences / hard boundaries.
 HARD_LINE_END_RE = re.compile(r"[.;:!?]$")
 
 # Detect lines that are almost entirely symbolic and therefore suspicious.
-#
-# This is intentionally conservative and only targets obvious garbage.
 MOSTLY_SYMBOLIC_RE = re.compile(r"^[^\wÀ-ÿ]{6,}$")
 
 # Detect highly suspicious garbled-looking lines.
-#
-# Example:
-# "*+,-*-.-/-1/2*-34+*4/-5/-1/6-/"
-#
-# We do not use this to judge whole-page extraction quality here.
-# We only use it to remove clearly unusable individual lines.
 SUSPICIOUS_GARBLED_LINE_RE = re.compile(
     r"^[^A-Za-zÀ-ÿ]{0,3}(?:[\*\+\-/=<>\\\[\]\{\}_`~]{2,}|[0-9\W]{12,})$"
 )
+
+
+# ============================================================================
+# Normalization output models
+# ============================================================================
+
+
+@dataclass(slots=True)
+class NormalizedPage:
+    """
+    Normalized page-level text plus lightweight provenance.
+
+    Why this model exists
+    ---------------------
+    The pipeline is transitioning away from plain `PageText` as the only
+    representation. During this transition, normalization should preserve at
+    least some useful provenance from extraction, for example:
+    - selected extraction mode
+    - upstream quality score
+    - upstream corruption flags
+
+    This information is useful for:
+    - parser confidence
+    - debugging suspicious pages
+    - deciding whether a page should be treated more defensively downstream
+    """
+
+    page_number: int
+    text: str
+    selected_mode: str = ""
+    upstream_quality_score: Optional[float] = None
+    upstream_flags: List[str] = field(default_factory=list)
 
 
 @dataclass(slots=True)
@@ -165,24 +183,28 @@ class NormalizedDocument:
     """
     Intermediate normalized document representation.
 
-    It keeps:
+    Contents
+    --------
     - page-level cleaned text
-    - a document-level consolidated body
-    - a dropped-lines report useful for inspection and debugging
+    - document-level consolidated full_text
+    - dropped-lines report for inspection/debugging
+    - optional page-level normalization diagnostics
 
-    Important:
-    this structure intentionally remains lightweight so it does not break the
-    rest of the pipeline.
+    Important architectural note
+    ----------------------------
+    This is still NOT the final parsed legal/regulatory JSON tree.
+    It is the normalized substrate that should feed the structure parser.
     """
 
-    pages: List[PageText]
+    pages: List[NormalizedPage]
     full_text: str
     dropped_lines_report: Dict[str, int]
+    page_reports: List[Dict[str, Any]] = field(default_factory=list)
 
 
 class TextNormalizer:
     """
-    Remove PDF layout noise before structure parsing and chunking.
+    Remove PDF layout noise before structure parsing.
 
     Design principles
     -----------------
@@ -198,39 +220,57 @@ class TextNormalizer:
        - lettered items
 
     3. Repair only obvious extraction artifacts
-       We do not aggressively flatten the text here.
+       This module should not aggressively flatten the document.
 
     4. Be careful with repeated-line detection
-       Repeated lines are often headers / footers, but legal text may also
-       repeat legitimate phrases. Therefore repeated-line heuristics should
-       focus mainly on page margins rather than the full body.
+       Repeated lines are often headers / footers, but valid legal text may
+       also repeat. Therefore repeated-line heuristics should focus mainly on
+       page margins rather than the full body.
 
     5. Remove only obviously unusable line-level garbage
        If a line looks severely corrupted or purely decorative, it should not
-       survive into chunk text.
+       survive into the parser input.
+
+    6. Remain parser-friendly
+       The goal is not to produce "pretty text".
+       The goal is to produce text that is clean enough for reliable parsing
+       while still retaining structural clues.
     """
 
     # Only consider a small top / bottom window of each page when detecting
-    # repeated layout furniture. This reduces accidental removal of valid body
-    # text that happens to repeat.
+    # repeated layout furniture.
     _REPEATED_LINE_MARGIN_WINDOW = 4
 
-    # TOC / index blocks usually live near the beginning of a document.
-    # We limit aggressive TOC block removal to the early pages.
+    # Tables of contents usually live near the beginning of a document.
     _MAX_TOC_SCAN_PAGES = 5
 
-    def normalize(self, pages: List[PageText]) -> NormalizedDocument:
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
+    def normalize(
+        self,
+        document_or_pages: Union[ExtractedDocument, Sequence[PageText], Sequence[ExtractedPage]],
+    ) -> NormalizedDocument:
         """
-        Normalize a list of page-level extracted texts.
+        Normalize page-level extracted text conservatively.
+
+        Supported inputs
+        ----------------
+        This method accepts:
+        - ExtractedDocument
+        - List[ExtractedPage]
+        - List[PageText]
 
         Processing phases
         -----------------
-        1. Detect repeated short lines that likely behave like headers/footers
-        2. Clean line by line, preserving structural boundaries
-        3. Remove likely TOC / index blocks, mainly in early pages
-        4. Reflow obvious broken prose lines conservatively
-        5. Rebuild page text with shared block-level normalization
-        6. Concatenate pages into a debug-friendly full_text
+        1. Coerce the input into page-like objects
+        2. Detect repeated short lines that likely behave like headers/footers
+        3. Clean line by line while preserving structural boundaries
+        4. Remove likely TOC/index blocks, mainly in early pages
+        5. Reflow obvious broken prose lines conservatively
+        6. Rebuild page text with shared block-level normalization
+        7. Concatenate pages into a debug-friendly full_text
 
         Why repeated-line detection happens first
         -----------------------------------------
@@ -239,23 +279,32 @@ class TextNormalizer:
 
         Parameters
         ----------
-        pages : List[PageText]
-            Raw extracted page texts.
+        document_or_pages : Union[ExtractedDocument, Sequence[PageText], Sequence[ExtractedPage]]
+            Extracted document or page-like objects.
 
         Returns
         -------
         NormalizedDocument
-            Page-level normalized text plus a consolidated debug view.
+            Page-level normalized text plus diagnostics.
         """
+        pages = self._coerce_pages(document_or_pages)
         repeated_lines = self._find_repeated_noise_candidates(pages)
-        cleaned_pages: List[PageText] = []
+
+        cleaned_pages: List[NormalizedPage] = []
         dropped_counter: Counter[str] = Counter()
+        page_reports: List[Dict[str, Any]] = []
+
         total_pages = len(pages)
 
         for page in pages:
+            page_number, page_text, selected_mode, upstream_quality_score, upstream_flags = \
+                self._extract_page_fields(page)
+
             cleaned_lines: List[str] = []
 
-            for raw_line in page.text.splitlines():
+            raw_lines = page_text.splitlines()
+
+            for raw_line in raw_lines:
                 line, drop_reason = self._clean_line(
                     raw_line=raw_line,
                     repeated_lines=repeated_lines,
@@ -270,26 +319,40 @@ class TextNormalizer:
 
                 cleaned_lines.append(line)
 
-            # Remove likely TOC/index blocks, but do it conservatively and
-            # mainly on early pages where tables of contents typically appear.
+            # Remove likely TOC/index blocks conservatively and mainly on early pages.
             cleaned_lines, block_drop_report = self._remove_index_blocks(
                 lines=cleaned_lines,
-                page_number=page.page_number,
+                page_number=page_number,
                 total_pages=total_pages,
             )
             dropped_counter.update(block_drop_report)
 
-            # Reflow obvious broken prose lines while preserving structural
-            # markers such as article headers and legal list items.
+            # Reflow obvious broken prose lines while preserving structural markers.
             cleaned_lines = self._reflow_lines(cleaned_lines)
 
             cleaned_text = self._finalize_page_text(cleaned_lines)
 
             cleaned_pages.append(
-                PageText(
-                    page_number=page.page_number,
+                NormalizedPage(
+                    page_number=page_number,
                     text=cleaned_text,
+                    selected_mode=selected_mode,
+                    upstream_quality_score=upstream_quality_score,
+                    upstream_flags=list(upstream_flags),
                 )
+            )
+
+            page_reports.append(
+                {
+                    "page_number": page_number,
+                    "selected_mode": selected_mode,
+                    "raw_line_count": len(raw_lines),
+                    "cleaned_line_count": len(cleaned_lines),
+                    "raw_char_count": len(page_text),
+                    "cleaned_char_count": len(cleaned_text),
+                    "upstream_quality_score": upstream_quality_score,
+                    "upstream_flags": list(upstream_flags),
+                }
             )
 
         full_text = self._build_full_text(cleaned_pages)
@@ -298,7 +361,12 @@ class TextNormalizer:
             pages=cleaned_pages,
             full_text=full_text,
             dropped_lines_report=dict(dropped_counter),
+            page_reports=page_reports,
         )
+
+    # ------------------------------------------------------------------
+    # Line cleaning
+    # ------------------------------------------------------------------
 
     def _clean_line(
         self,
@@ -325,8 +393,8 @@ class TextNormalizer:
         if not line:
             return None, "empty_line"
 
-        # Remove non-printable control-character noise early so later regexes
-        # operate on cleaner text.
+        # Remove control-character noise early so later regexes operate on
+        # cleaner text.
         line = strip_control_characters(line).strip()
         if not line:
             return None, "control_char_only"
@@ -346,7 +414,7 @@ class TextNormalizer:
         if LOOSE_PAGE_COUNTER_RE.match(line):
             return None, "loose_page_counter"
 
-        # Remove long numeric publication/layout tails.
+        # Remove long pure numeric publication/layout tails.
         if PURE_NUMERIC_NOISE_RE.match(line):
             return None, "trailing_numeric_code"
 
@@ -355,10 +423,13 @@ class TextNormalizer:
             return None, "institutional_banner"
 
         # Remove pure Diário da República editorial lines.
+        #
+        # The length cap is a safety mechanism so we do not remove large lines
+        # that merely begin similarly but contain meaningful text.
         if DR_EDITORIAL_RE.match(line) and len(line) <= 160:
             return None, "dr_editorial_line"
 
-        # Remove signature metadata from body text.
+        # Remove signature metadata lines.
         if SIGNATURE_LINE_RE.match(line):
             return None, "signature_line"
 
@@ -381,8 +452,8 @@ class TextNormalizer:
         # Remove repeated page furniture lines.
         #
         # Important:
-        # repeated-line candidates are now detected mainly from page margins,
-        # which makes this step much safer than scanning the whole body text.
+        # repeated-line candidates are detected mainly from page margins,
+        # which makes this step much safer than scanning the whole body.
         normalized_for_compare = self._normalize_for_comparison(line)
         if normalized_for_compare in repeated_lines:
             return None, "repeated_line"
@@ -391,7 +462,7 @@ class TextNormalizer:
         if self._looks_like_index_line(line):
             return None, "index_like_line"
 
-        # Normalize inner whitespace while preserving line identity.
+        # Normalize inner whitespace while preserving the line boundary itself.
         line = MULTISPACE_RE.sub(" ", line).strip()
 
         if not line:
@@ -399,22 +470,31 @@ class TextNormalizer:
 
         return line, None
 
-    def _find_repeated_noise_candidates(self, pages: List[PageText]) -> set[str]:
+    # ------------------------------------------------------------------
+    # Repeated line detection
+    # ------------------------------------------------------------------
+
+    def _find_repeated_noise_candidates(
+        self,
+        pages: List[Union[PageText, ExtractedPage]],
+    ) -> set[str]:
         """
         Find short normalized lines repeated across page margins.
 
-        Why this heuristic changed
+        Why this heuristic matters
         --------------------------
-        The previous implementation looked across all lines on the page.
-        That is risky because valid legal phrases may repeat in the body.
+        Repeated headers and footers are often strong noise candidates.
 
-        The improved approach only looks at a small top/bottom window of each
-        page, because repeated headers and footers almost always live there.
+        Why margin-only scanning?
+        -------------------------
+        Scanning the full page body is risky because valid legal phrases may
+        repeat across articles or chapters. Restricting the analysis to top/bottom
+        margin regions makes this heuristic much safer.
 
         Parameters
         ----------
-        pages : List[PageText]
-            Raw extracted pages.
+        pages : List[Union[PageText, ExtractedPage]]
+            Page-like objects.
 
         Returns
         -------
@@ -425,11 +505,14 @@ class TextNormalizer:
         total_pages = max(1, len(pages))
 
         for page in pages:
-            raw_lines = [line for line in page.text.splitlines() if line.strip()]
+            _, page_text, _, _, _ = self._extract_page_fields(page)
+
+            raw_lines = [line for line in page_text.splitlines() if line.strip()]
             if not raw_lines:
                 continue
 
             margin_lines = self._margin_lines(raw_lines)
+
             unique_page_lines = {
                 self._normalize_for_comparison(line)
                 for line in margin_lines
@@ -440,13 +523,10 @@ class TextNormalizer:
                 if not line:
                     continue
 
-                # Only short lines are eligible as repeated page furniture.
+                # Only relatively short lines are eligible as repeated furniture.
                 if len(line) <= 140:
                     counter[line] += 1
 
-        # Use a conservative threshold:
-        # - at least two pages
-        # - at least half the pages for larger documents
         threshold = max(2, total_pages // 2)
 
         repeated = {
@@ -456,7 +536,7 @@ class TextNormalizer:
         }
 
         # Additional safeguard:
-        # ignore repeated lines that look too content-heavy or too long.
+        # ignore lines that look too content-heavy or too long.
         return {
             line
             for line in repeated
@@ -465,13 +545,13 @@ class TextNormalizer:
 
     def _margin_lines(self, lines: List[str]) -> List[str]:
         """
-        Return the likely page-margin lines from a page.
+        Return likely page-margin lines from a page.
 
         Why this helper exists
         ----------------------
-        Repeated headers and footers are usually near the top or bottom of the
-        page. Restricting repeated-line analysis to these regions reduces the
-        chance of dropping legitimate repeated legal prose.
+        Repeated headers and footers usually live near the top or bottom of a
+        page. Restricting repeated-line analysis to these areas reduces false
+        positives.
 
         Parameters
         ----------
@@ -508,6 +588,10 @@ class TextNormalizer:
         line = LEADING_PAGE_MARKER_RE.sub("", line).strip()
         line = MULTISPACE_RE.sub(" ", line).strip()
         return line
+
+    # ------------------------------------------------------------------
+    # TOC / index handling
+    # ------------------------------------------------------------------
 
     def _looks_like_index_line(self, line: str) -> bool:
         """
@@ -562,8 +646,10 @@ class TextNormalizer:
         ----------
         lines : List[str]
             Already cleaned lines for one page.
+
         page_number : int
             1-based page number.
+
         total_pages : int
             Total number of pages in the document.
 
@@ -575,7 +661,6 @@ class TextNormalizer:
         if not lines:
             return [], Counter()
 
-        # TOC blocks are overwhelmingly likely to appear near the beginning.
         if not self._is_early_document_page(page_number, total_pages):
             return lines, Counter()
 
@@ -599,7 +684,7 @@ class TextNormalizer:
                 block_lines.append(line)
                 index += 1
 
-            # Only remove blocks that are large enough and TOC-like enough.
+            # Only remove blocks that are sufficiently TOC-like.
             if block_lines and self._looks_like_real_toc_block(block_lines):
                 dropped_counter["index_block_line"] += len(block_lines)
                 continue
@@ -615,13 +700,13 @@ class TextNormalizer:
 
     def _is_early_document_page(self, page_number: int, total_pages: int) -> bool:
         """
-        Decide whether a page belongs to the document front matter region.
+        Decide whether a page belongs to the document front-matter region.
 
         Why this matters
         ----------------
         Title pages and tables of contents usually live near the beginning.
         Restricting aggressive TOC removal to early pages prevents accidental
-        deletion of legitimate structural blocks later in the body.
+        deletion of legitimate blocks later in the body.
 
         Returns
         -------
@@ -641,9 +726,10 @@ class TextNormalizer:
         - explicit structural headings such as "CAPÍTULO", "ARTIGO", "ÍNDICE"
         - short heading ending with a page number
 
-        Important:
-        this helper alone is not enough to remove text. It only marks lines as
-        candidates. Final removal requires block-level evidence.
+        Important
+        ---------
+        This helper alone is not sufficient to remove text.
+        Final removal requires block-level evidence.
         """
         if INDEX_DOT_LEADER_RE.search(line):
             return True
@@ -695,6 +781,10 @@ class TextNormalizer:
 
         return strong_signals >= 3
 
+    # ------------------------------------------------------------------
+    # Prose reflow
+    # ------------------------------------------------------------------
+
     def _reflow_lines(self, lines: List[str]) -> List[str]:
         """
         Reflow obvious broken prose lines conservatively.
@@ -702,14 +792,14 @@ class TextNormalizer:
         Why this exists
         ---------------
         PDF extraction often breaks ordinary prose into multiple short lines.
-        If those lines remain separated, later paragraph grouping produces
-        artificial paragraph boundaries and weaker chunks.
+        If those lines remain separated, the parser may inherit artificial
+        paragraph boundaries that do not exist semantically.
 
         Safety behavior
         ---------------
         We only merge lines when:
-        - the previous line does not look like a structural marker
-        - the current line does not look like a structural marker
+        - the previous line does not look structural
+        - the current line does not look structural
         - the previous line does not end like a hard sentence boundary
         - the current line looks like prose continuation
 
@@ -772,8 +862,6 @@ class TextNormalizer:
         if HARD_LINE_END_RE.search(previous_line):
             return False
 
-        # If the current line looks like the beginning of ordinary prose,
-        # it is often a continuation of the previous broken line.
         if PROSE_START_RE.match(current_line):
             return True
 
@@ -782,13 +870,11 @@ class TextNormalizer:
         if current_line[:1].islower():
             return True
 
-        # Otherwise remain conservative.
         return False
 
     def _is_structural_line(self, line: str) -> bool:
         """
-        Decide whether a line likely carries structural meaning and should
-        therefore remain on its own line.
+        Decide whether a line likely carries structural meaning.
 
         Structural examples
         -------------------
@@ -808,6 +894,10 @@ class TextNormalizer:
             or LETTERED_ITEM_RE.match(line)
         )
 
+    # ------------------------------------------------------------------
+    # Garbling detection
+    # ------------------------------------------------------------------
+
     def _looks_like_garbled_line(self, line: str) -> bool:
         """
         Decide whether a single line looks clearly corrupted or non-linguistic.
@@ -815,7 +905,7 @@ class TextNormalizer:
         Why this helper exists
         ----------------------
         Some problematic PDFs produce isolated lines that are obviously unusable,
-        even when the whole document is not handled through OCR fallback.
+        even when the full document does not need OCR fallback.
 
         Important safety note
         ---------------------
@@ -860,6 +950,10 @@ class TextNormalizer:
 
         return False
 
+    # ------------------------------------------------------------------
+    # Final page/document rebuilding
+    # ------------------------------------------------------------------
+
     def _finalize_page_text(self, cleaned_lines: List[str]) -> str:
         """
         Rebuild the cleaned page text.
@@ -870,8 +964,9 @@ class TextNormalizer:
         2. Repair hyphenated line breaks
         3. Apply shared conservative block normalization
 
-        Important:
-        we still preserve structure-friendly line breaks here.
+        Important
+        ---------
+        We still preserve structure-friendly line breaks here.
         """
         if not cleaned_lines:
             return ""
@@ -887,20 +982,76 @@ class TextNormalizer:
 
         return text.strip()
 
-    def _build_full_text(self, pages: List[PageText]) -> str:
+    def _build_full_text(self, pages: List[NormalizedPage]) -> str:
         """
         Build a debug-friendly full document text from normalized pages.
 
         Design choice
         -------------
         We keep page boundaries visible only as blank separation between pages,
-        not as explicit page markers inside the text body.
+        not as explicit page markers inside the body text.
 
-        This makes the full-text export easier to read while remaining useful
-        for debugging normalization quality.
+        This makes the debug export easier to read while still preserving a
+        useful notion of page separation.
         """
         non_empty_pages = [page.text.strip() for page in pages if page.text.strip()]
         if not non_empty_pages:
             return ""
 
         return "\n\n".join(non_empty_pages).strip()
+
+    # ------------------------------------------------------------------
+    # Compatibility helpers
+    # ------------------------------------------------------------------
+
+    def _coerce_pages(
+        self,
+        document_or_pages: Union[ExtractedDocument, Sequence[PageText], Sequence[ExtractedPage]],
+    ) -> List[Union[PageText, ExtractedPage]]:
+        """
+        Normalize the input into a list of page-like objects.
+
+        Why this helper exists
+        ----------------------
+        The codebase is currently transitioning from the legacy `PageText`
+        model to the richer `ExtractedDocument` / `ExtractedPage` model.
+        This helper allows normalization to support both during the migration.
+        """
+        if isinstance(document_or_pages, ExtractedDocument):
+            return list(document_or_pages.pages)
+
+        return list(document_or_pages)
+
+    def _extract_page_fields(
+        self,
+        page: Union[PageText, ExtractedPage],
+    ) -> Tuple[int, str, str, Optional[float], List[str]]:
+        """
+        Extract normalized fields from either PageText or ExtractedPage.
+
+        Returns
+        -------
+        Tuple[int, str, str, Optional[float], List[str]]
+            Normalized fields:
+            - page_number
+            - text
+            - selected_mode
+            - upstream_quality_score
+            - upstream_flags
+        """
+        if isinstance(page, ExtractedPage):
+            return (
+                page.page_number,
+                page.text,
+                page.selected_mode,
+                page.quality_score,
+                list(page.corruption_flags),
+            )
+
+        return (
+            page.page_number,
+            page.text,
+            "",
+            None,
+            [],
+        )
