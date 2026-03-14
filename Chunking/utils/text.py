@@ -4,12 +4,12 @@ import re
 import unicodedata
 from typing import Iterable, List
 
-from Chunking.config.patterns import MULTI_NEWLINE_RE, MULTI_SPACE_RE
+from Chunking.config.patterns import MULTI_NEWLINE_RE
 
 
-# -------------------------------------------------------------------------
+# ============================================================================
 # Character-level cleanup patterns
-# -------------------------------------------------------------------------
+# ============================================================================
 #
 # These helpers are intentionally conservative.
 #
@@ -21,7 +21,7 @@ from Chunking.config.patterns import MULTI_NEWLINE_RE, MULTI_SPACE_RE
 # - normalize Unicode in a predictable and stable way
 # - preserve structural newlines for downstream parsing
 # - keep text readable for inspection, chunking, and embeddings
-# -------------------------------------------------------------------------
+# ============================================================================
 
 # Match Unicode control characters while preserving:
 # - newline (\n)
@@ -51,7 +51,7 @@ NBSP_RE = re.compile(r"[\u00A0\u2007\u202F]")
 # Match repeated horizontal whitespace.
 #
 # We keep this local pattern because some helpers need explicit control over
-# spaces and tabs independently of the shared project-level patterns.
+# spaces and tabs independently of higher-level normalization logic.
 HORIZONTAL_WS_RE = re.compile(r"[ \t]+")
 
 # Used for conservative repair of awkward spaces before punctuation.
@@ -79,20 +79,54 @@ def slugify_file_stem(name: str) -> str:
     """
     Convert a file stem into a safe and stable document identifier.
 
-    Design goals:
+    Design goals
+    ------------
     - keep identifiers filesystem-safe
     - keep identifiers log/debug friendly
     - avoid unbounded length
     - remain deterministic
+    - behave better with accented Portuguese text
 
-    Example:
-        "Despacho n.º 7088/2023" -> "Despacho_n_7088_2023"
+    Example
+    -------
+    "Despacho n.º 7088/2023" -> "Despacho_n_7088_2023"
+    "Regulamento de Matrículas" -> "Regulamento_de_Matriculas"
 
-    Notes:
-    - We intentionally keep ASCII alphanumerics plus underscore only.
+    Why this implementation is preferable
+    -------------------------------------
+    A simple regex-only cleanup tends to drop accented characters entirely,
+    which can produce unstable or less readable identifiers.
+
+    This helper first performs a conservative ASCII folding step:
+    - decompose Unicode characters
+    - remove combining marks
+    - keep the base Latin letters when possible
+
+    Notes
+    -----
+    - We intentionally keep only ASCII alphanumerics plus underscore.
     - This helper is meant for identifiers, not for user-facing labels.
     """
-    slug = re.sub(r"[^A-Za-z0-9]+", "_", name).strip("_")
+    if not name:
+        return "document"
+
+    # Normalize compatibility forms first so that visually similar characters
+    # become more predictable before identifier cleanup.
+    normalized = unicodedata.normalize("NFKD", name)
+
+    # Remove combining marks so that characters such as:
+    #   á -> a
+    #   ç -> c
+    #   ã -> a
+    # become more stable for identifiers.
+    without_marks = "".join(
+        ch for ch in normalized
+        if not unicodedata.combining(ch)
+    )
+
+    # Keep only ASCII letters, digits, and underscore separators.
+    slug = re.sub(r"[^A-Za-z0-9]+", "_", without_marks).strip("_")
+
     return slug[:120] if slug else "document"
 
 
@@ -100,15 +134,17 @@ def strip_control_characters(text: str) -> str:
     """
     Remove non-printable control characters that commonly appear in PDF text.
 
-    Why this helper exists:
-    extracted PDF text often contains hidden control bytes that:
+    Why this helper exists
+    ----------------------
+    Extracted PDF text often contains hidden control bytes that:
     - break regex matching
     - pollute chunk text
     - produce unreadable inspection outputs
     - degrade embeddings and retrieval quality
 
-    Important:
-    we preserve structural newline handling by not removing line breaks here.
+    Important
+    ---------
+    We preserve structural newline handling by not removing line breaks here.
     """
     if not text:
         return ""
@@ -120,17 +156,20 @@ def normalize_unicode_text(text: str) -> str:
     """
     Apply conservative Unicode normalization suitable for legal text.
 
-    Steps:
+    Steps
+    -----
     - normalize compatibility variants with NFKC
     - remove soft hyphen
     - convert non-breaking spaces to ordinary spaces
 
-    Why NFKC:
-    it reduces many extraction inconsistencies while generally preserving the
+    Why NFKC
+    --------
+    It reduces many extraction inconsistencies while generally preserving the
     visible meaning of the text.
 
-    Important:
-    we intentionally do not lowercase text or remove accents because those may
+    Important
+    ---------
+    We intentionally do not lowercase text or remove accents because those may
     be meaningful for:
     - display
     - legal references
@@ -150,7 +189,8 @@ def normalize_line_endings(text: str) -> str:
     """
     Normalize all line endings to Unix-style newlines.
 
-    Why this matters:
+    Why this matters
+    ----------------
     PDF extraction and cross-platform files may contain:
     - CRLF (Windows)
     - CR (legacy/macOS old style)
@@ -173,8 +213,9 @@ def normalize_inline_whitespace(text: str) -> str:
     - it does not flatten structural newlines
     - it keeps the text suitable for later structure parsing
 
-    Example:
-        "Artigo   1   \\n   Âmbito" -> "Artigo 1\\nÂmbito"
+    Example
+    -------
+    "Artigo   1   \\n   Âmbito" -> "Artigo 1\\nÂmbito"
     """
     if not text:
         return ""
@@ -212,9 +253,10 @@ def normalize_block_whitespace(text: str) -> str:
     Normalize a block of text while preserving document structure.
 
     This is the main high-level cleanup helper used before exporting chunks
-    or preparing text for display / debugging.
+    or preparing text for display/debugging.
 
-    Cleanup order matters:
+    Cleanup order matters
+    ---------------------
     1. Normalize Unicode variants
     2. Normalize line endings
     3. Remove control characters
@@ -222,8 +264,9 @@ def normalize_block_whitespace(text: str) -> str:
     5. Normalize punctuation spacing
     6. Collapse excessive blank lines
 
-    Important:
-    this function does NOT unwrap all single newlines.
+    Important
+    ---------
+    This function does NOT unwrap all single newlines.
     The structure parser depends on those line boundaries.
     """
     if not text:
@@ -245,11 +288,13 @@ def join_hyphenated_linebreaks(text: str) -> str:
     """
     Repair words split by PDF line wrapping.
 
-    Example:
-        "regula-\\nmento" -> "regulamento"
+    Example
+    -------
+    "regula-\\nmento" -> "regulamento"
 
-    Design choice:
-    this remains intentionally conservative because over-aggressive word joining
+    Design choice
+    -------------
+    This remains intentionally conservative because over-aggressive word joining
     can corrupt valid legal text.
 
     We only join when:
@@ -276,9 +321,10 @@ def unwrap_single_newlines(text: str) -> str:
     because article headers, section labels, and list items often depend
     on original line boundaries.
 
-    Example:
-        "Linha 1\\nLinha 2\\n\\nParágrafo 2"
-        -> "Linha 1 Linha 2\\n\\nParágrafo 2"
+    Example
+    -------
+    "Linha 1\\nLinha 2\\n\\nParágrafo 2"
+    -> "Linha 1 Linha 2\\n\\nParágrafo 2"
     """
     if not text:
         return ""
@@ -296,20 +342,24 @@ def split_paragraphs(text: str) -> List[str]:
     """
     Split text into paragraph-like blocks.
 
-    Current rule:
+    Current rule
+    ------------
     - blank-line separation defines paragraph boundaries
 
-    Why this is intentionally simple:
-    in legal and regulatory corpora, paragraph splitting must be predictable.
-    More aggressive heuristics often damage section / list structure.
+    Why this is intentionally simple
+    --------------------------------
+    In legal and regulatory corpora, paragraph splitting must be predictable.
+    More aggressive heuristics often damage section/list structure.
 
-    Expected usage:
+    Expected usage
+    --------------
     - chunk fallback grouping
     - preamble subdivision
     - oversized article subdivision
 
-    Important:
-    input should already be reasonably normalized.
+    Important
+    ---------
+    Input should already be reasonably normalized.
     """
     if not text:
         return []
@@ -329,7 +379,10 @@ def first_non_empty(items: Iterable[str]) -> str:
     - consumed title lines
     - fallback labels
 
-    Returns an empty string when no usable value exists.
+    Returns
+    -------
+    str
+        The first usable value, or an empty string when none exists.
     """
     for item in items:
         if item and item.strip():
