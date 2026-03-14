@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import re
-from typing import List, Optional, Tuple
+from typing import List, Optional, Sequence, Tuple, Union
 
 from Chunking.chunking.models import StructuralNode
+from Chunking.cleaning.normalizer import NormalizedDocument, NormalizedPage
 
 
-# -------------------------------------------------------------------------
-# Structure-aware regexes for Portuguese legal / regulatory documents.
+# ============================================================================
+# Structure-aware regexes for Portuguese legal / regulatory documents
+# ============================================================================
 #
 # These patterns intentionally remain local to this module so the parser stays
 # self-contained and easy to evolve.
@@ -15,9 +17,9 @@ from Chunking.chunking.models import StructuralNode
 # Design philosophy
 # -----------------
 # This parser should prefer conservative structure detection over aggressive
-# guessing. In legal and regulatory documents, false positives are often more
+# guessing. In legal/regulatory documents, false positives are often more
 # harmful than missing a small structural cue.
-# -------------------------------------------------------------------------
+# ============================================================================
 
 # Accept article header variants such as:
 # - "ARTIGO 1º"
@@ -58,7 +60,7 @@ ANNEX_HEADER_RE = re.compile(
     re.IGNORECASE,
 )
 
-# Accept legal numbered structural blocks such as:
+# Accept numbered legal structural blocks such as:
 # - "1. Texto..."
 # - "2) Texto..."
 # - "2.1. Texto..."
@@ -68,7 +70,7 @@ ANNEX_HEADER_RE = re.compile(
 # - "N.º 2 ..."
 #
 # Important:
-# the pattern is intentionally stricter than "any number at line start".
+# this pattern is intentionally stricter than "any number at line start".
 NUMBERED_BLOCK_RE = re.compile(
     r"(?m)^(?P<label>(?:n\.?\s*[ºo]\s*)?\d+(?:\.\d+)*)(?:\.\s+|\)\s+|\s+[—–\-]\s+|\s+)"
 )
@@ -81,7 +83,7 @@ LETTERED_BLOCK_RE = re.compile(
     re.IGNORECASE,
 )
 
-# Uppercase-heavy lines often behave like titles.
+# Uppercase-heavy lines often behave like headings/titles.
 UPPERCASE_HEAVY_RE = re.compile(
     r"^[A-ZÁÀÂÃÉÈÊÍÌÎÓÒÔÕÚÙÛÇ0-9 /().,\-–—ºª]+$"
 )
@@ -92,7 +94,7 @@ BODY_START_RE = re.compile(
     re.IGNORECASE,
 )
 
-# Detect lines that strongly look like front matter rather than legal body.
+# Detect lines that strongly look like front matter rather than body.
 FRONT_MATTER_RE = re.compile(
     r"^\s*(POLITÉCNICO DO PORTO|P\.PORTO|DESPACHO|REGULAMENTO\s+N\.?\s*º|REGULAMENTO\s+Nº|ÍNDICE)\b",
     re.IGNORECASE,
@@ -101,42 +103,73 @@ FRONT_MATTER_RE = re.compile(
 
 class StructureParser:
     """
-    Parse normalized page text into a navigable structural tree.
+    Parse normalized text into a navigable structural tree.
+
+    High-level purpose
+    ------------------
+    This parser is the bridge between:
+        normalized document text
+    and:
+        a structured legal/regulatory tree
+
+    It does NOT yet generate the final master-dictionary JSON structure, but
+    it should produce a tree rich enough for that export step to be deterministic
+    and clean.
 
     Design goals
     ------------
     - Be pragmatic rather than academically perfect
     - Be robust for Portuguese legal and regulatory PDFs
-    - Preserve enough hierarchy to support high-quality chunking
-    - Enrich metadata so chunk text can stay clean
+    - Preserve enough hierarchy to support export into a canonical JSON tree
+    - Enrich metadata so final chunk text can stay clean later
     - Prefer conservative structure detection over risky inference
 
     Important note
     --------------
-    This parser assumes that the text normalizer already preserved meaningful
-    line boundaries. The parser relies heavily on those boundaries to detect
-    articles, titles, numbered sections, and lettered items.
+    This parser assumes that the normalizer already preserved meaningful line
+    boundaries. The parser relies heavily on those boundaries to detect:
+    - chapters
+    - section containers
+    - annexes
+    - articles
+    - titles
+    - numbered sections
+    - lettered items
     """
 
     def __init__(self) -> None:
         """
-        Initialize the parser state.
+        Initialize parser state.
 
         Why this exists
         ---------------
-        The parser now creates explicit structural identity metadata such as:
+        The parser creates explicit structural identity metadata such as:
         - node_id
         - parent_node_id
         - hierarchy_path
 
-        Keeping an internal counter makes those identifiers stable within one
-        parsing run and easy to inspect in JSON outputs.
+        Keeping an internal counter makes identifiers stable within one parsing
+        run and easy to inspect in JSON outputs.
         """
         self._node_sequence = 0
 
-    def parse(self, pages_text: List[tuple[int, str]]) -> StructuralNode:
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
+    def parse(
+        self,
+        normalized_input: Union[NormalizedDocument, Sequence[Tuple[int, str]], Sequence[NormalizedPage]],
+    ) -> StructuralNode:
         """
-        Parse normalized page text into a structural tree.
+        Parse normalized content into a structural tree.
+
+        Supported inputs
+        ----------------
+        This method accepts:
+        - NormalizedDocument
+        - List[NormalizedPage]
+        - legacy list of tuples: (page_number, page_text)
 
         High-level output shape
         -----------------------
@@ -153,25 +186,27 @@ class StructureParser:
 
         Important behavior
         ------------------
-        - Content before the first article is no longer treated as a single
-          undifferentiated PREAMBLE block.
-        - We now split that zone into:
-            * FRONT_MATTER: covers, titles, index-like opening material
+        - Content before the first article is no longer treated as one
+          undifferentiated block.
+        - It is split into:
+            * FRONT_MATTER: cover, branding, title, index-like opening material
             * PREAMBLE: genuine introductory normative prose
-        - Articles are attached to the current structural container.
-        - ARTICLE.text remains canonical fallback text even when SECTION and
-          LETTERED_ITEM children are later derived from it.
+        - Articles are attached to the current structural container
+        - ARTICLE.text remains the canonical fallback text even when SECTION and
+          LETTERED_ITEM children are later derived from it
 
         Parameters
         ----------
-        pages_text : List[tuple[int, str]]
-            Ordered list of page_number/page_text pairs.
+        normalized_input : Union[NormalizedDocument, Sequence[Tuple[int, str]], Sequence[NormalizedPage]]
+            Normalized input document/pages.
 
         Returns
         -------
         StructuralNode
             Root DOCUMENT node containing the parsed tree.
         """
+        pages_text = self._coerce_pages_text(normalized_input)
+
         root = self._make_node(
             node_type="DOCUMENT",
             label="DOCUMENT",
@@ -180,7 +215,7 @@ class StructureParser:
             page_start=None,
             page_end=None,
             metadata={
-                "document_part": "regulation_body",
+                "document_part": "document_root",
             },
             parent=None,
         )
@@ -189,12 +224,13 @@ class StructureParser:
 
         # Container stack design
         # ----------------------
-        # The stack always keeps currently active structural containers.
+        # The stack always contains the currently active non-article containers.
+        #
         # Example:
         #   DOCUMENT -> CHAPTER -> SECTION_CONTAINER
         #
-        # ARTICLE nodes are NOT kept in this stack because body text routing
-        # already tracks them separately through current_article.
+        # ARTICLE nodes are deliberately NOT kept in this stack, because article
+        # routing is already handled separately via `current_article`.
         container_stack: List[StructuralNode] = [root]
         current_article: Optional[StructuralNode] = None
 
@@ -221,7 +257,7 @@ class StructureParser:
 
                 chapter_title = inline_title or consumed_title
 
-                # Chapters live directly under the root document.
+                # Chapters attach directly under DOCUMENT.
                 container_stack = [root]
                 current_parent = container_stack[-1]
 
@@ -234,6 +270,7 @@ class StructureParser:
                     page_end=page_number,
                     metadata={
                         "chapter_number": chapter_number,
+                        "chapter_title": chapter_title,
                         "document_part": "regulation_body",
                     },
                     parent=current_parent,
@@ -253,7 +290,8 @@ class StructureParser:
             # - SUBSECÇÃO II
             # - TÍTULO III
             #
-            # We attach them below the nearest suitable non-article container.
+            # They attach below the nearest currently active non-article
+            # container.
             # ---------------------------------------------------------
             section_container_match = SECTION_CONTAINER_RE.match(line)
             if section_container_match:
@@ -268,11 +306,6 @@ class StructureParser:
                 )
 
                 container_title = inline_title or consumed_title
-
-                # Nested container policy
-                # -----------------------
-                # A new SECTION_CONTAINER should attach to the nearest
-                # non-article container currently active.
                 current_parent = container_stack[-1]
 
                 container_node = self._make_node(
@@ -285,6 +318,7 @@ class StructureParser:
                     metadata={
                         "container_type": container_type,
                         "container_number": container_number,
+                        "container_title": container_title,
                         "document_part": current_parent.metadata.get(
                             "document_part",
                             "regulation_body",
@@ -318,7 +352,7 @@ class StructureParser:
 
                 annex_title = inline_title or consumed_title
 
-                # Annexes attach directly to the root document.
+                # Annexes attach directly under DOCUMENT.
                 container_stack = [root]
                 current_parent = container_stack[-1]
 
@@ -330,6 +364,8 @@ class StructureParser:
                     page_start=page_number,
                     page_end=page_number,
                     metadata={
+                        "annex_label": annex_label,
+                        "annex_title": annex_title,
                         "document_part": "regulation_annex",
                     },
                     parent=current_parent,
@@ -410,7 +446,45 @@ class StructureParser:
             self._attach_pre_article_content(root, pre_article_lines)
 
         self._post_process_nodes(root)
+        self._infer_missing_page_ranges(root)
         return root
+
+    # ------------------------------------------------------------------
+    # Input coercion / line collection
+    # ------------------------------------------------------------------
+
+    def _coerce_pages_text(
+        self,
+        normalized_input: Union[NormalizedDocument, Sequence[Tuple[int, str]], Sequence[NormalizedPage]],
+    ) -> List[Tuple[int, str]]:
+        """
+        Normalize supported parser inputs into a list of page tuples.
+
+        Why this helper exists
+        ----------------------
+        The parser is being migrated from the older contract:
+            List[tuple[int, str]]
+        toward richer normalized models.
+
+        This helper preserves compatibility during that transition.
+
+        Parameters
+        ----------
+        normalized_input : Union[NormalizedDocument, Sequence[Tuple[int, str]], Sequence[NormalizedPage]]
+            Supported parser input variants.
+
+        Returns
+        -------
+        List[Tuple[int, str]]
+            Normalized list of (page_number, page_text) tuples.
+        """
+        if isinstance(normalized_input, NormalizedDocument):
+            return [(page.page_number, page.text) for page in normalized_input.pages]
+
+        if normalized_input and isinstance(normalized_input[0], NormalizedPage):  # type: ignore[index]
+            return [(page.page_number, page.text) for page in normalized_input]  # type: ignore[union-attr]
+
+        return list(normalized_input)  # type: ignore[arg-type]
 
     def _collect_lines(self, pages_text: List[Tuple[int, str]]) -> List[Tuple[int, str]]:
         """
@@ -418,11 +492,12 @@ class StructureParser:
 
         Why page numbers remain attached
         --------------------------------
-        Page provenance is needed later for:
+        Page provenance is required later for:
         - page_start
         - page_end
         - child-derived page ranges
-        - chunk metadata traceability
+        - JSON export metadata
+        - eventual chunk traceability
 
         Parameters
         ----------
@@ -445,6 +520,10 @@ class StructureParser:
 
         return lines
 
+    # ------------------------------------------------------------------
+    # Pre-article handling
+    # ------------------------------------------------------------------
+
     def _attach_pre_article_content(
         self,
         root: StructuralNode,
@@ -456,8 +535,8 @@ class StructureParser:
         Why this helper exists
         ----------------------
         Earlier implementations often treated everything before the first
-        article as PREAMBLE. That behaves poorly on real PDFs because opening
-        pages frequently contain:
+        article as PREAMBLE. That behaves poorly on real institutional PDFs
+        because opening pages frequently contain:
         - cover/title material
         - dispatch headers
         - institutional branding
@@ -469,12 +548,13 @@ class StructureParser:
         ----------------
         - classify obvious front-matter lines using lightweight heuristics
         - preserve the remaining prose as PREAMBLE
-        - keep both nodes separate for downstream chunking and filtering
+        - keep both nodes separate for downstream export and later chunking
 
         Parameters
         ----------
         root : StructuralNode
             Root DOCUMENT node.
+
         pre_article_lines : List[Tuple[int, str]]
             All lines seen before the first detected article.
         """
@@ -528,12 +608,16 @@ class StructureParser:
                 )
 
                 # Keep PREAMBLE after FRONT_MATTER when both exist.
-                insert_index = 1 if root.children and root.children[0].node_type == "FRONT_MATTER" else 0
+                insert_index = (
+                    1
+                    if root.children and root.children[0].node_type == "FRONT_MATTER"
+                    else 0
+                )
                 root.children.insert(insert_index, preamble_node)
 
     def _looks_like_front_matter_line(self, line: str) -> bool:
         """
-        Decide whether a line likely belongs to cover/front matter rather than
+        Decide whether a line likely belongs to front matter rather than
         normative preamble prose.
 
         Typical positive examples
@@ -545,9 +629,9 @@ class StructureParser:
 
         Safety philosophy
         -----------------
-        This heuristic should remain lightweight.
+        This heuristic should remain lightweight and conservative.
         It is better to leave some front matter inside PREAMBLE than to
-        aggressively reclassify genuine introductory prose.
+        aggressively reclassify genuine normative prose.
 
         Parameters
         ----------
@@ -569,6 +653,10 @@ class StructureParser:
             return True
 
         return False
+
+    # ------------------------------------------------------------------
+    # Title detection
+    # ------------------------------------------------------------------
 
     def _consume_following_title_lines(
         self,
@@ -598,8 +686,10 @@ class StructureParser:
         ----------
         lines : List[Tuple[int, str]]
             Full flattened line stream.
+
         start_index : int
             Starting index after the structural marker.
+
         max_lines : int
             Maximum number of title lines to consume.
 
@@ -645,13 +735,14 @@ class StructureParser:
 
         Design philosophy
         -----------------
-        Title detection must remain conservative. A missed title is preferable
-        to swallowing normative prose into metadata.
+        Title detection must remain conservative.
+        A missed title is preferable to swallowing normative prose into metadata.
 
         Parameters
         ----------
         line : str
             Candidate line.
+
         collected_count : int, default=0
             How many title lines have already been consumed.
 
@@ -728,6 +819,10 @@ class StructureParser:
 
         return False
 
+    # ------------------------------------------------------------------
+    # Node text accumulation
+    # ------------------------------------------------------------------
+
     def _append_text_to_node(
         self,
         node: StructuralNode,
@@ -739,15 +834,17 @@ class StructureParser:
 
         Why this helper exists
         ----------------------
-        It keeps node text accumulation and page-range tracking centralized and
+        It keeps text accumulation and page-range tracking centralized and
         predictable.
 
         Parameters
         ----------
         node : StructuralNode
             Target node.
+
         line : str
             Line to append.
+
         page_number : int
             Source page number.
         """
@@ -756,6 +853,10 @@ class StructureParser:
 
         node.page_end = page_number
         node.text = f"{node.text}\n{line}".strip()
+
+    # ------------------------------------------------------------------
+    # Post-processing
+    # ------------------------------------------------------------------
 
     def _post_process_nodes(self, node: StructuralNode) -> None:
         """
@@ -767,13 +868,14 @@ class StructureParser:
         - recursively post-process children
         - derive SECTION children from article text when appropriate
         - derive LETTERED_ITEM children from article/section text when appropriate
-        - infer page ranges from children when missing
 
         Important implementation choice
         -------------------------------
         ARTICLE nodes keep their full canonical text even after SECTION or
-        LETTERED_ITEM children are extracted. This is intentional because the
-        chunking layer may still need the full article text as a fallback.
+        LETTERED_ITEM children are extracted. This is intentional because:
+        - the export layer may still need the full article content
+        - later chunking may want full-article fallback
+        - child nodes are explicit structure enrichment, not destructive splits
 
         Parameters
         ----------
@@ -798,17 +900,32 @@ class StructureParser:
         if node.node_type == "SECTION" and node.text:
             node.children.extend(self._extract_lettered_children(node))
 
-        if node.page_end is None and node.children:
-            node.page_end = max(
-                child.page_end or child.page_start or 0
-                for child in node.children
-            )
+    def _infer_missing_page_ranges(self, node: StructuralNode) -> None:
+        """
+        Infer missing page ranges recursively from child nodes.
 
-        if node.page_start is None and node.children:
-            node.page_start = min(
-                child.page_start or 10**9
-                for child in node.children
-            )
+        Why this helper exists
+        ----------------------
+        Some containers may initially have only partial page information.
+        This method repairs that by deriving the broadest plausible page range
+        from descendants.
+
+        Parameters
+        ----------
+        node : StructuralNode
+            Node whose page range should be repaired if necessary.
+        """
+        for child in node.children:
+            self._infer_missing_page_ranges(child)
+
+        child_starts = [child.page_start for child in node.children if child.page_start is not None]
+        child_ends = [child.page_end for child in node.children if child.page_end is not None]
+
+        if node.page_start is None and child_starts:
+            node.page_start = min(child_starts)
+
+        if node.page_end is None and child_ends:
+            node.page_end = max(child_ends)
 
     def _normalize_node_text(self, text: str) -> str:
         """
@@ -816,9 +933,9 @@ class StructureParser:
 
         Why this helper remains light
         -----------------------------
-        The parser still benefits from newline structure, and downstream
-        chunking may also rely on retained line boundaries. Therefore
-        aggressive flattening does not belong here.
+        The parser still benefits from retained newline structure, and later
+        export/chunking may also rely on it. Therefore aggressive flattening
+        does not belong here.
 
         Parameters
         ----------
@@ -836,18 +953,21 @@ class StructureParser:
         text = re.sub(r"\n{3,}", "\n\n", text)
         return text.strip()
 
+    # ------------------------------------------------------------------
+    # Numbered structure extraction
+    # ------------------------------------------------------------------
+
     def _extract_numbered_children(self, article: StructuralNode) -> List[StructuralNode]:
         """
-        Split article text into numbered section-like children.
+        Split article text into numbered SECTION children.
 
         Supported structural examples
         -----------------------------
         - "1. ..."
-        - "2. ..."
+        - "2) ..."
         - "2.1. ..."
         - "2.1 - ..."
         - "2.1 — ..."
-        - "2) ..."
         - "n.º 1 ..."
         - "N.º 2 ..."
 
@@ -925,12 +1045,6 @@ class StructureParser:
         - "Nº 2"  -> "2"
         - "2.1"   -> "2.1"
 
-        Why this helper exists
-        ----------------------
-        Legal documents often express section labels using "n.º" notation.
-        For plausibility checks and metadata consistency, we normalize those
-        labels into their numeric core.
-
         Parameters
         ----------
         label : str
@@ -951,8 +1065,8 @@ class StructureParser:
 
         Why this validation exists
         --------------------------
-        Regex-only matching is not enough for legal text. Without an additional
-        plausibility check, the parser may incorrectly interpret lines such as:
+        Regex-only matching is not enough for legal text. Without a plausibility
+        check, the parser may incorrectly interpret lines such as:
         - "60 créditos ECTS ..."
         - "24 meses após ..."
         as numbered sections.
@@ -1020,18 +1134,6 @@ class StructureParser:
         - 2   -> 60
         - 2.1 -> 24
         - 3.1 -> 9.7
-
-        Parameters
-        ----------
-        previous_parts : List[int]
-            Previous numeric label split into integer components.
-        current_parts : List[int]
-            Current numeric label split into integer components.
-
-        Returns
-        -------
-        bool
-            True when the transition looks structurally valid.
         """
         if len(previous_parts) == len(current_parts):
             if previous_parts[:-1] == current_parts[:-1]:
@@ -1052,6 +1154,10 @@ class StructureParser:
 
         return False
 
+    # ------------------------------------------------------------------
+    # Lettered structure extraction
+    # ------------------------------------------------------------------
+
     def _extract_lettered_children(self, node: StructuralNode) -> List[StructuralNode]:
         """
         Split text into lettered items.
@@ -1063,9 +1169,9 @@ class StructureParser:
 
         Why this is useful
         ------------------
-        Even when lettered items do not become standalone chunks immediately,
+        Even when lettered items do not become standalone retrieval units yet,
         preserving them as explicit structure improves metadata quality and
-        future chunking flexibility.
+        later export/chunking flexibility.
 
         Parameters
         ----------
@@ -1125,6 +1231,10 @@ class StructureParser:
 
         return children
 
+    # ------------------------------------------------------------------
+    # Node factory
+    # ------------------------------------------------------------------
+
     def _make_node(
         self,
         node_type: str,
@@ -1141,27 +1251,34 @@ class StructureParser:
 
         Why this helper exists
         ----------------------
-        The project now benefits from richer structural traceability:
+        The project benefits from richer structural traceability:
         - stable node identifiers
         - explicit parent linkage
-        - hierarchy paths for downstream chunking and debugging
+        - hierarchy paths for export, debugging, and later chunking
 
         Parameters
         ----------
         node_type : str
             Node type such as DOCUMENT, CHAPTER, ARTICLE, SECTION.
+
         label : str
             Human-readable structural label.
+
         title : str
             Optional title.
+
         text : str
             Optional node text.
+
         page_start : Optional[int]
             Starting page.
+
         page_end : Optional[int]
             Ending page.
+
         metadata : dict
             Arbitrary node metadata.
+
         parent : Optional[StructuralNode]
             Parent node, if any.
 
