@@ -1,10 +1,48 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Iterator, List, Sequence
+import re
+from typing import Any, Dict, Iterator, List, Optional, Sequence, Tuple
 
 from Chunking.chunking.models import Chunk, DocumentMetadata, StructuralNode
 from Chunking.chunking.strategy_base import BaseChunkingStrategy
 from Chunking.utils.text import normalize_block_whitespace, split_paragraphs
+
+
+# ============================================================================
+# Local cleanup regexes
+# ============================================================================
+#
+# Why define cleanup rules here?
+# ------------------------------
+# Even if extraction, normalization, and parsing already cleaned most of the
+# document, the chunking strategy still needs a final safety layer.
+#
+# The final chunk text should be as clean as possible and should contain:
+# - semantic content
+# and should avoid carrying:
+# - page counters
+# - editorial lines
+# - article headers
+# - numbered or lettered prefixes when those are already captured in metadata
+# ============================================================================
+
+INLINE_PAGE_COUNTER_RE = re.compile(r"^\s*\d+\s*\|\s*\d+\s*$")
+LOOSE_PAGE_COUNTER_RE = re.compile(r"^\s*\d+\s*\|\s*\d+\s*[\-–—.]?\s*$")
+LEADING_PAGE_MARKER_RE = re.compile(r"^\s*Pág\.\s*\d+\s*", re.IGNORECASE)
+DR_EDITORIAL_RE = re.compile(
+    r"^\s*(N\.?\s*º|PARTE\s+[A-Z]|Diário da República)\b",
+    re.IGNORECASE,
+)
+
+ARTICLE_HEADER_RE = re.compile(
+    r"^\s*(?:ARTIGO|ART\.?)\s+\d+(?:\.\d+)?\s*(?:\.?\s*[ºo°])?\s*(?:[—–\-:]\s*.*)?$",
+    re.IGNORECASE,
+)
+NUMBERED_ITEM_PREFIX_RE = re.compile(
+    r"^\s*(?:n\.?\s*[ºo]\s*)?\d+(?:\.\d+)*(?:\.\s+|\)\s+|\s+[—–\-]\s+|\s+)",
+    re.IGNORECASE,
+)
+LETTERED_ITEM_PREFIX_RE = re.compile(r"^\s*[a-z]\)\s+", re.IGNORECASE)
 
 
 class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
@@ -20,7 +58,8 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
     - if numbered sections are unavailable, fall back to LETTERED_ITEM nodes
     - if the parser did not extract usable internal structure, fall back to
       paragraph grouping
-    - keep FRONT_MATTER and PREAMBLE separate from normative article content
+    - keep PREAMBLE separate from normative article content
+    - avoid chunking FRONT_MATTER by default
 
     Why this strategy is a strong default
     -------------------------------------
@@ -53,14 +92,14 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
 
         Processing order
         ----------------
-        1. Export FRONT_MATTER separately when present
+        1. Skip FRONT_MATTER by default
         2. Export PREAMBLE separately when present
         3. Process ARTICLE nodes in document order
         4. Prefer whole-article chunks for short articles
         5. Prefer grouped SECTION chunks for larger articles
         6. Fall back to grouped LETTERED_ITEM chunks when sections do not exist
         7. Fall back to paragraph grouping when no finer structure is available
-        8. Link neighboring chunks for future traversal / expansion
+        8. Link neighboring chunks when enabled
 
         Why stable sequence numbering matters
         -------------------------------------
@@ -74,6 +113,7 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
         ----------
         document_metadata : DocumentMetadata
             High-level metadata for the current source document.
+
         root : StructuralNode
             Parsed structural tree for the document.
 
@@ -86,55 +126,34 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
         sequence = 1
 
         # -----------------------------------------------------------------
-        # 1) Chunk front matter separately.
+        # 1) FRONT_MATTER
         #
-        # Front matter often contains:
-        # - cover information
+        # Current policy:
+        # do not create retrieval chunks from FRONT_MATTER by default.
+        #
+        # Why?
+        # ----
+        # FRONT_MATTER typically contains:
         # - institutional branding
-        # - dispatch headers
+        # - cover/title-page content
+        # - dispatch headings
         # - index-like content
         #
-        # This material should not be mixed with normative article chunks.
+        # These are usually poor retrieval units and tend to introduce noise.
         # -----------------------------------------------------------------
-        for front_matter in self._iter_nodes_by_type(root, "FRONT_MATTER"):
-            front_text = normalize_block_whitespace(front_matter.text)
-            if not front_text:
-                continue
-
-            front_groups = self._paragraph_grouping(front_text)
-            if not front_groups:
-                front_groups = [front_text]
-
-            for group_text in front_groups:
-                chunks.append(
-                    self._make_chunk(
-                        sequence=sequence,
-                        document_metadata=document_metadata,
-                        text=group_text,
-                        page_start=front_matter.page_start,
-                        page_end=front_matter.page_end,
-                        source_node=front_matter,
-                        chunk_reason="front_matter_group",
-                        metadata={
-                            "document_part": front_matter.metadata.get("document_part"),
-                            "source_span_type": "front_matter",
-                        },
-                    )
-                )
-                sequence += 1
 
         # -----------------------------------------------------------------
-        # 2) Chunk preamble / dispatch separately.
+        # 2) PREAMBLE
         #
-        # The preamble often carries contextual value such as:
-        # - approval context
-        # - amendment context
-        # - revocation context
-        #
-        # It should remain separate from normative article content.
+        # The preamble often carries useful contextual or normative information
+        # such as approval context, amendment context, or introductory clauses.
+        # It should remain separate from article chunks.
         # -----------------------------------------------------------------
         for preamble in self._iter_nodes_by_type(root, "PREAMBLE"):
-            preamble_text = normalize_block_whitespace(preamble.text)
+            preamble_text = self._clean_chunk_text(
+                preamble.text,
+                remove_structural_prefixes=False,
+            )
             if not preamble_text:
                 continue
 
@@ -143,32 +162,43 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
                 preamble_groups = [preamble_text]
 
             for group_text in preamble_groups:
-                chunks.append(
-                    self._make_chunk(
-                        sequence=sequence,
-                        document_metadata=document_metadata,
-                        text=group_text,
-                        page_start=preamble.page_start,
-                        page_end=preamble.page_end,
-                        source_node=preamble,
-                        chunk_reason="preamble_group",
-                        metadata={
-                            "document_part": preamble.metadata.get("document_part"),
-                            "source_span_type": "preamble",
-                        },
-                    )
+                chunk = self._make_chunk(
+                    sequence=sequence,
+                    document_metadata=document_metadata,
+                    text=group_text,
+                    page_start=preamble.page_start,
+                    page_end=preamble.page_end,
+                    source_node=preamble,
+                    source_node_type_override="PREAMBLE",
+                    source_node_label_override=preamble.label,
+                    chunk_reason="preamble_group",
+                    metadata={
+                        **self._base_document_metadata(document_metadata),
+                        "document_part": preamble.metadata.get("document_part"),
+                        "source_span_type": "preamble",
+                        "source_node_id": preamble.node_id,
+                        "parent_node_id": preamble.parent_node_id,
+                    },
                 )
-                sequence += 1
+                if chunk is not None:
+                    chunks.append(chunk)
+                    sequence += 1
 
         # -----------------------------------------------------------------
-        # 3) Chunk article content.
+        # 3) ARTICLE content
         # -----------------------------------------------------------------
         for article in self._iter_nodes_by_type(root, "ARTICLE"):
-            article_text = normalize_block_whitespace(article.text)
+            article_text = self._clean_chunk_text(
+                article.text,
+                remove_structural_prefixes=False,
+            )
             if not article_text:
                 continue
 
-            article_meta = self._article_metadata(article)
+            article_meta = self._article_metadata(
+                document_metadata=document_metadata,
+                article=article,
+            )
 
             # -------------------------------------------------------------
             # Case A:
@@ -177,25 +207,27 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
             # Why:
             # - a short article is often already a complete legal unit
             # - preserving the whole article improves interpretability
-            # - unnecessary splitting reduces retrieval quality
+            # - unnecessary splitting can reduce retrieval quality
             # -------------------------------------------------------------
             if len(article_text) <= self.settings.target_chunk_chars:
-                chunks.append(
-                    self._make_chunk(
-                        sequence=sequence,
-                        document_metadata=document_metadata,
-                        text=article_text,
-                        page_start=article.page_start,
-                        page_end=article.page_end,
-                        source_node=article,
-                        chunk_reason="direct_article",
-                        metadata={
-                            **article_meta,
-                            "source_span_type": "article",
-                        },
-                    )
+                chunk = self._make_chunk(
+                    sequence=sequence,
+                    document_metadata=document_metadata,
+                    text=article_text,
+                    page_start=article.page_start,
+                    page_end=article.page_end,
+                    source_node=article,
+                    source_node_type_override="ARTICLE",
+                    source_node_label_override=article.label,
+                    chunk_reason="direct_article",
+                    metadata={
+                        **article_meta,
+                        "source_span_type": "article",
+                    },
                 )
-                sequence += 1
+                if chunk is not None:
+                    chunks.append(chunk)
+                    sequence += 1
                 continue
 
             # -------------------------------------------------------------
@@ -215,14 +247,10 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
                 section_groups = self._group_sections(section_children)
 
                 for group in section_groups:
-                    group_text = normalize_block_whitespace(
-                        "\n\n".join(
-                            section.text
-                            for section in group
-                            if section.text.strip()
-                        )
+                    group_text = self._join_cleaned_node_texts(
+                        nodes=group,
+                        remove_structural_prefixes=True,
                     )
-
                     if not group_text:
                         continue
 
@@ -231,54 +259,66 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
                         getattr(article, "hierarchy_path", []),
                         [f"SECTION:{label}" for label in group_labels],
                     )
+                    group_page_start, group_page_end = self._group_page_range(group)
 
-                    # If grouped sections are still too large, use paragraph
-                    # fallback while preserving article + section traceability.
                     if len(group_text) > self.settings.hard_max_chunk_chars:
                         paragraph_groups = self._paragraph_grouping(group_text)
                         if not paragraph_groups:
                             paragraph_groups = [group_text]
 
-                        for part_index, paragraph_group in enumerate(paragraph_groups, start=1):
-                            chunks.append(
-                                self._make_chunk(
-                                    sequence=sequence,
-                                    document_metadata=document_metadata,
-                                    text=paragraph_group,
-                                    page_start=article.page_start,
-                                    page_end=article.page_end,
-                                    source_node=article,
-                                    hierarchy_path=hierarchy_path,
-                                    chunk_reason="grouped_sections_paragraph_split",
-                                    metadata={
-                                        **article_meta,
-                                        "section_labels": group_labels,
-                                        "part_index": part_index,
-                                        "part_count": len(paragraph_groups),
-                                        "source_span_type": "article_section_group_paragraph_split",
-                                    },
-                                )
-                            )
-                            sequence += 1
-                    else:
-                        chunks.append(
-                            self._make_chunk(
+                        for part_index, paragraph_group in enumerate(
+                            paragraph_groups,
+                            start=1,
+                        ):
+                            chunk = self._make_chunk(
                                 sequence=sequence,
                                 document_metadata=document_metadata,
-                                text=group_text,
-                                page_start=article.page_start,
-                                page_end=article.page_end,
+                                text=paragraph_group,
+                                page_start=group_page_start,
+                                page_end=group_page_end,
                                 source_node=article,
+                                source_node_type_override="SECTION_GROUP",
+                                source_node_label_override=",".join(group_labels),
                                 hierarchy_path=hierarchy_path,
-                                chunk_reason="grouped_sections",
+                                chunk_reason="grouped_sections_paragraph_split",
                                 metadata={
                                     **article_meta,
                                     "section_labels": group_labels,
-                                    "source_span_type": "article_section_group",
+                                    "part_index": part_index,
+                                    "part_count": len(paragraph_groups),
+                                    "source_span_type": "article_section_group_paragraph_split",
+                                    "source_node_ids": [section.node_id for section in group],
+                                    "group_page_start": group_page_start,
+                                    "group_page_end": group_page_end,
                                 },
                             )
+                            if chunk is not None:
+                                chunks.append(chunk)
+                                sequence += 1
+                    else:
+                        chunk = self._make_chunk(
+                            sequence=sequence,
+                            document_metadata=document_metadata,
+                            text=group_text,
+                            page_start=group_page_start,
+                            page_end=group_page_end,
+                            source_node=article,
+                            source_node_type_override="SECTION_GROUP",
+                            source_node_label_override=",".join(group_labels),
+                            hierarchy_path=hierarchy_path,
+                            chunk_reason="grouped_sections",
+                            metadata={
+                                **article_meta,
+                                "section_labels": group_labels,
+                                "source_span_type": "article_section_group",
+                                "source_node_ids": [section.node_id for section in group],
+                                "group_page_start": group_page_start,
+                                "group_page_end": group_page_end,
+                            },
                         )
-                        sequence += 1
+                        if chunk is not None:
+                            chunks.append(chunk)
+                            sequence += 1
 
                 continue
 
@@ -299,14 +339,10 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
                 lettered_groups = self._group_lettered_items(lettered_children)
 
                 for group in lettered_groups:
-                    group_text = normalize_block_whitespace(
-                        "\n\n".join(
-                            item.text
-                            for item in group
-                            if item.text.strip()
-                        )
+                    group_text = self._join_cleaned_node_texts(
+                        nodes=group,
+                        remove_structural_prefixes=True,
                     )
-
                     if not group_text:
                         continue
 
@@ -315,52 +351,66 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
                         getattr(article, "hierarchy_path", []),
                         [f"LETTERED_ITEM:{label}" for label in group_labels],
                     )
+                    group_page_start, group_page_end = self._group_page_range(group)
 
                     if len(group_text) > self.settings.hard_max_chunk_chars:
                         paragraph_groups = self._paragraph_grouping(group_text)
                         if not paragraph_groups:
                             paragraph_groups = [group_text]
 
-                        for part_index, paragraph_group in enumerate(paragraph_groups, start=1):
-                            chunks.append(
-                                self._make_chunk(
-                                    sequence=sequence,
-                                    document_metadata=document_metadata,
-                                    text=paragraph_group,
-                                    page_start=article.page_start,
-                                    page_end=article.page_end,
-                                    source_node=article,
-                                    hierarchy_path=hierarchy_path,
-                                    chunk_reason="grouped_lettered_items_paragraph_split",
-                                    metadata={
-                                        **article_meta,
-                                        "lettered_labels": group_labels,
-                                        "part_index": part_index,
-                                        "part_count": len(paragraph_groups),
-                                        "source_span_type": "article_lettered_group_paragraph_split",
-                                    },
-                                )
-                            )
-                            sequence += 1
-                    else:
-                        chunks.append(
-                            self._make_chunk(
+                        for part_index, paragraph_group in enumerate(
+                            paragraph_groups,
+                            start=1,
+                        ):
+                            chunk = self._make_chunk(
                                 sequence=sequence,
                                 document_metadata=document_metadata,
-                                text=group_text,
-                                page_start=article.page_start,
-                                page_end=article.page_end,
+                                text=paragraph_group,
+                                page_start=group_page_start,
+                                page_end=group_page_end,
                                 source_node=article,
+                                source_node_type_override="LETTERED_GROUP",
+                                source_node_label_override=",".join(group_labels),
                                 hierarchy_path=hierarchy_path,
-                                chunk_reason="grouped_lettered_items",
+                                chunk_reason="grouped_lettered_items_paragraph_split",
                                 metadata={
                                     **article_meta,
                                     "lettered_labels": group_labels,
-                                    "source_span_type": "article_lettered_group",
+                                    "part_index": part_index,
+                                    "part_count": len(paragraph_groups),
+                                    "source_span_type": "article_lettered_group_paragraph_split",
+                                    "source_node_ids": [item.node_id for item in group],
+                                    "group_page_start": group_page_start,
+                                    "group_page_end": group_page_end,
                                 },
                             )
+                            if chunk is not None:
+                                chunks.append(chunk)
+                                sequence += 1
+                    else:
+                        chunk = self._make_chunk(
+                            sequence=sequence,
+                            document_metadata=document_metadata,
+                            text=group_text,
+                            page_start=group_page_start,
+                            page_end=group_page_end,
+                            source_node=article,
+                            source_node_type_override="LETTERED_GROUP",
+                            source_node_label_override=",".join(group_labels),
+                            hierarchy_path=hierarchy_path,
+                            chunk_reason="grouped_lettered_items",
+                            metadata={
+                                **article_meta,
+                                "lettered_labels": group_labels,
+                                "source_span_type": "article_lettered_group",
+                                "source_node_ids": [item.node_id for item in group],
+                                "group_page_start": group_page_start,
+                                "group_page_end": group_page_end,
+                            },
                         )
-                        sequence += 1
+                        if chunk is not None:
+                            chunks.append(chunk)
+                            sequence += 1
 
                 continue
 
@@ -376,26 +426,30 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
                 paragraph_groups = [article_text]
 
             for part_index, paragraph_group in enumerate(paragraph_groups, start=1):
-                chunks.append(
-                    self._make_chunk(
-                        sequence=sequence,
-                        document_metadata=document_metadata,
-                        text=paragraph_group,
-                        page_start=article.page_start,
-                        page_end=article.page_end,
-                        source_node=article,
-                        chunk_reason="fallback_paragraph_split",
-                        metadata={
-                            **article_meta,
-                            "part_index": part_index,
-                            "part_count": len(paragraph_groups),
-                            "source_span_type": "article_paragraph_group",
-                        },
-                    )
+                chunk = self._make_chunk(
+                    sequence=sequence,
+                    document_metadata=document_metadata,
+                    text=paragraph_group,
+                    page_start=article.page_start,
+                    page_end=article.page_end,
+                    source_node=article,
+                    source_node_type_override="ARTICLE_PART",
+                    source_node_label_override=article.label,
+                    chunk_reason="fallback_paragraph_split",
+                    metadata={
+                        **article_meta,
+                        "part_index": part_index,
+                        "part_count": len(paragraph_groups),
+                        "source_span_type": "article_paragraph_group",
+                    },
                 )
-                sequence += 1
+                if chunk is not None:
+                    chunks.append(chunk)
+                    sequence += 1
 
-        self._link_neighbor_chunks(chunks)
+        if self.settings.enable_chunk_neighbor_links:
+            self._link_neighbor_chunks(chunks)
+
         return chunks
 
     def _iter_nodes_by_type(
@@ -416,6 +470,7 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
         ----------
         node : StructuralNode
             Current node.
+
         node_type : str
             Node type to yield.
 
@@ -468,11 +523,13 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
                 current_group = [section]
                 continue
 
-            current_text = "\n\n".join(
-                item.text for item in current_group if item.text.strip()
+            current_text = self._join_cleaned_node_texts(
+                nodes=current_group,
+                remove_structural_prefixes=True,
             )
-            candidate_text = "\n\n".join(
-                item.text for item in (current_group + [section]) if item.text.strip()
+            candidate_text = self._join_cleaned_node_texts(
+                nodes=current_group + [section],
+                remove_structural_prefixes=True,
             )
 
             current_len = len(current_text)
@@ -493,8 +550,9 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
             groups.append(current_group)
 
         if len(groups) >= 2:
-            last_group_text = "\n\n".join(
-                item.text for item in groups[-1] if item.text.strip()
+            last_group_text = self._join_cleaned_node_texts(
+                nodes=groups[-1],
+                remove_structural_prefixes=True,
             )
             if len(last_group_text) < self.settings.min_chunk_chars:
                 groups[-2].extend(groups[-1])
@@ -529,11 +587,13 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
                 current_group = [item]
                 continue
 
-            current_text = "\n\n".join(
-                node.text for node in current_group if node.text.strip()
+            current_text = self._join_cleaned_node_texts(
+                nodes=current_group,
+                remove_structural_prefixes=True,
             )
-            candidate_text = "\n\n".join(
-                node.text for node in (current_group + [item]) if node.text.strip()
+            candidate_text = self._join_cleaned_node_texts(
+                nodes=current_group + [item],
+                remove_structural_prefixes=True,
             )
 
             should_flush = (
@@ -551,8 +611,9 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
             groups.append(current_group)
 
         if len(groups) >= 2:
-            last_group_text = "\n\n".join(
-                node.text for node in groups[-1] if node.text.strip()
+            last_group_text = self._join_cleaned_node_texts(
+                nodes=groups[-1],
+                remove_structural_prefixes=True,
             )
             if len(last_group_text) < self.settings.min_chunk_chars:
                 groups[-2].extend(groups[-1])
@@ -568,7 +629,7 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
         - article sections are unavailable
         - grouped sections are still too large
         - grouped lettered items are still too large
-        - preamble or front matter needs subdivision
+        - preamble needs subdivision
 
         Design principle
         ----------------
@@ -616,7 +677,174 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
 
         return groups
 
-    def _article_metadata(self, node: StructuralNode) -> Dict[str, Any]:
+    def _clean_chunk_text(
+        self,
+        text: str,
+        remove_structural_prefixes: bool,
+    ) -> str:
+        """
+        Apply final visible-text cleanup before chunk export.
+
+        Why this helper exists
+        ----------------------
+        The parser intentionally preserves structure-rich text.
+        However, visible chunk text should be cleaner and should avoid carrying
+        structure markers that are better represented in metadata.
+
+        Cleanup goals
+        -------------
+        - remove obvious residual page/editorial noise
+        - optionally remove numbered or lettered legal prefixes
+        - normalize whitespace conservatively
+        - preserve semantic body text
+
+        Parameters
+        ----------
+        text : str
+            Input text.
+
+        remove_structural_prefixes : bool
+            When True, remove prefixes such as:
+            - "1. "
+            - "2) "
+            - "a) "
+
+        Returns
+        -------
+        str
+            Cleaned chunk text.
+        """
+        if not text:
+            return ""
+
+        kept_lines: List[str] = []
+
+        for raw_line in text.splitlines():
+            line = raw_line.strip()
+            if not line:
+                continue
+
+            line = LEADING_PAGE_MARKER_RE.sub("", line).strip()
+            if not line:
+                continue
+
+            if INLINE_PAGE_COUNTER_RE.match(line):
+                continue
+
+            if LOOSE_PAGE_COUNTER_RE.match(line):
+                continue
+
+            if DR_EDITORIAL_RE.match(line):
+                continue
+
+            if ARTICLE_HEADER_RE.match(line):
+                continue
+
+            if remove_structural_prefixes:
+                line = NUMBERED_ITEM_PREFIX_RE.sub("", line).strip()
+                line = LETTERED_ITEM_PREFIX_RE.sub("", line).strip()
+
+            if not line:
+                continue
+
+            kept_lines.append(line)
+
+        cleaned = "\n".join(kept_lines)
+        cleaned = normalize_block_whitespace(cleaned)
+        return cleaned.strip()
+
+    def _join_cleaned_node_texts(
+        self,
+        nodes: Sequence[StructuralNode],
+        remove_structural_prefixes: bool,
+    ) -> str:
+        """
+        Join multiple node texts after applying visible-text cleanup.
+
+        Parameters
+        ----------
+        nodes : Sequence[StructuralNode]
+            Nodes whose text should be merged.
+
+        remove_structural_prefixes : bool
+            Whether numbered / lettered prefixes should be stripped.
+
+        Returns
+        -------
+        str
+            Clean merged text.
+        """
+        parts: List[str] = []
+
+        for node in nodes:
+            cleaned = self._clean_chunk_text(
+                node.text,
+                remove_structural_prefixes=remove_structural_prefixes,
+            )
+            if cleaned:
+                parts.append(cleaned)
+
+        return normalize_block_whitespace("\n\n".join(parts)).strip()
+
+    def _group_page_range(
+        self,
+        nodes: Sequence[StructuralNode],
+    ) -> Tuple[Optional[int], Optional[int]]:
+        """
+        Compute the real page range for a grouped chunk.
+
+        Why this helper exists
+        ----------------------
+        Grouped section/alínea chunks should not blindly inherit the full
+        article page range when a narrower and more accurate group span is
+        available.
+
+        Parameters
+        ----------
+        nodes : Sequence[StructuralNode]
+            Nodes included in the chunk.
+
+        Returns
+        -------
+        Tuple[Optional[int], Optional[int]]
+            page_start, page_end
+        """
+        starts = [node.page_start for node in nodes if node.page_start is not None]
+        ends = [node.page_end for node in nodes if node.page_end is not None]
+
+        page_start = min(starts) if starts else None
+        page_end = max(ends) if ends else page_start
+
+        return page_start, page_end
+
+    def _base_document_metadata(
+        self,
+        document_metadata: DocumentMetadata,
+    ) -> Dict[str, Any]:
+        """
+        Build basic document-level metadata shared by all chunks.
+
+        Parameters
+        ----------
+        document_metadata : DocumentMetadata
+            Source document metadata.
+
+        Returns
+        -------
+        Dict[str, Any]
+            Base metadata dictionary.
+        """
+        return {
+            "document_title": document_metadata.title,
+            "source_file_name": document_metadata.file_name,
+            "source_path": document_metadata.source_path,
+        }
+
+    def _article_metadata(
+        self,
+        document_metadata: DocumentMetadata,
+        article: StructuralNode,
+    ) -> Dict[str, Any]:
         """
         Build article-level metadata for chunk export.
 
@@ -627,7 +855,10 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
 
         Parameters
         ----------
-        node : StructuralNode
+        document_metadata : DocumentMetadata
+            Source document metadata.
+
+        article : StructuralNode
             Article node.
 
         Returns
@@ -636,14 +867,17 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
             Article-level metadata useful downstream.
         """
         return {
-            "node_type": node.node_type,
-            "label": node.label,
-            "article_title": node.title,
-            "article_number": node.metadata.get("article_number"),
-            "parent_type": node.metadata.get("parent_type"),
-            "parent_label": node.metadata.get("parent_label"),
-            "parent_title": node.metadata.get("parent_title"),
-            "document_part": node.metadata.get("document_part"),
+            **self._base_document_metadata(document_metadata),
+            "node_type": article.node_type,
+            "label": article.label,
+            "article_title": article.title,
+            "article_number": article.metadata.get("article_number"),
+            "parent_type": article.metadata.get("parent_type"),
+            "parent_label": article.metadata.get("parent_label"),
+            "parent_title": article.metadata.get("parent_title"),
+            "document_part": article.metadata.get("document_part"),
+            "source_node_id": article.node_id,
+            "parent_node_id": article.parent_node_id,
         }
 
     def _merge_hierarchy_path(
@@ -664,6 +898,7 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
         ----------
         base_path : Sequence[str]
             Base hierarchy path from the source node.
+
         extra_items : Sequence[str]
             Extra structural labels relevant to the chunk.
 
@@ -692,18 +927,11 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
         A short contextual prefix such as article label and title often improves
         retrieval quality while still keeping the visible chunk text clean.
 
-        Example
-        -------
-        Visible text:
-            "1 — O estudante ..."
-
-        Embedding text:
-            "Artigo 5.º - Revisão de prova\\n\\n1 — O estudante ..."
-
         Parameters
         ----------
         source_node : StructuralNode
             Main structural source of the chunk.
+
         visible_text : str
             Clean visible chunk text.
 
@@ -728,8 +956,8 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
             if source_node.title:
                 header_parts.append(source_node.title)
 
-        elif source_node.node_type in {"PREAMBLE", "FRONT_MATTER"}:
-            header_parts.append(source_node.node_type.replace("_", " ").title())
+        elif source_node.node_type == "PREAMBLE":
+            header_parts.append("Preamble")
 
         else:
             if source_node.label:
@@ -754,7 +982,9 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
         chunk_reason: str,
         metadata: Dict[str, Any],
         hierarchy_path: List[str] | None = None,
-    ) -> Chunk:
+        source_node_type_override: str | None = None,
+        source_node_label_override: str | None = None,
+    ) -> Chunk | None:
         """
         Build a final Chunk object.
 
@@ -762,6 +992,7 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
         ------------------
         - visible chunk text is normalized before export
         - enriched embedding text is generated separately
+        - empty chunks are discarded defensively
         - chunk ids remain deterministic and sequential
         - source structure is promoted into explicit chunk fields
         - metadata remains flexible for future enrichment
@@ -770,50 +1001,58 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
         ----------
         sequence : int
             Stable sequence number in the current document.
+
         document_metadata : DocumentMetadata
             Source document metadata.
+
         text : str
             Visible chunk text.
+
         page_start : int | None
             Chunk page start.
+
         page_end : int | None
             Chunk page end.
+
         source_node : StructuralNode
             Main structural origin of the chunk.
+
         chunk_reason : str
             Explanation of why the chunk exists in this form.
+
         metadata : Dict[str, Any]
             Additional metadata payload.
+
         hierarchy_path : List[str] | None
             Optional custom hierarchy path. When omitted, the source node path
             is used.
 
+        source_node_type_override : str | None
+            Explicit source-node type for the chunk payload.
+
+        source_node_label_override : str | None
+            Explicit source-node label for the chunk payload.
+
         Returns
         -------
-        Chunk
-            Final chunk object ready for export.
+        Chunk | None
+            Final chunk object or None when visible text is empty.
         """
         visible_text = normalize_block_whitespace(text)
-
         if not visible_text:
-            return Chunk(
-                chunk_id=f"{document_metadata.doc_id}_chunk_{sequence:04d}",
-                doc_id=document_metadata.doc_id,
-                strategy=self.name,
-                text="",
-                text_for_embedding="",
-                page_start=page_start,
-                page_end=page_end,
-                source_node_type=getattr(source_node, "node_type", ""),
-                source_node_label=getattr(source_node, "label", ""),
-                hierarchy_path=list(hierarchy_path or getattr(source_node, "hierarchy_path", [])),
-                chunk_reason=chunk_reason,
-                char_count=0,
-                metadata=metadata,
-            )
+            return None
 
         effective_hierarchy_path = list(
             hierarchy_path or getattr(source_node, "hierarchy_path", [])
+        )
+
+        text_for_embedding = (
+            self._build_text_for_embedding(
+                source_node=source_node,
+                visible_text=visible_text,
+            )
+            if self.settings.include_text_for_embedding
+            else visible_text
         )
 
         return Chunk(
@@ -821,14 +1060,11 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
             doc_id=document_metadata.doc_id,
             strategy=self.name,
             text=visible_text,
-            text_for_embedding=self._build_text_for_embedding(
-                source_node=source_node,
-                visible_text=visible_text,
-            ),
+            text_for_embedding=text_for_embedding,
             page_start=page_start,
             page_end=page_end,
-            source_node_type=getattr(source_node, "node_type", ""),
-            source_node_label=getattr(source_node, "label", ""),
+            source_node_type=source_node_type_override or getattr(source_node, "node_type", ""),
+            source_node_label=source_node_label_override or getattr(source_node, "label", ""),
             hierarchy_path=effective_hierarchy_path,
             chunk_reason=chunk_reason,
             char_count=len(visible_text),
