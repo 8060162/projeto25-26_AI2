@@ -5,28 +5,39 @@ from pathlib import Path
 from typing import List
 
 
-# -------------------------------------------------------------------------
+# ============================================================================
 # Project root resolution
-# -------------------------------------------------------------------------
+# ============================================================================
 #
 # This file lives in:
-# Chunking/config/settings.py
+#     Chunking/config/settings.py
 #
 # Therefore:
-# parents[0] = config
-# parents[1] = Chunking
-# parents[2] = project root
+#     parents[0] = config
+#     parents[1] = Chunking
+#     parents[2] = project root
 #
-# Keeping this dynamic makes the pipeline more portable and avoids hardcoded
-# absolute paths that would break across developers, CI, or operating systems.
-# -------------------------------------------------------------------------
+# Keeping this dynamic makes the pipeline portable and avoids hardcoded
+# absolute paths that would break across developers, CI environments, or
+# operating systems.
+# ============================================================================
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
 @dataclass(slots=True)
 class PipelineSettings:
     """
-    Central runtime configuration for the chunking pipeline.
+    Central runtime configuration for the PDF structure extraction pipeline.
+
+    Current project focus
+    ---------------------
+    The pipeline is no longer only a chunking pipeline.
+
+    The primary goal at this stage is:
+        PDF -> structured extraction -> normalization -> parsing
+        -> canonical master-dictionary-style JSON
+
+    Chunking is still supported, but it is now a downstream optional stage.
 
     Design goals
     ------------
@@ -34,23 +45,12 @@ class PipelineSettings:
     - avoid magic numbers spread across multiple modules
     - support fast tuning after real output inspection
     - remain generic across legal / regulatory PDF corpora
-    - keep the current implementation lightweight and pragmatic
+    - keep the implementation lightweight and pragmatic
 
     Important note
     --------------
-    Chunk sizes are currently character-based, not token-based.
-
-    Why this is still acceptable for now
-    ------------------------------------
-    - it keeps the implementation deterministic
-    - it avoids adding tokenizer dependencies too early
-    - it is sufficient for the current iteration of the project
-
-    Future evolution
-    ----------------
-    If the team later wants tighter LLM-oriented control, these settings can
-    evolve toward token-based sizing without changing the overall pipeline
-    architecture.
+    Some chunk-related settings are still present because chunking remains
+    available as an optional later phase.
     """
 
     # ---------------------------------------------------------------------
@@ -64,38 +64,49 @@ class PipelineSettings:
     output_dir: Path = PROJECT_ROOT / "data" / "chunks"
 
     # ---------------------------------------------------------------------
-    # Chunk sizing configuration
+    # Extraction stage behavior
     # ---------------------------------------------------------------------
     #
-    # Why these values
-    # ----------------
-    # - target_chunk_chars:
-    #   preferred chunk size for semantically coherent retrieval units
-    #
-    # - hard_max_chunk_chars:
-    #   hard safety ceiling used when a structural unit becomes too large
-    #
-    # - min_chunk_chars:
-    #   avoids generating very small chunks with weak standalone meaning
-    #
-    # - overlap_chars:
-    #   reserved for future overlap-based fallback strategies
-    #
-    # These defaults are intentionally conservative for legal documents:
-    # large enough to preserve context, but small enough to remain retrievable.
+    # These settings control the first major stage of the pipeline:
+    # - native PDF extraction
+    # - extraction quality analysis
+    # - OCR fallback decision
     # ---------------------------------------------------------------------
-    target_chunk_chars: int = 1800
-    hard_max_chunk_chars: int = 2600
-    min_chunk_chars: int = 350
-    overlap_chars: int = 180
+
+    # Enable extraction-quality analysis immediately after native PDF extraction.
+    enable_extraction_quality_analysis: bool = True
+
+    # When True, the pipeline may switch to OCR fallback if the extracted text
+    # appears severely corrupted.
+    enable_ocr_fallback: bool = True
+
+    # OCR rendering resolution.
+    #
+    # 300 DPI is a practical default for OCR:
+    # - usually good enough for legal PDFs
+    # - not too expensive
+    # - widely used in document OCR workflows
+    ocr_dpi: int = 300
+
+    # Default Tesseract language code used by OCR fallback.
+    #
+    # For Portuguese legal documents, "por" is the correct default.
+    ocr_language: str = "por"
+
+    # Document-level suspicious-page threshold above which OCR fallback becomes
+    # justified.
+    #
+    # Example:
+    # 0.40 means "40% or more pages look suspicious".
+    suspicious_page_ratio_threshold: float = 0.40
 
     # ---------------------------------------------------------------------
     # Repeated-line detection behavior
     # ---------------------------------------------------------------------
     #
     # These settings support page-furniture removal such as repeated headers
-    # and footers. The current normalizer focuses repeated-line detection on
-    # page margins to reduce accidental removal of valid body text.
+    # and footers. The normalizer focuses repeated-line detection on page
+    # margins to reduce accidental removal of valid body text.
     # ---------------------------------------------------------------------
 
     # Minimum number of page occurrences required before a short line can be
@@ -109,8 +120,7 @@ class PipelineSettings:
     repeated_line_min_page_ratio: float = 0.5
 
     # Maximum line length eligible for repeated-line detection.
-    # This helps protect real long content from accidental removal.
-    repeated_line_max_chars: int = 120
+    repeated_line_max_chars: int = 140
 
     # Number of top / bottom non-empty lines inspected per page when looking
     # for repeated page furniture.
@@ -125,7 +135,7 @@ class PipelineSettings:
     # ---------------------------------------------------------------------
 
     # Minimum number of consecutive TOC-like lines before a candidate block is
-    # considered a probable index / table-of-contents block.
+    # considered a probable TOC/index block.
     toc_block_min_lines: int = 4
 
     # Maximum number of early pages where aggressive TOC cleanup is allowed.
@@ -133,7 +143,7 @@ class PipelineSettings:
     max_toc_scan_pages: int = 5
 
     # ---------------------------------------------------------------------
-    # Title-consumption behavior
+    # Parser title-consumption behavior
     # ---------------------------------------------------------------------
     #
     # These values are used when the parser consumes title lines immediately
@@ -145,46 +155,81 @@ class PipelineSettings:
     max_section_container_title_lines: int = 2
 
     # ---------------------------------------------------------------------
+    # Canonical structure export behavior
+    # ---------------------------------------------------------------------
+    #
+    # These settings relate to the current project objective:
+    # exporting a canonical master-dictionary-style JSON tree.
+    # ---------------------------------------------------------------------
+
+    # Export the generic internal structure tree for debugging.
+    export_debug_structure_json: bool = True
+
+    # Export the canonical master-dictionary-style JSON.
+    export_master_json: bool = True
+
+    # Preserve generic parser metadata in the canonical export when useful.
+    include_filtered_node_metadata_in_master_json: bool = True
+
+    # ---------------------------------------------------------------------
+    # Chunk sizing configuration
+    # ---------------------------------------------------------------------
+    #
+    # These settings remain relevant only for the optional chunking stage.
+    #
+    # Important note
+    # --------------
+    # Chunk sizes are currently character-based, not token-based.
+    #
+    # Why this is still acceptable for now
+    # ------------------------------------
+    # - keeps the implementation deterministic
+    # - avoids tokenizer dependencies too early
+    # - is sufficient for the current stage of experimentation
+    # ---------------------------------------------------------------------
+    target_chunk_chars: int = 1800
+    hard_max_chunk_chars: int = 2600
+    min_chunk_chars: int = 350
+    overlap_chars: int = 180
+
+    # ---------------------------------------------------------------------
     # Strategy execution behavior
     # ---------------------------------------------------------------------
     #
-    # These flags are useful for future tuning and explicit pipeline behavior.
-    # Even when not fully used everywhere yet, keeping them here makes the
-    # intended execution model clearer.
+    # These flags control the optional chunking phase.
     # ---------------------------------------------------------------------
 
     # Allow the CLI to run all strategies in a single execution.
     allow_all_strategies: bool = True
 
+    # Enable the hybrid strategy.
+    enable_hybrid_strategy: bool = True
+
     # ---------------------------------------------------------------------
     # Export options
     # ---------------------------------------------------------------------
     #
-    # Inspection files are extremely useful for validating:
-    # - chunk boundaries
-    # - metadata quality
-    # - parser decisions
+    # Inspection files are useful for validating:
+    # - extraction behavior
     # - normalization side effects
-    # - strategy comparison
+    # - parser decisions
+    # - canonical JSON shape
+    # - optional chunking quality
     # ---------------------------------------------------------------------
     export_docx: bool = True
     export_json: bool = True
     export_intermediate_text: bool = True
-
-    # Export an additional lightweight JSON quality summary for each
-    # document/strategy run.
     export_quality_summary: bool = True
+    export_extraction_quality_report: bool = True
 
     # ---------------------------------------------------------------------
     # Chunk enrichment behavior
     # ---------------------------------------------------------------------
     #
-    # These settings reflect the newer chunk model that supports both:
-    # - visible text
-    # - text enriched for embeddings
+    # These settings apply only to the optional chunking stage.
     # ---------------------------------------------------------------------
 
-    # Include structure-enriched text_for_embedding in the final chunk model.
+    # Include structure-enriched text_for_embedding in final chunk payloads.
     include_text_for_embedding: bool = True
 
     # Link neighboring chunks using prev_chunk_id / next_chunk_id.
