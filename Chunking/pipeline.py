@@ -3,9 +3,14 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional
 
-from Chunking.chunking.models import Chunk, DocumentMetadata, StructuralNode
+from Chunking.chunking.models import (
+    Chunk,
+    DocumentMetadata,
+    ExtractedDocument,
+    StructuralNode,
+)
 from Chunking.chunking.strategy_article_smart import ArticleSmartChunkingStrategy
 from Chunking.chunking.strategy_base import BaseChunkingStrategy
 from Chunking.chunking.strategy_hybrid import HybridChunkingStrategy
@@ -15,6 +20,7 @@ from Chunking.config.settings import PipelineSettings
 from Chunking.export.docx_exporter import DocxInspectionExporter
 from Chunking.export.json_exporter import JsonExporter
 from Chunking.extraction.extraction_quality import ExtractionQualityAnalyzer
+from Chunking.extraction.ocr_fallback import OcrFallbackReader
 from Chunking.extraction.pdf_reader import PdfReader
 from Chunking.parsing.structure_parser import StructureParser
 from Chunking.utils.text import slugify_file_stem
@@ -22,49 +28,61 @@ from Chunking.utils.text import slugify_file_stem
 
 def run_pipeline() -> None:
     """
-    Entry point used by main.py.
+    Main pipeline entry point used by main.py.
 
     High-level pipeline flow
     ------------------------
     1. Read all supported PDF files from the input folder
-    2. Extract page-level text
+    2. Extract structured PDF content using native extraction
     3. Analyze extraction quality
-    4. Normalize noisy PDF text conservatively
-    5. Parse document structure
-    6. Generate chunks with one or more strategies
-    7. Export intermediate artifacts and inspection outputs
+    4. Trigger OCR fallback when native extraction looks too corrupted
+    5. Normalize extracted content conservatively
+    6. Parse the normalized document into a structural tree
+    7. Export:
+       - normalized text/debug artifacts
+       - generic structural tree
+       - canonical master-dictionary-style JSON
+    8. Optionally run chunking strategies and export chunk inspection artifacts
+
+    Architectural note
+    ------------------
+    The project is currently transitioning from a "text-first" pipeline to a
+    "structure-first" pipeline.
+
+    Therefore the most important output at this stage is no longer only:
+        normalized text -> chunks
+
+    but rather:
+        PDF -> structured extraction -> normalized document -> parsed tree
+        -> canonical JSON representation
+
+    Chunking remains available, but it should be treated as a downstream stage
+    built on top of the structural representation.
 
     Design goals
     ------------
-    - remain easy to run locally
-    - remain explicit and readable
-    - produce enough artifacts for debugging and quality inspection
-    - avoid hardcoded absolute paths
-    - support both single-strategy and all-strategy execution
-    - detect extraction problems early before parsing/chunking
-
-    Important note
-    --------------
-    This pipeline still remains intentionally lightweight.
-    It is not a full orchestration framework; it is a practical execution
-    layer for the current chunking project.
-
-    Future evolution
-    ----------------
-    This version introduces extraction-quality analysis but does not yet
-    perform OCR fallback automatically. That is the next step in the
-    extraction pipeline roadmap.
+    - remain explicit and easy to run locally
+    - support both native extraction and OCR fallback
+    - preserve useful debugging artifacts
+    - produce a canonical JSON structure aligned with the master dictionary goal
+    - remain backward-compatible enough while the codebase is being migrated
     """
     default_settings = PipelineSettings()
 
     parser = argparse.ArgumentParser(
-        description="Chunk regulatory PDFs into clean semantically useful chunks."
+        description=(
+            "Extract regulatory PDFs into a canonical structured JSON tree "
+            "and optionally run chunking strategies."
+        )
     )
     parser.add_argument(
         "--strategy",
-        choices=["article_smart", "structure_first", "hybrid", "all"],
-        default="article_smart",
-        help="Chunking strategy to use. Use 'all' to run every available strategy.",
+        choices=["article_smart", "structure_first", "hybrid", "all", "none"],
+        default="none",
+        help=(
+            "Chunking strategy to use. Use 'all' to run every available strategy. "
+            "Use 'none' to stop after structure export."
+        ),
     )
     parser.add_argument(
         "--raw-dir",
@@ -76,7 +94,7 @@ def run_pipeline() -> None:
         "--output-dir",
         type=str,
         default=str(default_settings.output_dir),
-        help="Output folder for all chunking artifacts.",
+        help="Output folder for all pipeline artifacts.",
     )
     args = parser.parse_args()
 
@@ -85,7 +103,11 @@ def run_pipeline() -> None:
         output_dir=Path(args.output_dir),
     )
 
-    reader = PdfReader()
+    # ------------------------------------------------------------------
+    # Pipeline components
+    # ------------------------------------------------------------------
+    native_reader = PdfReader()
+    ocr_reader = OcrFallbackReader()
     extraction_quality_analyzer = ExtractionQualityAnalyzer()
     normalizer = TextNormalizer()
     parser_engine = StructureParser()
@@ -123,112 +145,184 @@ def run_pipeline() -> None:
 
         document_metadata = _build_document_metadata(pdf_path)
 
-        # ---------------------------------------------------------
-        # 1) Extract raw text page by page
-        # ---------------------------------------------------------
-        pages = reader.extract_pages(pdf_path)
+        # --------------------------------------------------------------
+        # 1) Native structured extraction
+        #
+        # We now prefer the richer `extract_document()` API instead of
+        # extracting only `PageText`. This preserves page-level structure,
+        # extraction mode, quality, and future parser-friendly information.
+        # --------------------------------------------------------------
+        native_extracted_document = native_reader.extract_document(pdf_path)
 
-        # ---------------------------------------------------------
-        # 2) Analyze extraction quality before normalization
+        # --------------------------------------------------------------
+        # 2) Analyze native extraction quality
         #
         # Why this matters:
-        # if the text layer is corrupted, downstream stages may still run but
-        # produce structurally meaningless output. Detecting this early gives
-        # us diagnostic visibility and prepares the pipeline for OCR fallback
-        # in a future step.
-        # ---------------------------------------------------------
-        extraction_quality = extraction_quality_analyzer.analyze_document(pages)
+        # if native extraction is badly corrupted, downstream normalization
+        # and parsing may still run but produce structurally meaningless output.
+        # Detecting this early allows the pipeline to switch to OCR.
+        # --------------------------------------------------------------
+        native_extraction_quality = extraction_quality_analyzer.analyze_document(
+            native_extracted_document
+        )
 
-        if extraction_quality.get("document_likely_corrupted", False):
+        active_extracted_document = native_extracted_document
+        active_extraction_quality = native_extraction_quality
+        extraction_mode_used = "native"
+
+        # --------------------------------------------------------------
+        # 3) OCR fallback when native extraction looks corrupted
+        #
+        # OCR is slower and structurally poorer than native PDF extraction,
+        # so we only use it when the analyzer considers native text
+        # suspicious enough to justify fallback.
+        # --------------------------------------------------------------
+        if native_extraction_quality.get("document_likely_corrupted", False):
             print(
-                "[WARN] Extracted text appears suspicious or partially corrupted: "
-                f"{pdf_path.name}"
+                "[WARN] Native extraction appears corrupted. "
+                f"Triggering OCR fallback for: {pdf_path.name}"
             )
 
-        # ---------------------------------------------------------
-        # 3) Normalize noisy PDF text
-        # ---------------------------------------------------------
-        normalized = normalizer.normalize(pages)
-
-        # ---------------------------------------------------------
-        # 4) Build page tuples expected by the structure parser
-        # ---------------------------------------------------------
-        page_tuples = [(page.page_number, page.text) for page in normalized.pages]
-
-        # ---------------------------------------------------------
-        # 5) Parse structure (front matter, chapters, articles, etc.)
-        # ---------------------------------------------------------
-        structure_root = parser_engine.parse(page_tuples)
-
-        # ---------------------------------------------------------
-        # 6) Run the selected strategy or all strategies
-        # ---------------------------------------------------------
-        for strategy_name in strategy_names:
-            strategy = _build_strategy(strategy_name, settings)
-
-            print(f"[INFO] Running strategy: {strategy.name}")
-
-            chunks = strategy.build_chunks(document_metadata, structure_root)
-
-            # -----------------------------------------------------
-            # 7) Create output folder for this document + strategy
-            # -----------------------------------------------------
-            document_output_dir = (
-                settings.output_dir / document_metadata.doc_id / strategy.name
+            ocr_extracted_document = ocr_reader.extract_document(pdf_path)
+            ocr_extraction_quality = extraction_quality_analyzer.analyze_document(
+                ocr_extracted_document
             )
-            document_output_dir.mkdir(parents=True, exist_ok=True)
 
-            # -----------------------------------------------------
-            # 8) Export intermediate normalized text and dropped lines
-            # -----------------------------------------------------
-            if settings.export_intermediate_text:
-                _write_intermediate_outputs(
-                    document_output_dir=document_output_dir,
-                    normalized=normalized,
+            # ----------------------------------------------------------
+            # Decision policy:
+            # if native extraction is flagged as corrupted, OCR becomes the
+            # active input. This is intentionally decisive because once native
+            # text is badly corrupted, parsing the native content is usually
+            # much more harmful than using OCR.
+            #
+            # A more sophisticated "compare both and choose best" policy can
+            # be added later if needed.
+            # ----------------------------------------------------------
+            active_extracted_document = ocr_extracted_document
+            active_extraction_quality = ocr_extraction_quality
+            extraction_mode_used = "ocr"
+
+        print(f"[INFO] Extraction mode used: {extraction_mode_used}")
+
+        # --------------------------------------------------------------
+        # 4) Normalize extracted content conservatively
+        #
+        # The normalizer now accepts the richer extracted document directly.
+        # It cleans obvious layout noise while preserving parser-useful
+        # structural line boundaries.
+        # --------------------------------------------------------------
+        normalized = normalizer.normalize(active_extracted_document)
+
+        # --------------------------------------------------------------
+        # 5) Parse normalized content into a structural tree
+        #
+        # The parser now accepts the normalized document directly instead of
+        # requiring a manually flattened page tuple list.
+        # --------------------------------------------------------------
+        structure_root = parser_engine.parse(normalized)
+
+        # --------------------------------------------------------------
+        # 6) Create base output folder for this document
+        #
+        # We now separate:
+        # - structure-level outputs
+        # - chunking strategy outputs
+        # so the canonical structure export exists even when chunking is not run.
+        # --------------------------------------------------------------
+        document_output_dir = settings.output_dir / document_metadata.doc_id
+        document_output_dir.mkdir(parents=True, exist_ok=True)
+
+        structure_output_dir = document_output_dir / "structure"
+        structure_output_dir.mkdir(parents=True, exist_ok=True)
+
+        # --------------------------------------------------------------
+        # 7) Export structure-stage artifacts
+        # --------------------------------------------------------------
+        if settings.export_intermediate_text:
+            _write_structure_stage_outputs(
+                structure_output_dir=structure_output_dir,
+                normalized=normalized,
+                extraction_quality=active_extraction_quality,
+                extraction_mode_used=extraction_mode_used,
+            )
+
+        if settings.export_json:
+            # Generic tree export for debugging/internal inspection.
+            json_exporter.write_structure(
+                structure_root,
+                structure_output_dir / "03_structure_debug.json",
+            )
+
+            # Canonical master-dictionary-style export.
+            json_exporter.write_master_dictionary(
+                document_metadata=document_metadata,
+                root=structure_root,
+                output_path=structure_output_dir / "04_master_dictionary.json",
+            )
+
+            if settings.export_quality_summary:
+                (structure_output_dir / "04b_structure_quality_summary.json").write_text(
+                    _dict_to_pretty_json(
+                        _build_structure_quality_summary(
+                            document_metadata=document_metadata,
+                            extraction_quality=active_extraction_quality,
+                            normalized=normalized,
+                            structure_root=structure_root,
+                            extraction_mode_used=extraction_mode_used,
+                        )
+                    ),
+                    encoding="utf-8",
                 )
 
-            # -----------------------------------------------------
-            # 9) Export structure and chunks to JSON
-            # -----------------------------------------------------
-            if settings.export_json:
-                json_exporter.write_structure(
-                    structure_root,
-                    document_output_dir / "03_structure.json",
-                )
-                json_exporter.write_chunks(
-                    chunks,
-                    document_output_dir / "04_chunks.json",
-                )
+        # --------------------------------------------------------------
+        # 8) Optional chunking stage
+        #
+        # Chunking is no longer mandatory for the pipeline to be useful.
+        # The canonical JSON tree is already a valid end product for the
+        # current phase of the project.
+        # --------------------------------------------------------------
+        if strategy_names:
+            for strategy_name in strategy_names:
+                strategy = _build_strategy(strategy_name, settings)
 
-                # Export a lightweight quality / diagnostics summary to help
-                # compare runs and quickly spot suspicious results.
-                if settings.export_quality_summary:
-                    (document_output_dir / "04b_quality_summary.json").write_text(
-                        _dict_to_pretty_json(
-                            _build_quality_summary(
-                                document_metadata=document_metadata,
-                                extraction_quality=extraction_quality,
-                                normalized=normalized,
-                                structure_root=structure_root,
-                                chunks=chunks,
-                                strategy_name=strategy.name,
-                            )
-                        ),
-                        encoding="utf-8",
+                print(f"[INFO] Running strategy: {strategy.name}")
+
+                chunks = strategy.build_chunks(document_metadata, structure_root)
+
+                strategy_output_dir = document_output_dir / strategy.name
+                strategy_output_dir.mkdir(parents=True, exist_ok=True)
+
+                if settings.export_json:
+                    json_exporter.write_chunks(
+                        chunks,
+                        strategy_output_dir / "05_chunks.json",
                     )
 
-            # -----------------------------------------------------
-            # 10) Export DOCX inspection file for human validation
-            # -----------------------------------------------------
-            if settings.export_docx:
-                docx_exporter.write_chunks_docx(
-                    document_metadata=document_metadata,
-                    strategy_name=strategy.name,
-                    chunks=chunks,
-                    output_path=document_output_dir / "05_chunk_inspection.docx",
-                )
+                    if settings.export_quality_summary:
+                        (strategy_output_dir / "05b_chunk_quality_summary.json").write_text(
+                            _dict_to_pretty_json(
+                                _build_chunk_quality_summary(
+                                    document_metadata=document_metadata,
+                                    extraction_quality=active_extraction_quality,
+                                    normalized=normalized,
+                                    structure_root=structure_root,
+                                    chunks=chunks,
+                                    strategy_name=strategy.name,
+                                    extraction_mode_used=extraction_mode_used,
+                                )
+                            ),
+                            encoding="utf-8",
+                        )
 
-            print(f"[INFO] Done: {pdf_path.name} -> {document_output_dir}")
+                if settings.export_docx:
+                    docx_exporter.write_chunks_docx(
+                        document_metadata=document_metadata,
+                        strategy_name=strategy.name,
+                        chunks=chunks,
+                        output_path=strategy_output_dir / "06_chunk_inspection.docx",
+                    )
+
+        print(f"[INFO] Done: {pdf_path.name} -> {document_output_dir}")
 
     print("[INFO] Pipeline execution completed successfully.")
 
@@ -241,10 +335,12 @@ def _resolve_strategy_names(strategy_argument: str) -> List[str]:
     ----------------------
     The pipeline supports:
     - a single strategy
-    - or all strategies in one run
+    - all strategies
+    - or no chunking at all
 
-    This is useful when comparing chunking quality across multiple strategies
-    for the same input documents.
+    This is useful because the current project phase is primarily focused on
+    extracting PDFs into a canonical JSON tree. Chunking should therefore be
+    optional rather than mandatory.
 
     Parameters
     ----------
@@ -258,6 +354,9 @@ def _resolve_strategy_names(strategy_argument: str) -> List[str]:
     """
     if strategy_argument == "all":
         return ["article_smart", "structure_first", "hybrid"]
+
+    if strategy_argument == "none":
+        return []
 
     return [strategy_argument]
 
@@ -291,39 +390,61 @@ def _build_document_metadata(pdf_path: Path) -> DocumentMetadata:
     )
 
 
-def _write_intermediate_outputs(
-    document_output_dir: Path,
+def _write_structure_stage_outputs(
+    structure_output_dir: Path,
     normalized: NormalizedDocument,
+    extraction_quality: Dict[str, object],
+    extraction_mode_used: str,
 ) -> None:
     """
-    Write intermediate normalization artifacts.
+    Write structure-stage intermediate artifacts.
 
     Exported files
     --------------
     - 01_normalized_text.txt
     - 02_dropped_lines_report.json
+    - 02b_extraction_quality.json
 
     Why these files matter
     ----------------------
     They are extremely useful for understanding where quality is being lost:
     - extraction issues
-    - cleanup side effects
+    - OCR fallback behavior
+    - normalization side effects
     - front matter contamination
     - repeated-line removal behavior
 
     Parameters
     ----------
-    document_output_dir : Path
-        Strategy-specific output folder.
+    structure_output_dir : Path
+        Structure-stage output folder.
+
     normalized : NormalizedDocument
         Normalized document result.
+
+    extraction_quality : Dict[str, object]
+        Extraction quality report for the active extraction mode.
+
+    extraction_mode_used : str
+        "native" or "ocr".
     """
-    (document_output_dir / "01_normalized_text.txt").write_text(
+    (structure_output_dir / "01_normalized_text.txt").write_text(
         normalized.full_text,
         encoding="utf-8",
     )
-    (document_output_dir / "02_dropped_lines_report.json").write_text(
+
+    (structure_output_dir / "02_dropped_lines_report.json").write_text(
         _dict_to_pretty_json(normalized.dropped_lines_report),
+        encoding="utf-8",
+    )
+
+    (structure_output_dir / "02b_extraction_quality.json").write_text(
+        _dict_to_pretty_json(
+            {
+                "extraction_mode_used": extraction_mode_used,
+                "quality": extraction_quality,
+            }
+        ),
         encoding="utf-8",
     )
 
@@ -336,6 +457,7 @@ def _build_strategy(name: str, settings: PipelineSettings) -> BaseChunkingStrate
     ----------
     name : str
         Strategy name.
+
     settings : PipelineSettings
         Shared runtime configuration.
 
@@ -352,48 +474,116 @@ def _build_strategy(name: str, settings: PipelineSettings) -> BaseChunkingStrate
     return strategies[name]
 
 
-def _build_quality_summary(
+def _build_structure_quality_summary(
+    document_metadata: DocumentMetadata,
+    extraction_quality: Dict[str, object],
+    normalized: NormalizedDocument,
+    structure_root: StructuralNode,
+    extraction_mode_used: str,
+) -> Dict[str, object]:
+    """
+    Build a lightweight structure-stage quality summary.
+
+    Why this helper exists
+    ----------------------
+    The project is currently more interested in:
+    - extraction quality
+    - normalization quality
+    - parsing quality
+    than in chunking quality alone.
+
+    Therefore structure-stage diagnostics deserve their own summary artifact.
+
+    Parameters
+    ----------
+    document_metadata : DocumentMetadata
+        Source document metadata.
+
+    extraction_quality : Dict[str, object]
+        Extraction quality report.
+
+    normalized : NormalizedDocument
+        Normalized document output.
+
+    structure_root : StructuralNode
+        Parsed structure tree.
+
+    extraction_mode_used : str
+        Active extraction mode ("native" or "ocr").
+
+    Returns
+    -------
+    Dict[str, object]
+        Structure-stage summary dictionary suitable for JSON export.
+    """
+    return {
+        "document_id": document_metadata.doc_id,
+        "document_title": document_metadata.title,
+        "extraction_mode_used": extraction_mode_used,
+        "extraction_quality": extraction_quality,
+        "normalized_page_count": len(normalized.pages),
+        "non_empty_normalized_pages": sum(
+            1 for page in normalized.pages if page.text.strip()
+        ),
+        "dropped_lines_report": normalized.dropped_lines_report,
+        "normalized_page_reports": normalized.page_reports,
+        "structure_counts": {
+            "front_matter": _count_node_type(structure_root, "FRONT_MATTER"),
+            "preamble": _count_node_type(structure_root, "PREAMBLE"),
+            "annex": _count_node_type(structure_root, "ANNEX"),
+            "chapter": _count_node_type(structure_root, "CHAPTER"),
+            "section_container": _count_node_type(structure_root, "SECTION_CONTAINER"),
+            "article": _count_node_type(structure_root, "ARTICLE"),
+            "section": _count_node_type(structure_root, "SECTION"),
+            "lettered_item": _count_node_type(structure_root, "LETTERED_ITEM"),
+        },
+    }
+
+
+def _build_chunk_quality_summary(
     document_metadata: DocumentMetadata,
     extraction_quality: Dict[str, object],
     normalized: NormalizedDocument,
     structure_root: StructuralNode,
     chunks: List[Chunk],
     strategy_name: str,
+    extraction_mode_used: str,
 ) -> Dict[str, object]:
     """
-    Build a lightweight quality / diagnostics summary for one document run.
+    Build a lightweight chunk-stage quality summary for one document run.
 
     Why this helper exists
     ----------------------
-    Manual inspection is still important, but a compact machine-readable
-    summary helps quickly compare outputs across documents and strategies.
-
-    This summary now also includes extraction-quality diagnostics so the team
-    can distinguish between:
-    - extraction failures
-    - normalization issues
-    - parsing issues
-    - chunking issues
+    Manual inspection remains important, but a compact machine-readable summary
+    helps quickly compare outputs across documents and strategies.
 
     Parameters
     ----------
     document_metadata : DocumentMetadata
         Source document metadata.
+
     extraction_quality : Dict[str, object]
-        Extraction quality report produced immediately after text extraction.
+        Extraction quality report.
+
     normalized : NormalizedDocument
         Normalized document output.
+
     structure_root : StructuralNode
         Parsed structure tree.
+
     chunks : List[Chunk]
         Final chunk list.
+
     strategy_name : str
         Strategy used for this run.
+
+    extraction_mode_used : str
+        "native" or "ocr".
 
     Returns
     -------
     Dict[str, object]
-        Summary dictionary suitable for JSON export.
+        Chunk-stage summary dictionary suitable for JSON export.
     """
     chunk_count = len(chunks)
     char_counts = [getattr(chunk, "char_count", len(chunk.text)) for chunk in chunks]
@@ -406,6 +596,7 @@ def _build_quality_summary(
         "document_id": document_metadata.doc_id,
         "document_title": document_metadata.title,
         "strategy": strategy_name,
+        "extraction_mode_used": extraction_mode_used,
         "extraction_quality": extraction_quality,
         "normalized_page_count": len(normalized.pages),
         "non_empty_normalized_pages": sum(
@@ -448,6 +639,7 @@ def _count_node_type(node: StructuralNode, node_type: str) -> int:
     ----------
     node : StructuralNode
         Current node.
+
     node_type : str
         Node type to count.
 
