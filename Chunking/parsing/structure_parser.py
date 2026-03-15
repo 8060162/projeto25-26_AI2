@@ -94,11 +94,54 @@ BODY_START_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Detect a likely inline article title followed by body text on the same line.
+#
+# Example:
+# - "ÂMBITO O presente regulamento aplica-se..."
+# - "PAGAMENTO FORA DE PRAZO O não pagamento..."
+#
+# Important:
+# this heuristic is intentionally conservative and is only meant to recover
+# cases where normalization/extraction merged:
+#   title line + first body line
+INLINE_TITLE_BODY_SPLIT_RE = re.compile(
+    r"^\s*"
+    r"(?P<title>[A-ZÁÀÂÃÉÈÊÍÌÎÓÒÔÕÚÙÛÇ][A-ZÁÀÂÃÉÈÊÍÌÎÓÒÔÕÚÙÛÇ0-9 /().,\-–—ºª]{1,80}?)"
+    r"\s+"
+    r"(?P<body>(?:O|A|Os|As|No|Na|Nos|Nas|Em|Para|Por|Quando|Sempre|Caso|Se|Nos\s+termos|Deve|Devem|Pode|Podem|É|São)\b.*)$",
+    re.IGNORECASE,
+)
+
 # Detect lines that strongly look like front matter rather than body.
 FRONT_MATTER_RE = re.compile(
     r"^\s*(POLITÉCNICO DO PORTO|P\.PORTO|DESPACHO|REGULAMENTO\s+N\.?\s*º|REGULAMENTO\s+Nº|ÍNDICE)\b",
     re.IGNORECASE,
 )
+
+# Detect lines that should almost never survive as meaningful preamble content.
+#
+# These are not necessarily "bad extraction", but they are often administrative
+# residues that should not pollute PREAMBLE.
+#
+# Important:
+# keep this intentionally narrow. Terms such as "REGULAMENTO" and "DESPACHO"
+# may still be legitimate front-matter content and should usually be classified,
+# not discarded.
+NON_NORMATIVE_PRE_ARTICLE_RE = re.compile(
+    r"^\s*(O\s+PRESIDENTE\s+DO\s+POLITÉCNICO|PRESIDENTE\s+DO\s+POLITÉCNICO)\s*$",
+    re.IGNORECASE,
+)
+
+# Detect clearly suspicious / broken lines that should not become structural text.
+#
+# This intentionally targets obvious corruption rather than subtle OCR noise.
+SUSPICIOUS_GARBLED_LINE_RE = re.compile(
+    r"^[^A-Za-zÀ-ÿ]{0,3}(?:[\*\+\-/=<>\\\[\]\{\}_`~]{2,}|[0-9\W]{12,})$"
+)
+
+# Detect page-counter-like or synthetic page residues that sometimes survive
+# normalization and later pollute PREAMBLE or article bodies.
+PAGE_COUNTER_RE = re.compile(r"^\s*\d+\s*/\s*\d+\s*$")
 
 
 class StructureParser:
@@ -118,11 +161,11 @@ class StructureParser:
 
     Design goals
     ------------
-    - Be pragmatic rather than academically perfect
-    - Be robust for Portuguese legal and regulatory PDFs
-    - Preserve enough hierarchy to support export into a canonical JSON tree
-    - Enrich metadata so final chunk text can stay clean later
-    - Prefer conservative structure detection over risky inference
+    - be pragmatic rather than academically perfect
+    - be robust for Portuguese legal and regulatory PDFs
+    - preserve enough hierarchy to support export into a canonical JSON tree
+    - enrich metadata so final chunk text can stay clean later
+    - prefer conservative structure detection over risky inference
 
     Important note
     --------------
@@ -159,7 +202,11 @@ class StructureParser:
 
     def parse(
         self,
-        normalized_input: Union[NormalizedDocument, Sequence[Tuple[int, str]], Sequence[NormalizedPage]],
+        normalized_input: Union[
+            NormalizedDocument,
+            Sequence[Tuple[int, str]],
+            Sequence[NormalizedPage],
+        ],
     ) -> StructuralNode:
         """
         Parse normalized content into a structural tree.
@@ -186,12 +233,12 @@ class StructureParser:
 
         Important behavior
         ------------------
-        - Content before the first article is no longer treated as one
-          undifferentiated block.
-        - It is split into:
+        - content before the first article is no longer treated as one
+          undifferentiated block
+        - it is split into:
             * FRONT_MATTER: cover, branding, title, index-like opening material
             * PREAMBLE: genuine introductory normative prose
-        - Articles are attached to the current structural container
+        - articles are attached to the current structural container
         - ARTICLE.text remains the canonical fallback text even when SECTION and
           LETTERED_ITEM children are later derived from it
 
@@ -284,14 +331,6 @@ class StructureParser:
 
             # ---------------------------------------------------------
             # Section-container detection
-            #
-            # These are structural containers such as:
-            # - SECÇÃO I
-            # - SUBSECÇÃO II
-            # - TÍTULO III
-            #
-            # They attach below the nearest currently active non-article
-            # container.
             # ---------------------------------------------------------
             section_container_match = SECTION_CONTAINER_RE.match(line)
             if section_container_match:
@@ -421,6 +460,44 @@ class StructureParser:
                 )
 
                 current_parent.children.append(current_article)
+
+                # -----------------------------------------------------
+                # Recovery heuristic:
+                # sometimes extraction/normalization merges:
+                #
+                #   <article title line>
+                #   <first body line>
+                #
+                # into:
+                #
+                #   "<TITLE> O presente regulamento ..."
+                #
+                # If the article still has no title, inspect the first unread
+                # line and try to split it into:
+                # - article title
+                # - first body line
+                # -----------------------------------------------------
+                if not current_article.title and next_index < len(lines):
+                    inline_title_result = self._split_inline_title_and_body(
+                        lines[next_index][1]
+                    )
+
+                    if inline_title_result is not None:
+                        recovered_title, recovered_body = inline_title_result
+
+                        current_article.title = recovered_title
+                        current_article.metadata["article_title"] = recovered_title
+
+                        if recovered_body:
+                            self._append_text_to_node(
+                                node=current_article,
+                                line=recovered_body,
+                                page_number=lines[next_index][0],
+                            )
+
+                        index = next_index + 1
+                        continue
+
                 index = next_index
                 continue
 
@@ -428,7 +505,18 @@ class StructureParser:
             # Body text routing
             # ---------------------------------------------------------
             if not first_article_seen:
-                pre_article_lines.append((page_number, line))
+                if self._should_keep_pre_article_line(line):
+                    pre_article_lines.append((page_number, line))
+                index += 1
+                continue
+
+            # Ignore obvious synthetic residues that should not pollute the
+            # post-article structural tree.
+            if PAGE_COUNTER_RE.match(line):
+                index += 1
+                continue
+
+            if self._looks_like_garbled_line(line):
                 index += 1
                 continue
 
@@ -455,7 +543,11 @@ class StructureParser:
 
     def _coerce_pages_text(
         self,
-        normalized_input: Union[NormalizedDocument, Sequence[Tuple[int, str]], Sequence[NormalizedPage]],
+        normalized_input: Union[
+            NormalizedDocument,
+            Sequence[Tuple[int, str]],
+            Sequence[NormalizedPage],
+        ],
     ) -> List[Tuple[int, str]]:
         """
         Normalize supported parser inputs into a list of page tuples.
@@ -607,13 +699,55 @@ class StructureParser:
                     parent=root,
                 )
 
-                # Keep PREAMBLE after FRONT_MATTER when both exist.
                 insert_index = (
                     1
                     if root.children and root.children[0].node_type == "FRONT_MATTER"
                     else 0
                 )
                 root.children.insert(insert_index, preamble_node)
+
+    def _should_keep_pre_article_line(self, line: str) -> bool:
+        """
+        Decide whether a line seen before the first article should remain
+        eligible for FRONT_MATTER / PREAMBLE classification.
+
+        Why this helper exists
+        ----------------------
+        The pre-article region is especially vulnerable to contamination from:
+        - cover residues
+        - page counters
+        - broken extraction artifacts
+        - short administrative fragments
+        - synthetic page leftovers
+
+        The goal here is not to clean the document aggressively, but to avoid
+        obviously non-structural noise from polluting the tree.
+
+        Parameters
+        ----------
+        line : str
+            Candidate line before the first article.
+
+        Returns
+        -------
+        bool
+            True when the line should be retained for further classification.
+        """
+        if not line or not line.strip():
+            return False
+
+        stripped = line.strip()
+
+        if PAGE_COUNTER_RE.match(stripped):
+            return False
+
+        if NON_NORMATIVE_PRE_ARTICLE_RE.match(stripped):
+            return False
+
+        if self._looks_like_garbled_line(stripped):
+            return False
+
+        return True
 
     def _looks_like_front_matter_line(self, line: str) -> bool:
         """
@@ -649,6 +783,9 @@ class StructureParser:
         if FRONT_MATTER_RE.match(line):
             return True
 
+        # Short uppercase-heavy lines are often title-page / cover / index
+        # material, but intentionally limit this heuristic so legitimate
+        # long structural prose is not reclassified too aggressively.
         if UPPERCASE_HEAVY_RE.match(line) and len(line.split()) <= 8:
             return True
 
@@ -772,6 +909,9 @@ class StructureParser:
         if LETTERED_BLOCK_RE.match(line):
             return False
 
+        if self._looks_like_garbled_line(line):
+            return False
+
         if len(line) > 120:
             return False
 
@@ -818,6 +958,72 @@ class StructureParser:
             return True
 
         return False
+
+    def _split_inline_title_and_body(self, line: str) -> Optional[Tuple[str, str]]:
+        """
+        Try to split one line into an inline title and a body continuation.
+
+        Why this helper exists
+        ----------------------
+        Some PDFs or normalization flows collapse:
+
+            ÂMBITO
+            O presente regulamento aplica-se ...
+
+        into:
+
+            ÂMBITO O presente regulamento aplica-se ...
+
+        In those cases, consuming title lines in the normal way no longer works,
+        because the title is no longer isolated on its own line.
+
+        This helper attempts a conservative recovery of that pattern.
+
+        Parameters
+        ----------
+        line : str
+            Candidate line immediately following an article header.
+
+        Returns
+        -------
+        Optional[Tuple[str, str]]
+            (title, body) when the pattern looks trustworthy, otherwise None.
+        """
+        if not line:
+            return None
+
+        if self._looks_like_garbled_line(line):
+            return None
+
+        match = INLINE_TITLE_BODY_SPLIT_RE.match(line.strip())
+        if not match:
+            return None
+
+        title = (match.group("title") or "").strip()
+        body = (match.group("body") or "").strip()
+
+        if not title or not body:
+            return None
+
+        if len(title) < 4:
+            return None
+
+        if len(title.split()) > 8:
+            return None
+
+        if title.endswith(",") or title.endswith(";") or title.endswith(":"):
+            return None
+
+        if BODY_START_RE.match(title):
+            return None
+
+        if not UPPERCASE_HEAVY_RE.match(title):
+            return None
+
+        if len(body.split()) < 3:
+            return None
+
+        return title, body
 
     # ------------------------------------------------------------------
     # Node text accumulation
@@ -889,16 +1095,30 @@ class StructureParser:
             self._post_process_nodes(child)
 
         if node.node_type == "ARTICLE" and node.text:
-            section_children = self._extract_numbered_children(node)
-            node.children.extend(section_children)
+            # Avoid duplicating derived children if the parser is reused or the
+            # tree is post-processed more than once.
+            has_sections = any(child.node_type == "SECTION" for child in node.children)
+            has_lettered = any(
+                child.node_type == "LETTERED_ITEM" for child in node.children
+            )
+
+            if not has_sections:
+                section_children = self._extract_numbered_children(node)
+                node.children.extend(section_children)
+            else:
+                section_children = []
 
             # Only fall back to direct lettered extraction when numbered
-            # structure was not found.
-            if not section_children:
+            # structure was not found and no lettered children already exist.
+            if not section_children and not has_lettered:
                 node.children.extend(self._extract_lettered_children(node))
 
         if node.node_type == "SECTION" and node.text:
-            node.children.extend(self._extract_lettered_children(node))
+            has_lettered = any(
+                child.node_type == "LETTERED_ITEM" for child in node.children
+            )
+            if not has_lettered:
+                node.children.extend(self._extract_lettered_children(node))
 
     def _infer_missing_page_ranges(self, node: StructuralNode) -> None:
         """
@@ -918,8 +1138,12 @@ class StructureParser:
         for child in node.children:
             self._infer_missing_page_ranges(child)
 
-        child_starts = [child.page_start for child in node.children if child.page_start is not None]
-        child_ends = [child.page_end for child in node.children if child.page_end is not None]
+        child_starts = [
+            child.page_start for child in node.children if child.page_start is not None
+        ]
+        child_ends = [
+            child.page_end for child in node.children if child.page_end is not None
+        ]
 
         if node.page_start is None and child_starts:
             node.page_start = min(child_starts)
@@ -994,7 +1218,10 @@ class StructureParser:
         if len(matches) < 2:
             return []
 
-        labels = [self._normalize_numbered_label(match.group("label")) for match in matches]
+        labels = [
+            self._normalize_numbered_label(match.group("label"))
+            for match in matches
+        ]
         if not self._has_plausible_numbered_structure(labels):
             return []
 
@@ -1230,6 +1457,61 @@ class StructureParser:
             children.append(lettered_node)
 
         return children
+
+    # ------------------------------------------------------------------
+    # Generic suspicious-line detection
+    # ------------------------------------------------------------------
+
+    def _looks_like_garbled_line(self, line: str) -> bool:
+        """
+        Decide whether a single line looks clearly corrupted or non-linguistic.
+
+        Why this helper exists
+        ----------------------
+        Some PDFs contain isolated lines that are obviously unusable and should
+        not contaminate structural nodes such as PREAMBLE.
+
+        Important safety note
+        ---------------------
+        This helper is intentionally conservative and only targets obvious
+        corruption, not minor OCR imperfections.
+
+        Parameters
+        ----------
+        line : str
+            Candidate line.
+
+        Returns
+        -------
+        bool
+            True when the line looks strongly suspicious.
+        """
+        if not line:
+            return False
+
+        stripped = line.strip()
+        if len(stripped) < 10:
+            return False
+
+        if SUSPICIOUS_GARBLED_LINE_RE.match(stripped):
+            return True
+
+        total_len = len(stripped)
+        alpha_count = sum(1 for ch in stripped if ch.isalpha())
+        whitespace_count = sum(1 for ch in stripped if ch.isspace())
+        symbol_like_count = sum(
+            1
+            for ch in stripped
+            if not ch.isalnum() and not ch.isspace()
+        )
+
+        alpha_ratio = alpha_count / max(total_len, 1)
+        symbol_ratio = symbol_like_count / max(total_len, 1)
+
+        if alpha_ratio < 0.20 and symbol_ratio > 0.35 and whitespace_count <= 1:
+            return True
+
+        return False
 
     # ------------------------------------------------------------------
     # Node factory
