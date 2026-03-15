@@ -38,7 +38,7 @@ from Chunking.utils.text import (
 # "Pág. 363"
 # "Pág. 364"
 #
-# We strip this marker only when it appears at the beginning of the line so
+# Strip this marker only when it appears at the beginning of the line so
 # that useful content after the marker can still survive.
 LEADING_PAGE_MARKER_RE = re.compile(r"^\s*Pág\.\s*\d+\s*", re.IGNORECASE)
 
@@ -76,6 +76,18 @@ COVER_NOISE_RE = re.compile(
 # Repeated institutional banner-like lines.
 INSTITUTIONAL_BANNER_RE = re.compile(
     r"^\s*(POLIT[ÉE]CNICO\s+DO\s+PORTO|P\.PORTO)\s*$",
+    re.IGNORECASE,
+)
+
+# Very short layout residues sometimes leaked by extraction.
+#
+# Examples:
+# - "Vo/"
+# - "V0/"
+# - "CAPÍTULO |"
+# - "CAPITULO |"
+SHORT_LAYOUT_RESIDUE_RE = re.compile(
+    r"^\s*(?:[Vv][o0]/|CAP[ÍI]TULO\s*\|)\s*$",
     re.IGNORECASE,
 )
 
@@ -143,6 +155,32 @@ MOSTLY_SYMBOLIC_RE = re.compile(r"^[^\wÀ-ÿ]{6,}$")
 # Detect highly suspicious garbled-looking lines.
 SUSPICIOUS_GARBLED_LINE_RE = re.compile(
     r"^[^A-Za-zÀ-ÿ]{0,3}(?:[\*\+\-/=<>\\\[\]\{\}_`~]{2,}|[0-9\W]{12,})$"
+)
+
+# Detect uppercase-heavy heading fragments that often behave like
+# front-matter / index residue on early pages.
+UPPERCASE_HEAVY_RE = re.compile(
+    r"^[A-ZÁÀÂÃÉÈÊÍÌÎÓÒÔÕÚÙÛÇ0-9 /().,\-–—ºª]+$"
+)
+
+# Detect likely "all-caps heading residue" that is not ordinary prose and not
+# a structural header we want to preserve.
+#
+# This is especially useful for broken TOC/front-matter fragments such as:
+# - "ESTUDANTES DE MESTRADO INSCRITOS ..."
+# - "DISSERTAÇÃO, TRABALHO DE PROJETO ..."
+UPPERCASE_RESIDUE_RE = re.compile(
+    r"^[A-ZÁÀÂÃÉÈÊÍÌÎÓÒÔÕÚÙÛÇ0-9 ,/().\-–—ºª]{8,}$"
+)
+
+# Detect lines that look like continued index headings or title-page headings
+# but do not look like ordinary prose.
+#
+# This is intentionally broad, but it is only used with extra safeguards,
+# mainly on early pages.
+NON_PROSE_HEADING_RE = re.compile(
+    r"^(?!.*[.;:!?]$)(?!\s*(?:O|A|Os|As|No|Na|Nos|Nas|Em|Para|Por|Quando|Sempre|Caso|Se)\b).+$",
+    re.IGNORECASE,
 )
 
 
@@ -250,7 +288,11 @@ class TextNormalizer:
 
     def normalize(
         self,
-        document_or_pages: Union[ExtractedDocument, Sequence[PageText], Sequence[ExtractedPage]],
+        document_or_pages: Union[
+            ExtractedDocument,
+            Sequence[PageText],
+            Sequence[ExtractedPage],
+        ],
     ) -> NormalizedDocument:
         """
         Normalize page-level extracted text conservatively.
@@ -297,17 +339,23 @@ class TextNormalizer:
         total_pages = len(pages)
 
         for page in pages:
-            page_number, page_text, selected_mode, upstream_quality_score, upstream_flags = \
-                self._extract_page_fields(page)
+            (
+                page_number,
+                page_text,
+                selected_mode,
+                upstream_quality_score,
+                upstream_flags,
+            ) = self._extract_page_fields(page)
 
             cleaned_lines: List[str] = []
-
             raw_lines = page_text.splitlines()
 
             for raw_line in raw_lines:
                 line, drop_reason = self._clean_line(
                     raw_line=raw_line,
                     repeated_lines=repeated_lines,
+                    page_number=page_number,
+                    total_pages=total_pages,
                 )
 
                 if drop_reason is not None:
@@ -372,6 +420,8 @@ class TextNormalizer:
         self,
         raw_line: str,
         repeated_lines: set[str],
+        page_number: int,
+        total_pages: int,
     ) -> Tuple[Optional[str], Optional[str]]:
         """
         Clean a single line and decide whether it should be dropped.
@@ -387,6 +437,25 @@ class TextNormalizer:
           because valid legal content may still follow the marker.
         - We keep line-level structure intact because later parsing depends on it.
         - We do not attempt semantic interpretation here.
+
+        Parameters
+        ----------
+        raw_line : str
+            Raw line extracted from one page.
+
+        repeated_lines : set[str]
+            Previously detected repeated margin lines likely to be layout noise.
+
+        page_number : int
+            Current 1-based page number.
+
+        total_pages : int
+            Total number of pages in the document.
+
+        Returns
+        -------
+        Tuple[Optional[str], Optional[str]]
+            Cleaned line and drop reason.
         """
         line = normalize_line_endings(raw_line).strip()
 
@@ -421,6 +490,10 @@ class TextNormalizer:
         # Remove purely institutional banner lines.
         if INSTITUTIONAL_BANNER_RE.match(line):
             return None, "institutional_banner"
+
+        # Remove very short layout residues.
+        if SHORT_LAYOUT_RESIDUE_RE.match(line):
+            return None, "short_layout_residue"
 
         # Remove pure Diário da República editorial lines.
         #
@@ -459,8 +532,23 @@ class TextNormalizer:
             return None, "repeated_line"
 
         # Remove very obvious single-line TOC entries early.
-        if self._looks_like_index_line(line):
+        if self._looks_like_index_line(
+            line=line,
+            page_number=page_number,
+            total_pages=total_pages,
+        ):
             return None, "index_like_line"
+
+        # Remove likely uppercase heading residue on early pages.
+        #
+        # This targets broken TOC/front-matter fragments that frequently leak
+        # into PREAMBLE, especially in institutional PDFs.
+        if self._looks_like_uppercase_front_matter_residue(
+            line=line,
+            page_number=page_number,
+            total_pages=total_pages,
+        ):
+            return None, "uppercase_front_matter_residue"
 
         # Normalize inner whitespace while preserving the line boundary itself.
         line = MULTISPACE_RE.sub(" ", line).strip()
@@ -593,7 +681,12 @@ class TextNormalizer:
     # TOC / index handling
     # ------------------------------------------------------------------
 
-    def _looks_like_index_line(self, line: str) -> bool:
+    def _looks_like_index_line(
+        self,
+        line: str,
+        page_number: int,
+        total_pages: int,
+    ) -> bool:
         """
         Detect likely single-line table-of-contents entries.
 
@@ -601,12 +694,29 @@ class TextNormalizer:
         --------------
         - dot leaders
         - heading-like text followed by a trailing page number
+        - uppercase heading residue on very early pages
+        - short non-prose heading fragments that clearly do not behave like body text
 
         Safety behavior
         ---------------
-        This heuristic is intentionally conservative and should only catch
-        obvious cases. More ambiguous TOC patterns are handled later at
-        block level.
+        This heuristic remains conservative. Stronger cleanup is still mainly
+        limited to the document front region.
+
+        Parameters
+        ----------
+        line : str
+            Candidate line.
+
+        page_number : int
+            Current page number.
+
+        total_pages : int
+            Total page count.
+
+        Returns
+        -------
+        bool
+            True when the line looks strongly index-like.
         """
         if len(line) > 220:
             return False
@@ -616,8 +726,19 @@ class TextNormalizer:
 
         if INDEX_TRAILING_PAGE_RE.match(line):
             words = line.split()
-
             if len(words) <= 14 and INDEX_HEADING_RE.match(line):
+                return True
+
+        # Additional heuristic:
+        # on very early pages, short uppercase heading fragments are often
+        # residual TOC/front-matter content rather than body text.
+        if self._is_early_document_page(page_number, total_pages):
+            if (
+                UPPERCASE_RESIDUE_RE.match(line)
+                and NON_PROSE_HEADING_RE.match(line)
+                and not self._is_structural_line(line)
+                and 4 <= len(line.split()) <= 14
+            ):
                 return True
 
         return False
@@ -673,7 +794,11 @@ class TextNormalizer:
 
             while index < len(lines):
                 line = lines[index]
-                is_toc_like = self._is_toc_block_candidate(line)
+                is_toc_like = self._is_toc_block_candidate(
+                    line=line,
+                    page_number=page_number,
+                    total_pages=total_pages,
+                )
 
                 if not is_toc_like and not block_lines:
                     break
@@ -685,7 +810,11 @@ class TextNormalizer:
                 index += 1
 
             # Only remove blocks that are sufficiently TOC-like.
-            if block_lines and self._looks_like_real_toc_block(block_lines):
+            if block_lines and self._looks_like_real_toc_block(
+                block_lines=block_lines,
+                page_number=page_number,
+                total_pages=total_pages,
+            ):
                 dropped_counter["index_block_line"] += len(block_lines)
                 continue
 
@@ -716,7 +845,12 @@ class TextNormalizer:
         max_scan_pages = min(self._MAX_TOC_SCAN_PAGES, max(1, total_pages // 3 + 1))
         return page_number <= max_scan_pages
 
-    def _is_toc_block_candidate(self, line: str) -> bool:
+    def _is_toc_block_candidate(
+        self,
+        line: str,
+        page_number: int,
+        total_pages: int,
+    ) -> bool:
         """
         Decide whether a line looks like part of a TOC block.
 
@@ -725,6 +859,7 @@ class TextNormalizer:
         - dot leaders
         - explicit structural headings such as "CAPÍTULO", "ARTIGO", "ÍNDICE"
         - short heading ending with a page number
+        - uppercase heading residue on early pages
 
         Important
         ---------
@@ -740,9 +875,23 @@ class TextNormalizer:
         if INDEX_TRAILING_PAGE_RE.match(line) and len(line.split()) <= 16:
             return True
 
+        if self._is_early_document_page(page_number, total_pages):
+            if (
+                UPPERCASE_RESIDUE_RE.match(line)
+                and NON_PROSE_HEADING_RE.match(line)
+                and not self._is_structural_line(line)
+                and 4 <= len(line.split()) <= 18
+            ):
+                return True
+
         return False
 
-    def _looks_like_real_toc_block(self, block_lines: List[str]) -> bool:
+    def _looks_like_real_toc_block(
+        self,
+        block_lines: List[str],
+        page_number: int,
+        total_pages: int,
+    ) -> bool:
         """
         Decide whether a candidate block really behaves like a TOC.
 
@@ -765,6 +914,23 @@ class TextNormalizer:
         - it contains multiple strong TOC signals such as:
             * dot leaders
             * trailing page numbers
+            * repeated uppercase heading residue on early pages
+
+        Parameters
+        ----------
+        block_lines : List[str]
+            Candidate block lines.
+
+        page_number : int
+            Current page number.
+
+        total_pages : int
+            Total page count.
+
+        Returns
+        -------
+        bool
+            True when the block strongly behaves like a TOC.
         """
         if len(block_lines) < 4:
             return False
@@ -778,8 +944,98 @@ class TextNormalizer:
 
             if INDEX_TRAILING_PAGE_RE.match(line) and len(line.split()) <= 16:
                 strong_signals += 1
+                continue
+
+            if (
+                self._is_early_document_page(page_number, total_pages)
+                and UPPERCASE_RESIDUE_RE.match(line)
+                and NON_PROSE_HEADING_RE.match(line)
+                and not self._is_structural_line(line)
+                and 4 <= len(line.split()) <= 18
+            ):
+                strong_signals += 1
 
         return strong_signals >= 3
+
+    def _looks_like_uppercase_front_matter_residue(
+        self,
+        line: str,
+        page_number: int,
+        total_pages: int,
+    ) -> bool:
+        """
+        Detect uppercase heading residue that should not survive into the parser.
+
+        Why this helper exists
+        ----------------------
+        Some institutional PDFs contain broken front-matter or index fragments
+        that are:
+        - all uppercase
+        - short/medium length
+        - non-prose
+        - not legal structural markers
+        - mostly concentrated on early pages
+
+        These lines frequently contaminate PREAMBLE if left untouched.
+
+        Safety behavior
+        ---------------
+        This heuristic is deliberately restricted:
+        - only early pages
+        - excludes recognized structural headers
+        - excludes ordinary prose starts
+        - excludes long body-like text
+
+        Parameters
+        ----------
+        line : str
+            Candidate line.
+
+        page_number : int
+            Current page number.
+
+        total_pages : int
+            Total page count.
+
+        Returns
+        -------
+        bool
+            True when the line looks like front-matter residue.
+        """
+        if not self._is_early_document_page(page_number, total_pages):
+            return False
+
+        if self._is_structural_line(line):
+            return False
+
+        if PROSE_START_RE.match(line):
+            return False
+
+        if len(line) > 180:
+            return False
+
+        word_count = len(line.split())
+        if word_count < 4 or word_count > 18:
+            return False
+
+        if not UPPERCASE_RESIDUE_RE.match(line):
+            return False
+
+        if not NON_PROSE_HEADING_RE.match(line):
+            return False
+
+        # Avoid dropping short legitimate mixed-content lines that merely
+        # contain some uppercase words but are not truly heading-like.
+        alpha_count = sum(1 for ch in line if ch.isalpha())
+        upper_alpha_count = sum(1 for ch in line if ch.isalpha() and ch.isupper())
+        if alpha_count == 0:
+            return False
+
+        upper_ratio = upper_alpha_count / alpha_count
+        if upper_ratio < 0.85:
+            return False
+
+        return True
 
     # ------------------------------------------------------------------
     # Prose reflow
@@ -1006,7 +1262,11 @@ class TextNormalizer:
 
     def _coerce_pages(
         self,
-        document_or_pages: Union[ExtractedDocument, Sequence[PageText], Sequence[ExtractedPage]],
+        document_or_pages: Union[
+            ExtractedDocument,
+            Sequence[PageText],
+            Sequence[ExtractedPage],
+        ],
     ) -> List[Union[PageText, ExtractedPage]]:
         """
         Normalize the input into a list of page-like objects.
