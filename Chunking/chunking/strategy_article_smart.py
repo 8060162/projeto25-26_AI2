@@ -19,16 +19,19 @@ from Chunking.utils.text import normalize_block_whitespace, split_paragraphs
 #
 # The final chunk text should be as clean as possible and should contain:
 # - semantic content
+#
 # and should avoid carrying:
 # - page counters
 # - editorial lines
 # - article headers
 # - numbered or lettered prefixes when those are already captured in metadata
+# - residual article titles accidentally merged into body text
 # ============================================================================
 
 INLINE_PAGE_COUNTER_RE = re.compile(r"^\s*\d+\s*\|\s*\d+\s*$")
 LOOSE_PAGE_COUNTER_RE = re.compile(r"^\s*\d+\s*\|\s*\d+\s*[\-–—.]?\s*$")
 LEADING_PAGE_MARKER_RE = re.compile(r"^\s*Pág\.\s*\d+\s*", re.IGNORECASE)
+
 DR_EDITORIAL_RE = re.compile(
     r"^\s*(N\.?\s*º|PARTE\s+[A-Z]|Diário da República)\b",
     re.IGNORECASE,
@@ -38,11 +41,22 @@ ARTICLE_HEADER_RE = re.compile(
     r"^\s*(?:ARTIGO|ART\.?)\s+\d+(?:\.\d+)?\s*(?:\.?\s*[ºo°])?\s*(?:[—–\-:]\s*.*)?$",
     re.IGNORECASE,
 )
+
 NUMBERED_ITEM_PREFIX_RE = re.compile(
     r"^\s*(?:n\.?\s*[ºo]\s*)?\d+(?:\.\d+)*(?:\.\s+|\)\s+|\s+[—–\-]\s+|\s+)",
     re.IGNORECASE,
 )
+
 LETTERED_ITEM_PREFIX_RE = re.compile(r"^\s*[a-z]\)\s+", re.IGNORECASE)
+
+UPPERCASE_HEADING_RE = re.compile(
+    r"^[A-ZÁÀÂÃÉÈÊÍÌÎÓÒÔÕÚÙÛÇ0-9 /().,\-–—ºª]{3,}$"
+)
+
+PROSE_START_RE = re.compile(
+    r"^\s*(?:O|A|Os|As|No|Na|Nos|Nas|Em|Para|Por|Quando|Sempre|Caso|Se|Nos\s+termos|Deve|Devem|Pode|Podem|É|São)\b",
+    re.IGNORECASE,
+)
 
 
 class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
@@ -153,6 +167,7 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
             preamble_text = self._clean_chunk_text(
                 preamble.text,
                 remove_structural_prefixes=False,
+                source_node=preamble,
             )
             if not preamble_text:
                 continue
@@ -191,6 +206,7 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
             article_text = self._clean_chunk_text(
                 article.text,
                 remove_structural_prefixes=False,
+                source_node=article,
             )
             if not article_text:
                 continue
@@ -549,6 +565,7 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
         if current_group:
             groups.append(current_group)
 
+        # Merge an undersized trailing group into the previous one when possible.
         if len(groups) >= 2:
             last_group_text = self._join_cleaned_node_texts(
                 nodes=groups[-1],
@@ -671,6 +688,7 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
         if current:
             groups.append("\n\n".join(current))
 
+        # Merge a very small trailing group into the previous one.
         if len(groups) >= 2 and len(groups[-1]) < self.settings.min_chunk_chars:
             groups[-2] = f"{groups[-2]}\n\n{groups[-1]}".strip()
             groups.pop()
@@ -681,6 +699,7 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
         self,
         text: str,
         remove_structural_prefixes: bool,
+        source_node: Optional[StructuralNode] = None,
     ) -> str:
         """
         Apply final visible-text cleanup before chunk export.
@@ -695,6 +714,7 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
         -------------
         - remove obvious residual page/editorial noise
         - optionally remove numbered or lettered legal prefixes
+        - remove residual article title at the beginning of the text
         - normalize whitespace conservatively
         - preserve semantic body text
 
@@ -708,6 +728,11 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
             - "1. "
             - "2) "
             - "a) "
+
+        source_node : Optional[StructuralNode]
+            Structural source node, when available. This allows the cleanup
+            layer to defensively remove a residual article title prefix that
+            should live in metadata rather than visible chunk text.
 
         Returns
         -------
@@ -740,6 +765,8 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
             if ARTICLE_HEADER_RE.match(line):
                 continue
 
+            # Remove numbering/alínea prefixes only when the structural label
+            # is already preserved in metadata.
             if remove_structural_prefixes:
                 line = NUMBERED_ITEM_PREFIX_RE.sub("", line).strip()
                 line = LETTERED_ITEM_PREFIX_RE.sub("", line).strip()
@@ -750,8 +777,130 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
             kept_lines.append(line)
 
         cleaned = "\n".join(kept_lines)
-        cleaned = normalize_block_whitespace(cleaned)
+        cleaned = normalize_block_whitespace(cleaned).strip()
+
+        # Defensive final cleanup:
+        # if the parser still left the article title at the beginning of the
+        # visible text, remove it here so chunk text remains content-focused.
+        cleaned = self._remove_residual_title_prefix(
+            cleaned_text=cleaned,
+            source_node=source_node,
+        )
+
+        # Remove a short uppercase heading residue at the beginning when it
+        # clearly behaves like a title fragment rather than body text.
+        cleaned = self._remove_leading_heading_residue(cleaned)
+
         return cleaned.strip()
+
+    def _remove_residual_title_prefix(
+        self,
+        cleaned_text: str,
+        source_node: Optional[StructuralNode],
+    ) -> str:
+        """
+        Remove a residual source-node title prefix from the visible chunk text.
+
+        Why this helper exists
+        ----------------------
+        Even after parser fixes, some edge cases may still leave:
+
+            "ÂMBITO O presente regulamento ..."
+            "PAGAMENTO FORA DE PRAZO O não pagamento ..."
+
+        at the beginning of ARTICLE text.
+
+        That title should live in metadata, not in the visible chunk text.
+
+        Parameters
+        ----------
+        cleaned_text : str
+            Already cleaned candidate visible text.
+
+        source_node : Optional[StructuralNode]
+            Structural source node.
+
+        Returns
+        -------
+        str
+            Text with the residual title prefix removed when it can be done
+            safely.
+        """
+        if not cleaned_text or source_node is None:
+            return cleaned_text
+
+        title = (source_node.title or "").strip()
+        if not title:
+            return cleaned_text
+
+        # Normalize both sides conservatively before comparing.
+        normalized_title = normalize_block_whitespace(title).strip()
+        normalized_text = normalize_block_whitespace(cleaned_text).strip()
+
+        if not normalized_title or not normalized_text:
+            return normalized_text
+
+        # Direct prefix removal:
+        # "ÂMBITO O presente regulamento ..."
+        if normalized_text.lower().startswith(normalized_title.lower() + " "):
+            stripped = normalized_text[len(normalized_title):].strip()
+            if stripped:
+                return stripped
+
+        # Also handle the case where title occupies the first line exactly.
+        lines = normalized_text.splitlines()
+        if lines:
+            first_line = lines[0].strip()
+            if first_line.lower() == normalized_title.lower():
+                remaining = "\n".join(lines[1:]).strip()
+                if remaining:
+                    return remaining
+
+        return normalized_text
+
+    def _remove_leading_heading_residue(self, text: str) -> str:
+        """
+        Remove a short uppercase heading-like fragment at the beginning.
+
+        Why this helper exists
+        ----------------------
+        Some edge cases still produce text that starts with a heading fragment
+        that is not meaningful as visible chunk content.
+
+        Safety behavior
+        ---------------
+        This helper is intentionally conservative:
+        - it only examines the first line
+        - it only removes clearly heading-like uppercase fragments
+        - it only removes them when followed by ordinary prose
+
+        Parameters
+        ----------
+        text : str
+            Candidate visible chunk text.
+
+        Returns
+        -------
+        str
+            Cleaned text.
+        """
+        if not text:
+            return ""
+
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
+        if not lines:
+            return ""
+
+        first_line = lines[0]
+        if (
+            UPPERCASE_HEADING_RE.match(first_line)
+            and len(first_line.split()) <= 8
+            and len(lines) >= 2
+            and PROSE_START_RE.match(lines[1])
+        ):
+            return "\n".join(lines[1:]).strip()
+
+        return text.strip()
 
     def _join_cleaned_node_texts(
         self,
@@ -780,6 +929,7 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
             cleaned = self._clean_chunk_text(
                 node.text,
                 remove_structural_prefixes=remove_structural_prefixes,
+                source_node=node,
             )
             if cleaned:
                 parts.append(cleaned)
@@ -917,6 +1067,8 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
         self,
         source_node: StructuralNode,
         visible_text: str,
+        metadata: Optional[Dict[str, Any]] = None,
+        source_node_type_override: Optional[str] = None,
     ) -> str:
         """
         Build enriched embedding text from clean visible chunk text.
@@ -935,6 +1087,15 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
         visible_text : str
             Clean visible chunk text.
 
+        metadata : Optional[Dict[str, Any]]
+            Chunk metadata, useful for group-specific context.
+
+        source_node_type_override : Optional[str]
+            Optional logical chunk source type, such as:
+            - SECTION_GROUP
+            - LETTERED_GROUP
+            - ARTICLE_PART
+
         Returns
         -------
         str
@@ -945,25 +1106,38 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
             return ""
 
         header_parts: List[str] = []
+        metadata = metadata or {}
+        effective_type = source_node_type_override or source_node.node_type
 
-        if source_node.node_type == "ARTICLE":
-            article_number = source_node.metadata.get("article_number")
-            if article_number:
-                header_parts.append(f"Artigo {article_number}")
-            elif source_node.label:
-                header_parts.append(source_node.label)
+        article_number = source_node.metadata.get("article_number")
+        article_title = source_node.title or metadata.get("article_title") or ""
 
-            if source_node.title:
-                header_parts.append(source_node.title)
+        if article_number:
+            header_parts.append(f"Artigo {article_number}")
+        elif source_node.label:
+            header_parts.append(source_node.label)
 
-        elif source_node.node_type == "PREAMBLE":
-            header_parts.append("Preamble")
+        if article_title:
+            header_parts.append(article_title)
 
-        else:
-            if source_node.label:
-                header_parts.append(source_node.label)
-            if source_node.title:
-                header_parts.append(source_node.title)
+        if effective_type == "SECTION_GROUP":
+            section_labels = metadata.get("section_labels") or []
+            if section_labels:
+                header_parts.append("Secções " + ", ".join(section_labels))
+
+        if effective_type == "LETTERED_GROUP":
+            lettered_labels = metadata.get("lettered_labels") or []
+            if lettered_labels:
+                header_parts.append("Alíneas " + ", ".join(lettered_labels))
+
+        if effective_type == "ARTICLE_PART":
+            part_index = metadata.get("part_index")
+            part_count = metadata.get("part_count")
+            if part_index is not None and part_count is not None:
+                header_parts.append(f"Parte {part_index}/{part_count}")
+
+        if effective_type == "PREAMBLE":
+            header_parts = ["Preamble"]
 
         header = " - ".join(part for part in header_parts if part).strip()
         if not header:
@@ -1050,6 +1224,8 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
             self._build_text_for_embedding(
                 source_node=source_node,
                 visible_text=visible_text,
+                metadata=metadata,
+                source_node_type_override=source_node_type_override,
             )
             if self.settings.include_text_for_embedding
             else visible_text
