@@ -17,9 +17,8 @@ def formatar_contexto(artigos: list[ArtigoContexto]) -> str:
     blocos = []
     for art in artigos:
         bloco = (
-            f"[FONTE: {art.source} | "
-            f"{art.artigo_id} — {art.artigo_titulo} | "
-            f"Pág. {art.pagina}]\n"
+            f"[{art.artigo_id} — {art.artigo_titulo} | "
+            f"Pág. {art.pagina} | {art.source}]\n"
             f"{art.conteudo}"
         )
         blocos.append(bloco)
@@ -33,13 +32,14 @@ def construir_prompt(pergunta: str, artigos: list[ArtigoContexto]) -> tuple[str,
     contexto = formatar_contexto(artigos)
 
     prompt_sistema = """
-    És um assistente virtual universitário. Responde sempre em Português de Portugal.
+    És um assistente universitário. Responde sempre em Português de Portugal.
     REGRAS:
-    1. Responde APENAS com base no CONTEXTO fornecido.
-    2. Cita SEMPRE a fonte no formato: (Artigo X — Título, pág. N, Ficheiro).
-    3. No final da resposta inclui uma secção "Fontes consultadas:" com a lista
-       de todos os artigos utilizados.
-    4. Se não souberes, diz que o regulamento não refere o assunto.
+    1. Responde de forma DIRECTA e CONCISA — máximo 3 frases por ponto.
+    2. Não repitas informação que já disseste.
+    3. Cita a fonte apenas uma vez no final, no formato curto:
+       → Fonte: Artigo X, pág. N, Ficheiro
+    4. Se a resposta for simples, responde numa só frase com a fonte no final.
+    5. Responde APENAS com base no CONTEXTO. Se não souberes, diz que o regulamento não refere o assunto.
     """
 
     prompt_utilizador = f"CONTEXTO:\n{contexto}\n\nPERGUNTA: {pergunta}"

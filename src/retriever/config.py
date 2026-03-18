@@ -1,5 +1,5 @@
 import os
 
 # Retrieval
-N_RESULTS   = 3
-QUERY_FETCH = 10
+N_RESULTS   = 5
+QUERY_FETCH = 15
