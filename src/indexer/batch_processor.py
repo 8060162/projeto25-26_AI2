@@ -1,30 +1,39 @@
 """
 batch_processor.py
-Lê todos os PDFs de uma pasta de entrada, faz o parse de cada um
-e guarda o JSON resultante na pasta de saída com o mesmo nome base.
+Processa todos os PDFs de uma pasta de entrada e guarda um JSON por ficheiro.
 
-Uso:
-    python -m indexer.batch_processor                         # defaults
-    python -m indexer.batch_processor --input data/raw --output data/processed
+Uso directo:
+    python batch_processor.py
+    python batch_processor.py --input data/raw --output data/processed
+
+Uso com -m (a partir de src/):
+    python -m indexer.batch_processor
 """
 
 import argparse
 import json
 import logging
-import os
 import sys
 from pathlib import Path
 
-# Garante que a raiz do projecto está no path, independentemente de como
-# o script é invocado (python file.py, python -m, ou via IDE)
-# __file__ = .../src/indexer/batch_processor.py
-# parent       = .../src/indexer/
-# parent.parent = .../src/              ← aqui está o módulo "indexer"
+# ── Path setup ────────────────────────────────────────────────────────────────
 _SRC = Path(__file__).resolve().parent.parent
 if str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
+# ─────────────────────────────────────────────────────────────────────────────
 
-from indexer.structure_pipeline import StructurePipeline
+# ── Carrega .env automaticamente (python-dotenv) ──────────────────────────────
+try:
+    from dotenv import load_dotenv
+    # Procura o .env na raiz do projecto (dois níveis acima de src/indexer/)
+    _ROOT = _SRC.parent
+    load_dotenv(_ROOT / ".env")
+except ImportError:
+    pass  # dotenv não instalado — variáveis de ambiente têm de ser definidas manualmente
+# ─────────────────────────────────────────────────────────────────────────────
+
+from indexer.pdf_indexer import PDFIndexer
+from indexer.pdf_loader  import PDFLoader
 
 logging.basicConfig(
     level=logging.INFO,
@@ -34,44 +43,44 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 
-def collect_pdfs(input_dir: Path) -> list[Path]:
-    """Devolve lista ordenada de PDFs encontrados na pasta de entrada."""
+def run_batch(input_dir: Path, output_dir: Path, pipeline: PDFIndexer) -> dict:
+    """
+    Itera os PDFs de input_dir, processa cada um com pipeline e guarda
+    o JSON resultante em output_dir/<stem>.json.
+
+    PDFs cujo JSON de destino já existe são ignorados (idempotente).
+
+    Devolve:
+        {
+            "sucesso":  [str, …],
+            "falha":    [{"ficheiro": str, "erro": str}, …],
+            "ignorado": [str, …],
+        }
+    """
+    output_dir.mkdir(parents=True, exist_ok=True)
+
     pdfs = sorted(input_dir.glob("*.pdf"))
     if not pdfs:
         log.warning("Nenhum PDF encontrado em '%s'", input_dir)
-    return pdfs
 
-
-def process_batch(input_dir: Path, output_dir: Path) -> dict:
-    """
-    Processa todos os PDFs da pasta de entrada.
-    Devolve um relatório com os resultados: sucesso, falha e ficheiros ignorados.
-    """
-    output_dir.mkdir(parents=True, exist_ok=True)
-    pipeline = StructurePipeline()
-
-    pdfs = collect_pdfs(input_dir)
-    log.info("PDFs encontrados: %d", len(pdfs))
-
-    report = {"sucesso": [], "falha": [], "ignorado": []}
+    report: dict[str, list] = {"sucesso": [], "falha": [], "ignorado": []}
 
     for pdf_path in pdfs:
-        output_path = output_dir / (pdf_path.stem + ".json")
+        out_path = output_dir / (pdf_path.stem + ".json")
 
-        # Salta ficheiros já processados
-        if output_path.exists():
-            log.info("Ignorado (já existe): %s", output_path.name)
+        if out_path.exists():
+            log.info("Ignorado (já existe): %s", out_path.name)
             report["ignorado"].append(pdf_path.name)
             continue
 
         log.info("A processar: %s", pdf_path.name)
         try:
             result = pipeline.run(str(pdf_path))
-
-            with open(output_path, "w", encoding="utf-8") as f:
-                json.dump(result, f, indent=4, ensure_ascii=False)
-
-            log.info("  → Guardado: %s", output_path.name)
+            out_path.write_text(
+                json.dumps(result, indent=4, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            log.info("  → Guardado: %s", out_path.name)
             report["sucesso"].append(pdf_path.name)
 
         except Exception as exc:
@@ -81,27 +90,7 @@ def process_batch(input_dir: Path, output_dir: Path) -> dict:
     return report
 
 
-def main():
-    parser = argparse.ArgumentParser(description="Batch PDF → JSON parser")
-    parser.add_argument(
-        "--input", default="data/raw",
-        help="Pasta com os PDFs a processar (default: data/raw)"
-    )
-    parser.add_argument(
-        "--output", default="data/processed",
-        help="Pasta de destino dos JSONs (default: data/processed)"
-    )
-    args = parser.parse_args()
-
-    input_dir = Path(args.input)
-    output_dir = Path(args.output)
-
-    if not input_dir.exists():
-        log.error("Pasta de entrada não encontrada: '%s'", input_dir)
-        sys.exit(1)
-
-    report = process_batch(input_dir, output_dir)
-
+def _print_report(report: dict) -> None:
     print("\n── Relatório ──────────────────────────────")
     print(f"  Sucesso : {len(report['sucesso'])}")
     print(f"  Falha   : {len(report['falha'])}")
@@ -111,6 +100,24 @@ def main():
         for item in report["falha"]:
             print(f"    • {item['ficheiro']}: {item['erro']}")
     print("───────────────────────────────────────────\n")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Batch PDF → JSON indexer")
+    parser.add_argument("--input",  default="data/raw",       help="Pasta de PDFs")
+    parser.add_argument("--output", default="data/processed", help="Pasta de saída")
+    args = parser.parse_args()
+
+    input_dir  = Path(args.input)
+    output_dir = Path(args.output)
+
+    if not input_dir.exists():
+        log.error("Pasta de entrada não encontrada: '%s'", input_dir)
+        sys.exit(1)
+
+    pipeline = PDFIndexer(loader=PDFLoader())
+    report   = run_batch(input_dir, output_dir, pipeline)
+    _print_report(report)
 
 
 if __name__ == "__main__":

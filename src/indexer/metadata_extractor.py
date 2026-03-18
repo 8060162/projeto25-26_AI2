@@ -1,25 +1,41 @@
+"""
+metadata_extractor.py
+Extrai metadados do documento a partir do nome do ficheiro e do preâmbulo.
+
+Responsabilidade única: produzir o dicionário document_info.
+Não sabe nada sobre elementos da API nem sobre a estrutura do JSON final.
+"""
+
 import os
-from utils.regex_patterns import YEAR_FILENAME_PATTERN, YEAR_PREAMBLE_PATTERN
+from utils.regex_patterns import YEAR_FILENAME, YEAR_PREAMBLE
+
 
 class MetadataExtractor:
+
     @staticmethod
-    def extract(preamble_text: str, filename: str) -> dict:
-        metadata = {
-            "doc_id": os.path.splitext(filename)[0],
+    def extract(filename: str, preamble: str = "") -> dict:
+        """
+        Devolve o dicionário document_info.
+
+        Estratégia para o ano:
+          1. Nome do ficheiro  (mais fiável — vem do sistema de gestão)
+          2. Texto do preâmbulo (fallback)
+          3. "N/A"             (último recurso)
+        """
+        doc_id = os.path.splitext(filename)[0]
+
+        ano = "N/A"
+        m = YEAR_FILENAME.search(filename)
+        if m:
+            ano = m.group(0)
+        else:
+            m = YEAR_PREAMBLE.search(preamble)
+            if m:
+                ano = m.group(1)
+
+        return {
+            "doc_id": doc_id,
             "escola": "GERAL",
-            "ano": "N/A",
-            "status": "VIGENTE"
+            "ano":    ano,
+            "status": "VIGENTE",
         }
-
-        # 1. Tenta extrair ano do nome do ficheiro (mais fiável)
-        ano_filename = YEAR_FILENAME_PATTERN.search(filename)
-        if ano_filename:
-            metadata["ano"] = ano_filename.group(0)
-            return metadata
-
-        # 2. Fallback: Procura no texto do preâmbulo
-        ano_match = YEAR_PREAMBLE_PATTERN.search(preamble_text)
-        if ano_match:
-            metadata["ano"] = ano_match.group(1)
-
-        return metadata
