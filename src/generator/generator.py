@@ -1,72 +1,64 @@
-#este ficheiro deve ser removido foi restruturado e separado as responsabilidades 
+"""
+generator.py
+------------
+Responsabilidade única: orquestrar o pipeline RAG completo.
+
+Fluxo:
+    1. Retrieval  — obter_contexto()   → list[ArtigoContexto]
+    2. Prompt     — construir_prompt() → (sistema, utilizador)
+    3. Generation — chamar_modelo()    → resposta final
+"""
+
 import os
 import sys
 import warnings
 
 warnings.filterwarnings("ignore", category=UserWarning)
 
-# Configuração de caminhos para importação
-current_file_path = os.path.abspath(__file__)
-generator_dir = os.path.dirname(current_file_path)
-src_dir = os.path.dirname(generator_dir)
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-if src_dir not in sys.path:
-    sys.path.append(src_dir)
+from retriever.query  import obter_contexto
+from prompt_builder   import construir_prompt
 
-# Importar Retriever
-try:
-    from retriever.query import get_retriever
-except ImportError:
-    print("ERRO: Não foi possível encontrar 'src/retriever/query.py'.")
-    sys.exit(1)
-
-from prompt_builder import formatar_contexto, construir_prompt
-
-# Ollama (local)
-#from ollama_client import chamar_modelo, MODEL_NAME
-
-# iaedu / OpenAI (cloud)
+# Trocar o import para mudar de modelo — o resto do código não muda
+# from ollama_client import chamar_modelo, MODEL_NAME
 from openai_client import chamar_modelo, MODEL_NAME
 
 
-def gerar_resposta_rag(pergunta: str) -> str:
-    """Pipeline RAG Local usando Ollama."""
-    try:
-        # ETAPA 1: RETRIEVAL
-        collection = get_retriever()
-        results = collection.query(query_texts=[pergunta], n_results=4)
+def gerar_resposta(pergunta: str) -> str:
+    """
+    Pipeline RAG completo: retrieval → prompt → generation.
 
-        if not results['documents'][0]:
-            return "Não encontrei informações nos documentos locais para responder a isso."
+    Args:
+        pergunta: questão do utilizador.
 
-        # ETAPA 2: PROMPT
-        contexto = formatar_contexto(results)
-        prompt_sistema, prompt_utilizador = construir_prompt(pergunta, contexto)
+    Returns:
+        Resposta fundamentada nos regulamentos.
+    """
+    artigos = obter_contexto(pergunta)
 
-        # ETAPA 3: GENERATION
-        return chamar_modelo(prompt_sistema, prompt_utilizador)
+    if not artigos:
+        return "Não encontrei informações nos documentos para responder a essa questão."
 
-    except Exception as e:
-        if "not found" in str(e).lower():
-            return f"Erro: O modelo '{MODEL_NAME}' não está instalado no Ollama. Corre 'ollama run {MODEL_NAME}' no terminal."
-        return f"Ocorreu um erro no Ollama: {str(e)}"
+    prompt_sistema, prompt_utilizador = construir_prompt(pergunta, artigos)
+
+    return chamar_modelo(prompt_sistema, prompt_utilizador)
 
 
-# --- INTERFACE ---
 if __name__ == "__main__":
-    print("\n" + "═"*60)
-    print(f"  RAG LOCAL ATIVO (Ollama: {MODEL_NAME})")
-    print("  Privacidade Total - Sem dependência de API Externa")
-    print("═"*60)
+    print("\n" + "═" * 60)
+    print(f"  RAG ATIVO ({MODEL_NAME})")
+    print("═" * 60)
 
     while True:
-        duvida = input("\nQuestão (ou 'sair'): ").strip()
-        if duvida.lower() in ['sair', 'q']: break
-        if not duvida: continue
+        pergunta = input("\nQuestão (ou 'sair'): ").strip()
+        if pergunta.lower() in ["sair", "q"]:
+            break
+        if not pergunta:
+            continue
 
-        print("\n[A processar localmente...]")
-        resposta = gerar_resposta_rag(duvida)
-
-        print("\n" + "─"*20 + " RESPOSTA FUNDAMENTADA " + "─"*20)
+        print("\n[A processar...]")
+        resposta = gerar_resposta(pergunta)
+        print("\n" + "─" * 20 + " RESPOSTA " + "─" * 20)
         print(resposta)
-        print("─" * 63)
+        print("─" * 50)

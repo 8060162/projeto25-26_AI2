@@ -1,27 +1,52 @@
-from langchain_text_splitters import RecursiveCharacterTextSplitter
+"""
+chunker.py
+----------
+Chunking de tamanho fixo com overlap para artigos legislativos.
 
-CHUNK_SIZE = 1200
-CHUNK_OVERLAP = 150
+Estratégia:
+  - A unidade semântica mínima é o artigo completo.
+  - Se o conteúdo couber em CHUNK_SIZE → um único chunk, sem marcação.
+  - Se não couber → dividido em chunks de CHUNK_SIZE com OVERLAP de
+    caracteres; cada chunk é identificado com sufixo _part1, _part2, …
+    O artigo completo fica sempre recuperável no JSON de origem via
+    (source, artigo_id) — o retriever usa esse par para o fallback.
 
-text_splitter = RecursiveCharacterTextSplitter(
-    chunk_size=CHUNK_SIZE,
-    chunk_overlap=CHUNK_OVERLAP,
-    separators=["\n\n", "\n", ". ", " ", ""]
-)
+Parâmetros:
+  CHUNK_SIZE   — tamanho máximo de cada chunk em caracteres (500–600).
+  OVERLAP      — sobreposição em caracteres entre chunks consecutivos,
+                 para preservar contexto na fronteira de corte.
+"""
 
-
-def construir_texto(filename: str, cap_titulo: str, art_id: str, art_titulo: str, conteudo: str) -> str:
-    """Formata o texto final que será indexado no ChromaDB."""
-    return (
-        f"FICHEIRO: {filename}\n"
-        f"CAPÍTULO: {cap_titulo}\n"
-        f"ARTIGO: {art_id} - {art_titulo}\n"
-        f"CONTEÚDO: {conteudo}"
-    )
+CHUNK_SIZE = 550
+OVERLAP    = 80
 
 
-def dividir_em_chunks(texto: str, conteudo: str) -> list[str]:
-    """Devolve lista de chunks. Se o conteúdo couber num único chunk, devolve lista com um elemento."""
-    if len(conteudo) > CHUNK_SIZE:
-        return text_splitter.split_text(texto)
-    return [texto]
+def dividir_conteudo(conteudo: str) -> tuple[list[str], bool]:
+    """
+    Divide o conteúdo de um artigo em chunks de tamanho fixo.
+
+    Args:
+        conteudo: texto integral do artigo (campo `conteudo` do JSON).
+
+    Returns:
+        chunks    — lista de strings. Um elemento se o artigo couber
+                    num único chunk; vários se for necessário dividir.
+        truncated — False se o artigo não foi dividido (chunk único).
+                    True  se foi dividido; nesse caso o retriever deve
+                    recuperar o artigo completo a partir do JSON.
+    """
+    conteudo = conteudo.strip()
+    if not conteudo:
+        return [], False
+
+    if len(conteudo) <= CHUNK_SIZE:
+        return [conteudo], False
+
+    chunks: list[str] = []
+    start = 0
+    while start < len(conteudo):
+        end = start + CHUNK_SIZE
+        chunks.append(conteudo[start:end])
+        start = end - OVERLAP          # recua OVERLAP para o próximo chunk
+
+    return chunks, True
