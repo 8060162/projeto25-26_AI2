@@ -1,24 +1,35 @@
 """
 prompt_builder.py
 -----------------
-Responsabilidade única: construir o prompt a enviar ao modelo.
+Responsabilidade única: construir os prompts para o pipeline RAG.
+O conteúdo editorial do prompt sistema é carregado de um ficheiro externo,
+separando lógica de construção de conteúdo configurável.
 """
 
-import os
-import sys
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
+from pathlib import Path
 from retriever.models import ArtigoContexto
+
+_PROMPTS_DIR = Path(__file__).parent / "prompts"
+
+
+def _carregar_template_sistema() -> str:
+    """Carrega o template do prompt sistema a partir do ficheiro externo."""
+    caminho = _PROMPTS_DIR / "sistema.txt"
+    try:
+        return caminho.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        raise FileNotFoundError(
+            f"Template do prompt sistema não encontrado em: {caminho}"
+        )
 
 
 def formatar_contexto(artigos: list[ArtigoContexto]) -> str:
-    """Formata os artigos recuperados numa string de contexto para o prompt."""
+    """Formata os artigos para o prompt, preservando proveniência e hierarquia."""
     blocos = []
     for art in artigos:
         bloco = (
-            f"[{art.artigo_id} — {art.artigo_titulo} | "
-            f"Pág. {art.pagina} | {art.source}]\n"
+            f"### FONTE: {art.source} | {art.capitulo_titulo}\n"
+            f"### {art.artigo_id} - {art.artigo_titulo}\n"
             f"{art.conteudo}"
         )
         blocos.append(bloco)
@@ -26,22 +37,23 @@ def formatar_contexto(artigos: list[ArtigoContexto]) -> str:
 
 
 def construir_prompt(pergunta: str, artigos: list[ArtigoContexto]) -> tuple[str, str]:
-    """
-    Devolve o par (prompt_sistema, prompt_utilizador) prontos a enviar ao modelo.
+    """Constrói o par (prompt_sistema, prompt_utilizador) para o modelo.
+
+    Args:
+        pergunta: Questão do utilizador.
+        artigos:  Artigos recuperados pelo retriever.
+
+    Returns:
+        Tuplo (prompt_sistema, prompt_utilizador).
     """
     contexto = formatar_contexto(artigos)
+    prompt_sistema = _carregar_template_sistema()
 
-    prompt_sistema = """
-    És um assistente universitário. Responde sempre em Português de Portugal.
-    REGRAS:
-    1. Responde de forma DIRECTA e CONCISA — máximo 3 frases por ponto.
-    2. Não repitas informação que já disseste.
-    3. Cita a fonte apenas uma vez no final, no formato curto:
-       → Fonte: Artigo X, pág. N, Ficheiro
-    4. Se a resposta for simples, responde numa só frase com a fonte no final.
-    5. Responde APENAS com base no CONTEXTO. Se não souberes, diz que o regulamento não refere o assunto.
-    """
-
-    prompt_utilizador = f"CONTEXTO:\n{contexto}\n\nPERGUNTA: {pergunta}"
+    prompt_utilizador = (
+        f"Aqui estão os regulamentos que deves consultar:\n{contexto}\n\n"
+        f"---\n"
+        f"Pergunta do Aluno: {pergunta}\n\n"
+        f"Responde de forma útil e amigável:"
+    )
 
     return prompt_sistema, prompt_utilizador

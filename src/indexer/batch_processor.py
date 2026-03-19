@@ -6,6 +6,9 @@ Uso directo:
     python batch_processor.py
     python batch_processor.py --input data/raw --output data/processed
 
+Modo de desenvolvimento (sem chamadas à API):
+    python batch_processor.py --dev --dev-dir data/raw_elements
+
 Uso com -m (a partir de src/):
     python -m indexer.batch_processor
 """
@@ -25,7 +28,6 @@ if str(_SRC) not in sys.path:
 # ── Carrega .env automaticamente (python-dotenv) ──────────────────────────────
 try:
     from dotenv import load_dotenv
-    # Procura o .env na raiz do projecto (dois níveis acima de src/indexer/)
     _ROOT = _SRC.parent
     load_dotenv(_ROOT / ".env")
 except ImportError:
@@ -34,6 +36,7 @@ except ImportError:
 
 from indexer.pdf_indexer import PDFIndexer
 from indexer.pdf_loader  import PDFLoader
+from indexer.dev_loader  import DevLoader
 
 logging.basicConfig(
     level=logging.INFO,
@@ -50,7 +53,7 @@ def run_batch(input_dir: Path, output_dir: Path, pipeline: PDFIndexer) -> dict:
 
     PDFs cujo JSON de destino já existe são ignorados (idempotente).
 
-    Devolve:
+    Returns:
         {
             "sucesso":  [str, …],
             "falha":    [{"ficheiro": str, "erro": str}, …],
@@ -90,6 +93,20 @@ def run_batch(input_dir: Path, output_dir: Path, pipeline: PDFIndexer) -> dict:
     return report
 
 
+def _build_loader(args: argparse.Namespace) -> PDFLoader | DevLoader:
+    """
+    Selecciona e instancia o loader adequado com base nos argumentos do CLI.
+
+    Separa a decisão de qual loader usar da lógica de processamento batch,
+    tornando ambos testáveis independentemente.
+    """
+    if args.dev:
+        log.info("Modo de desenvolvimento: a usar DevLoader (dir='%s')", args.dev_dir)
+        return DevLoader(args.dev_dir)
+
+    return PDFLoader()
+
+
 def _print_report(report: dict) -> None:
     print("\n── Relatório ──────────────────────────────")
     print(f"  Sucesso : {len(report['sucesso'])}")
@@ -102,12 +119,29 @@ def _print_report(report: dict) -> None:
     print("───────────────────────────────────────────\n")
 
 
-def main() -> None:
+def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Batch PDF → JSON indexer")
-    parser.add_argument("--input",  default="data/raw",       help="Pasta de PDFs")
-    parser.add_argument("--output", default="data/processed", help="Pasta de saída")
-    args = parser.parse_args()
+    parser.add_argument(
+        "--input",   default="data/raw",
+        help="Pasta de PDFs de entrada (default: data/raw)",
+    )
+    parser.add_argument(
+        "--output",  default="data/processed",
+        help="Pasta de saída JSON (default: data/processed)",
+    )
+    parser.add_argument(
+        "--dev",     action="store_true",
+        help="Usa DevLoader em vez de PDFLoader (sem chamadas à API)",
+    )
+    parser.add_argument(
+        "--dev-dir", default="data/raw_elements",
+        help="Pasta com os JSONs raw para o DevLoader (default: data/raw_elements)",
+    )
+    return parser.parse_args()
 
+
+def main() -> None:
+    args       = _parse_args()
     input_dir  = Path(args.input)
     output_dir = Path(args.output)
 
@@ -115,7 +149,8 @@ def main() -> None:
         log.error("Pasta de entrada não encontrada: '%s'", input_dir)
         sys.exit(1)
 
-    pipeline = PDFIndexer(loader=PDFLoader())
+    loader   = _build_loader(args)
+    pipeline = PDFIndexer(loader=loader)
     report   = run_batch(input_dir, output_dir, pipeline)
     _print_report(report)
 

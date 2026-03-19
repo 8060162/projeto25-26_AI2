@@ -15,11 +15,11 @@ Estratégia de âncoras em dois níveis (resiliente a falhas de classificação 
 
 Fluxo por elemento:
   ┌─ category em _DISCARD               → ignorado (Header/Footer/PageBreak)
-  ├─ CAP_PATTERN.match(text)            -> ancora de capitulo (qualquer category)
-  ├─ ART_PATTERN.match(text)            -> ancora de artigo   (qualquer category)
-  │    └─ se ainda não há capítulo      → cria CAP_0 implícito
+  ├─ CAP_PATTERN.match(text)            → âncora de capítulo (qualquer category)
+  ├─ ART_PATTERN.match(text)            → âncora de artigo   (qualquer category)
+  │    └─ se ainda não há capítulo      → cria capítulo implícito
   ├─ category == "Title" + art activo   → título solto do artigo
-  ├─ category em _CONTENT + art activo  → acumula conteudo
+  ├─ category em _CONTENT + art activo  → acumula conteúdo
   └─ category em _CONTENT + sem art    → preâmbulo (máx. _MAX_PREAMBLE_BLOCKS)
 
 Responsabilidade: APENAS parsing. Não sabe o nome do ficheiro,
@@ -35,6 +35,8 @@ if str(_SRC) not in sys.path:
 
 from utils.regex_patterns import CAP_PATTERN, ART_PATTERN
 
+# ── Categorias ────────────────────────────────────────────────────────────────
+
 # Categorias descartadas — ruído estrutural da API
 _DISCARD: frozenset[str] = frozenset({
     "Header", "Footer", "PageBreak", "PageNumber",
@@ -45,8 +47,16 @@ _CONTENT: frozenset[str] = frozenset({
     "NarrativeText", "ListItem", "Table", "UncategorizedText",
 })
 
+# ── Constantes de estrutura ───────────────────────────────────────────────────
+
 _MAX_PREAMBLE_BLOCKS = 10
 _NO_TITLE            = "Sem Título"
+
+# ID e título do capítulo implícito criado quando um artigo surge sem capítulo.
+# O prefixo "__" garante que nunca colidirá com IDs gerados pelo regex
+# (que têm o formato "CAP_<LABEL>", ex: "CAP_I", "CAP_1").
+_IMPLICIT_CAP_ID    = "__NO_CHAPTER__"
+_IMPLICIT_CAP_TITLE = "Sem Capítulos"
 
 
 class AnchorParser:
@@ -71,15 +81,11 @@ class AnchorParser:
     """
 
     def parse(self, elements: list[dict]) -> dict:
-        result = {
-            "preambulo": "",
-            "estrutura": {},
-        }
-
-        current_cap_id: str | None = None
-        current_art_id: str | None = None
-        preamble_blocks: list[str] = []
-        preamble_closed = False
+        self._result: dict = {"preambulo": "", "estrutura": {}}
+        self._current_cap_id:  str | None  = None
+        self._current_art_id:  str | None  = None
+        self._preamble_blocks: list[str]   = []
+        self._preamble_closed: bool        = False
 
         for el in elements:
             category = el.get("category", "")
@@ -89,63 +95,111 @@ class AnchorParser:
             if not text or category in _DISCARD:
                 continue
 
-            # ── ÂNCORA: CAPÍTULO ─────────────────────────────────────────────
-            # Aplica-se a qualquer categoria — o regex é a guarda suficiente.
-            # "CAPÍTULO I" no início de linha nunca aparece a meio de um parágrafo.
-            cap_m = CAP_PATTERN.match(text)
-            if cap_m:
-                cap_label      = cap_m.group(1).upper()
-                current_cap_id = f"CAP_{cap_label}"
-                current_art_id = None
-                preamble_closed = True
-                result["estrutura"][current_cap_id] = {
-                    "titulo":  text,
-                    "artigos": {},
-                }
+            if self._try_chapter_anchor(text):
                 continue
-
-            # ── ÂNCORA: ARTIGO ────────────────────────────────────────────────
-            # Aplica-se a qualquer categoria — o regex é a guarda suficiente.
-            # ART_PATTERN exige "^\\s*Artigo\\s+\\d+" — nunca bate a meio de frase.
-            art_m = ART_PATTERN.match(text)
-            if art_m:
-                art_num      = art_m.group(1)
-                inline_title = art_m.group(2).strip(" .º°-")
-                current_art_id = f"ART_{art_num}"
-                preamble_closed = True
-
-                # documento sem capítulos → CAP_0 implícito (criado uma vez)
-                if current_cap_id is None:
-                    current_cap_id = "CAP_0"
-                    result["estrutura"]["CAP_0"] = {
-                        "titulo":  "Sem Capítulos",
-                        "artigos": {},
-                    }
-
-                result["estrutura"][current_cap_id]["artigos"][current_art_id] = {
-                    "titulo":   inline_title or _NO_TITLE,
-                    "conteudo": "",
-                    "pagina":   page,
-                }
+            if self._try_article_anchor(text, page):
                 continue
-
-            # ── TÍTULO SOLTO ──────────────────────────────────────────────────
-            # Um Title que vem após uma âncora de artigo e o artigo ainda não
-            # tem título resolvido. Ex: "Artigo 1.º" + (próxima linha) "ÂMBITO"
-            if category == "Title" and current_art_id is not None:
-                art = result["estrutura"][current_cap_id]["artigos"][current_art_id]
-                if art["titulo"] == _NO_TITLE:
-                    art["titulo"] = text
+            if self._try_loose_title(category, text):
                 continue
+            self._try_content(category, text)
 
-            # ── CONTEÚDO ÚTIL ─────────────────────────────────────────────────
-            if category in _CONTENT:
-                if current_art_id is not None:
-                    art = result["estrutura"][current_cap_id]["artigos"][current_art_id]
-                    art["conteudo"] += (" " if art["conteudo"] else "") + text
-                elif not preamble_closed:
-                    if len(preamble_blocks) < _MAX_PREAMBLE_BLOCKS:
-                        preamble_blocks.append(text)
+        self._result["preambulo"] = " ".join(self._preamble_blocks)
+        return self._result
 
-        result["preambulo"] = " ".join(preamble_blocks)
-        return result
+    # ── handlers privados ─────────────────────────────────────────────────────
+
+    def _try_chapter_anchor(self, text: str) -> bool:
+        """
+        Tenta reconhecer uma âncora de capítulo.
+        Aplica-se a qualquer category — o regex é a guarda suficiente.
+        "CAPÍTULO I" no início de linha nunca aparece a meio de um parágrafo.
+
+        Returns:
+            True se o elemento foi consumido como âncora de capítulo.
+        """
+        cap_m = CAP_PATTERN.match(text)
+        if not cap_m:
+            return False
+
+        cap_label             = cap_m.group(1).upper()
+        self._current_cap_id  = f"CAP_{cap_label}"
+        self._current_art_id  = None
+        self._preamble_closed = True
+
+        self._result["estrutura"][self._current_cap_id] = {
+            "titulo":  text,
+            "artigos": {},
+        }
+        return True
+
+    def _try_article_anchor(self, text: str, page: int) -> bool:
+        """
+        Tenta reconhecer uma âncora de artigo.
+        Aplica-se a qualquer category — o regex é a guarda suficiente.
+        ART_PATTERN exige "^\\s*Artigo\\s+\\d+" — nunca bate a meio de frase.
+
+        Se não houver capítulo activo, cria um capítulo implícito com ID
+        _IMPLICIT_CAP_ID (prefixo "__" impede colisão com IDs gerados por regex).
+
+        Returns:
+            True se o elemento foi consumido como âncora de artigo.
+        """
+        art_m = ART_PATTERN.match(text)
+        if not art_m:
+            return False
+
+        art_num      = art_m.group(1)
+        inline_title = art_m.group(2).strip(" .º°-")
+
+        self._current_art_id  = f"ART_{art_num}"
+        self._preamble_closed = True
+
+        # Documento sem capítulos → capítulo implícito (criado uma única vez)
+        if self._current_cap_id is None:
+            self._current_cap_id = _IMPLICIT_CAP_ID
+            self._result["estrutura"][_IMPLICIT_CAP_ID] = {
+                "titulo":  _IMPLICIT_CAP_TITLE,
+                "artigos": {},
+            }
+
+        self._result["estrutura"][self._current_cap_id]["artigos"][self._current_art_id] = {
+            "titulo":   inline_title or _NO_TITLE,
+            "conteudo": "",
+            "pagina":   page,
+        }
+        return True
+
+    def _try_loose_title(self, category: str, text: str) -> bool:
+        """
+        Tenta aplicar um Title solto ao artigo activo.
+
+        Um Title que vem após uma âncora de artigo e o artigo ainda não
+        tem título resolvido. Ex: "Artigo 1.º" + (próxima linha) "ÂMBITO".
+
+        Returns:
+            True se o elemento foi consumido como título solto.
+        """
+        if category != "Title" or self._current_art_id is None:
+            return False
+
+        art = self._result["estrutura"][self._current_cap_id]["artigos"][self._current_art_id]
+        if art["titulo"] == _NO_TITLE:
+            art["titulo"] = text
+        return True
+
+    def _try_content(self, category: str, text: str) -> None:
+        """
+        Acumula conteúdo no artigo activo ou no preâmbulo.
+
+        Conteúdo sem artigo activo vai para o preâmbulo, até ao limite
+        de _MAX_PREAMBLE_BLOCKS blocos.
+        """
+        if category not in _CONTENT:
+            return
+
+        if self._current_art_id is not None:
+            art = self._result["estrutura"][self._current_cap_id]["artigos"][self._current_art_id]
+            art["conteudo"] += (" " if art["conteudo"] else "") + text
+        elif not self._preamble_closed:
+            if len(self._preamble_blocks) < _MAX_PREAMBLE_BLOCKS:
+                self._preamble_blocks.append(text)

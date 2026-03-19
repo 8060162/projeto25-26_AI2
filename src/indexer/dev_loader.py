@@ -21,6 +21,8 @@ Uso:
 import json
 import os
 
+from utils.element_utils import normalise_elements
+
 
 class DevLoader:
     """Carrega elementos a partir de respostas da API guardadas em disco."""
@@ -29,27 +31,27 @@ class DevLoader:
         self._dir = elements_dir
 
     def load(self, file_path: str) -> list[dict]:
-        stem = os.path.splitext(os.path.basename(file_path))[0]
+        """
+        Lê o JSON correspondente ao PDF e devolve os elementos normalizados.
+
+        O ficheiro JSON esperado tem o mesmo stem que o PDF:
+            data/raw_elements/<stem>.json
+
+        Raises:
+            FileNotFoundError: Se o JSON correspondente não existir em elements_dir.
+        """
+        stem      = os.path.splitext(os.path.basename(file_path))[0]
         json_path = os.path.join(self._dir, stem + ".json")
+
+        if not os.path.exists(json_path):
+            raise FileNotFoundError(
+                f"[DevLoader] JSON não encontrado para '{file_path}'. "
+                f"Esperado em: '{json_path}'. "
+                f"Guarda primeiro a resposta da API com o nome '{stem}.json' "
+                f"na pasta '{self._dir}'."
+            )
 
         with open(json_path, encoding="utf-8") as fh:
             raw = json.load(fh)
 
-        return self._normalise(raw)
-
-    # ── privado ───────────────────────────────────────────────────────────────
-
-    @staticmethod
-    def _normalise(raw: list) -> list[dict]:
-        """Mesmo contrato de normalização que PDFLoader._normalise."""
-        elements = []
-        for el in raw:
-            text = (el.get("text") or "").strip()
-            if not text:
-                continue
-            elements.append({
-                "text":     text,
-                "category": el.get("type", "Uncategorized"),
-                "page":     (el.get("metadata") or {}).get("page_number", 1) or 1,
-            })
-        return elements
+        return normalise_elements(raw)

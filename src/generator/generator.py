@@ -1,4 +1,3 @@
-
 """
 generator.py
 ------------
@@ -8,33 +7,46 @@ Fluxo:
     1. Retrieval  — obter_contexto()   → list[ArtigoContexto]
     2. Prompt     — construir_prompt() → (sistema, utilizador)
     3. Generation — chamar_modelo()    → resposta final
+
+O cliente LLM activo é seleccionado em runtime via variável de ambiente
+LLM_BACKEND, sem necessidade de editar este ficheiro.
 """
 
 import os
 import sys
 import warnings
+from typing import Callable
 
 warnings.filterwarnings("ignore", category=UserWarning)
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from retriever.query  import obter_contexto
-from prompt_builder   import construir_prompt
+from retriever.query import obter_contexto
+from prompt_builder  import construir_prompt
+from config          import LLM_BACKEND, MODEL_DISPLAY_NAME
 
-# Trocar o import para mudar de modelo — o resto do código não muda
-# from ollama_client import chamar_modelo, MODEL_NAME
-from openai_client import chamar_modelo, MODEL_NAME
+
+def _get_cliente() -> Callable[[str, str], str]:
+    """Devolve a função chamar_modelo do cliente configurado em LLM_BACKEND."""
+    if LLM_BACKEND == "ollama":
+        from ollama_client import chamar_modelo
+    elif LLM_BACKEND == "openai":
+        from openai_client import chamar_modelo
+    else:
+        raise ValueError(
+            f"LLM_BACKEND inválido: '{LLM_BACKEND}'. Valores válidos: 'openai', 'ollama'."
+        )
+    return chamar_modelo
 
 
 def gerar_resposta(pergunta: str) -> str:
-    """
-    Pipeline RAG completo: retrieval → prompt → generation.
+    """Pipeline RAG completo: retrieval → prompt → generation.
 
     Args:
-        pergunta: questão do utilizador.
+        pergunta: Questão do utilizador.
 
     Returns:
-        Resposta fundamentada nos regulamentos.
+        Resposta fundamentada nos regulamentos, ou mensagem de erro controlada.
     """
     artigos = obter_contexto(pergunta)
 
@@ -43,12 +55,16 @@ def gerar_resposta(pergunta: str) -> str:
 
     prompt_sistema, prompt_utilizador = construir_prompt(pergunta, artigos)
 
-    return chamar_modelo(prompt_sistema, prompt_utilizador)
+    try:
+        chamar_modelo = _get_cliente()
+        return chamar_modelo(prompt_sistema, prompt_utilizador)
+    except (RuntimeError, ValueError) as e:
+        return f"Erro ao gerar resposta: {e}"
 
 
 if __name__ == "__main__":
     print("\n" + "═" * 60)
-    print(f"  RAG ATIVO ({MODEL_NAME})")
+    print(f"  RAG ACTIVO  |  backend: {LLM_BACKEND}  |  modelo: {MODEL_DISPLAY_NAME}")
     print("═" * 60)
 
     while True:

@@ -7,7 +7,10 @@ de elementos. Não faz parsing, não filtra categorias, não toca em metadados.
 """
 
 import os
+
 import requests
+
+from utils.element_utils import normalise_elements
 
 
 class PDFLoader:
@@ -27,7 +30,10 @@ class PDFLoader:
     def load(self, file_path: str) -> list[dict]:
         """
         Envia o PDF e devolve a lista de elementos normalizada.
-        Lança requests.HTTPError se a API responder com erro.
+
+        Raises:
+            requests.HTTPError: Se a API responder com código de erro HTTP.
+            ValueError: Se a API devolver um formato de resposta inesperado.
         """
         with open(file_path, "rb") as fh:
             response = requests.post(
@@ -35,30 +41,34 @@ class PDFLoader:
                 headers={"unstructured-api-key": self._api_key},
                 files={"files": (os.path.basename(file_path), fh, "application/pdf")},
                 data={
-                    "strategy": "hi_res",
-                    "languages": ["por"],
+                    "strategy":            "hi_res",
+                    "languages":           ["por"],
                     "include_page_breaks": "true",
-                    "output_format": "application/json",
+                    "output_format":       "application/json",
                 },
                 timeout=300,
             )
 
         response.raise_for_status()
-        return self._normalise(response.json())
+        return self._parse_response(response.json(), file_path)
 
     # ── privado ───────────────────────────────────────────────────────────────
 
     @staticmethod
-    def _normalise(raw: list) -> list[dict]:
-        """Converte a resposta da API para o formato interno do projecto."""
-        elements = []
-        for el in raw:
-            text = (el.get("text") or "").strip()
-            if not text:
-                continue
-            elements.append({
-                "text":     text,
-                "category": el.get("type", "Uncategorized"),
-                "page":     (el.get("metadata") or {}).get("page_number", 1) or 1,
-            })
-        return elements
+    def _parse_response(raw: object, file_path: str) -> list[dict]:
+        """
+        Valida o tipo da resposta antes de normalizar.
+
+        A API deve devolver sempre uma lista. Um dicionário com status 200
+        indica geralmente um erro semântico não sinalizado por HTTP.
+
+        Raises:
+            ValueError: Se a resposta não for uma lista.
+        """
+        if not isinstance(raw, list):
+            raise ValueError(
+                f"[PDFLoader] Resposta inesperada da API ao processar '{file_path}': "
+                f"esperada list, recebido {type(raw).__name__}. "
+                f"Conteúdo (primeiros 200 chars): {str(raw)[:200]}"
+            )
+        return normalise_elements(raw)

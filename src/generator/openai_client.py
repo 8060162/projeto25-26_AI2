@@ -1,54 +1,73 @@
+"""
+openai_client.py
+----------------
+Cliente HTTP para o endpoint iaedu.
+Responsabilidade única: enviar prompt e devolver texto da resposta.
+"""
+
 import json
 import requests
 
-# --- CONFIGURAÇÃO ---
-ENDPOINT = "https://api.iaedu.pt/agent-chat//api/v1/agent/cmamvd3n40000c801qeacoad2/stream"
-API_KEY = "sk-usr-rbpxai2ruuivighi9yhf7ra8dxbbs0gq87"
-CHANNEL_ID = "cmmpjioe255mehv012ur51uss"
-THREAD_ID = "9K-tgj8aKn7O5qw-4hnou"
+from config import IAEDU_ENDPOINT, IAEDU_API_KEY, IAEDU_CHANNEL_ID, IAEDU_THREAD_ID
 
-MODEL_NAME = "iaedu-agent"
+# Timeout em segundos para a chamada HTTP
+_REQUEST_TIMEOUT = 60
 
 
 def chamar_modelo(prompt_sistema: str, prompt_utilizador: str) -> str:
     """Envia o prompt ao endpoint iaedu e devolve o texto da resposta.
 
-    Interface idêntica ao ollama_client.chamar_modelo — o generator.py
-    não precisa de qualquer alteração ao trocar de cliente.
+    Raises:
+        RuntimeError: Em caso de falha de rede, timeout ou resposta HTTP não-2xx.
+        ValueError:   Se o stream devolver conteúdo vazio ou não parseável.
     """
     mensagem_completa = f"{prompt_sistema.strip()}\n\n{prompt_utilizador.strip()}"
 
-    response = requests.post(
-        ENDPOINT,
-        headers={"x-api-key": API_KEY},
-        files={
-            "channel_id": (None, CHANNEL_ID),
-            "thread_id":  (None, THREAD_ID),
-            "user_info":  (None, "{}"),
-            "message":    (None, mensagem_completa),
-        },
-    )
-    response.raise_for_status()
-    return _parse_stream(response.text)
+    try:
+        response = requests.post(
+            IAEDU_ENDPOINT,
+            headers={"x-api-key": IAEDU_API_KEY},
+            files={
+                "channel_id": (None, IAEDU_CHANNEL_ID),
+                "thread_id":  (None, IAEDU_THREAD_ID),
+                "user_info":  (None, "{}"),
+                "message":    (None, mensagem_completa),
+            },
+            timeout=_REQUEST_TIMEOUT,
+        )
+        response.raise_for_status()
+
+    except requests.exceptions.Timeout as e:
+        raise RuntimeError(
+            f"Timeout após {_REQUEST_TIMEOUT}s na chamada ao modelo iaedu."
+        ) from e
+    except requests.exceptions.RequestException as e:
+        raise RuntimeError(f"Erro de rede ao contactar o modelo iaedu: {e}") from e
+
+    resultado = _parse_stream(response.text)
+
+    if not resultado:
+        raise ValueError(
+            "O stream do modelo iaedu devolveu uma resposta vazia ou num formato inesperado."
+        )
+
+    return resultado
 
 
 def _parse_stream(raw: str) -> str:
     """Extrai o texto da resposta do stream JSON-lines do iaedu.
 
-    O stream tem três tipos de eventos relevantes:
-      - type "token"   — fragmentos de texto a chegar em tempo real
-      - type "message" — objecto completo com a resposta final montada
-      - type "done"    — sinal de fim de stream
-
-    Usamos o evento "message" como fonte de verdade — já vem com o
-    texto completo e bem formado, sem necessidade de concatenar tokens.
-    Se por algum motivo não existir, fazemos fallback pelos tokens.
+    Estratégia:
+      1. Procura evento "message" — contém a resposta final completa.
+      2. Fallback: concatenação dos eventos "token" individuais.
     """
-    tokens = []
+    tokens: list[str] = []
+
     for linha in raw.splitlines():
         linha = linha.strip()
         if not linha:
             continue
+
         try:
             evento = json.loads(linha)
         except json.JSONDecodeError:
@@ -57,13 +76,11 @@ def _parse_stream(raw: str) -> str:
         tipo = evento.get("type")
 
         if tipo == "message":
-            conteudo = evento.get("content", {})
-            texto = conteudo.get("content", "")
+            texto = evento.get("content", {}).get("content", "")
             if texto:
                 return texto
 
         elif tipo == "token":
             tokens.append(evento.get("content", ""))
 
-    # Fallback: concatenação dos tokens individuais
     return "".join(tokens).strip()

@@ -1,52 +1,88 @@
 """
 chunker.py
 ----------
-Chunking de tamanho fixo com overlap para artigos legislativos.
+Responsabilidade única: dividir o conteúdo de um artigo em chunks
+com cabeçalho contextual (Context-Augmented Indexing).
 
-Estratégia:
-  - A unidade semântica mínima é o artigo completo.
-  - Se o conteúdo couber em CHUNK_SIZE → um único chunk, sem marcação.
-  - Se não couber → dividido em chunks de CHUNK_SIZE com OVERLAP de
-    caracteres; cada chunk é identificado com sufixo _part1, _part2, …
-    O artigo completo fica sempre recuperável no JSON de origem via
-    (source, artigo_id) — o retriever usa esse par para o fallback.
-
-Parâmetros:
-  CHUNK_SIZE   — tamanho máximo de cada chunk em caracteres (500–600).
-  OVERLAP      — sobreposição em caracteres entre chunks consecutivos,
-                 para preservar contexto na fronteira de corte.
+Constantes de chunking importadas de config.py — não redefinir aqui.
 """
 
-CHUNK_SIZE = 550
-OVERLAP    = 80
+import re
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+
+from config import CHUNK_TARGET, CHUNK_OVERLAP, CHUNK_MAX
+
+# ── Fallback genérico para artigos sem estrutura numerada clara ───────────────
+
+_splitter = RecursiveCharacterTextSplitter(
+    chunk_size=CHUNK_TARGET,
+    chunk_overlap=CHUNK_OVERLAP,
+    separators=["\n\n", "\n", ". ", " ", ""],
+)
+
+# ── Regex para fronteiras semânticas na legislação portuguesa ─────────────────
+
+_PATTERN_SEMANTICO = re.compile(
+    r'(?=\n(?:'
+    r'\d+\.\d+\.\s'     # Ex: "2.1. "
+    r'|\d+\.\s'         # Ex: "1. "
+    r'|[a-z]\)\s'       # Ex: "a) "
+    r'|[ivxlIVXL]+\)\s' # Ex: "i) "
+    r'))'
+)
 
 
-def dividir_conteudo(conteudo: str) -> tuple[list[str], bool]:
+def construir_cabecalho(filename: str, cap_titulo: str, art_id: str, art_titulo: str) -> str:
+    """Cria o prefixo contextual para o embedding (Context-Augmented Indexing)."""
+    return f"FICHEIRO: {filename} | CAP: {cap_titulo} | ART: {art_id} - {art_titulo}\n\n"
+
+
+def dividir_em_chunks(
+    filename: str,
+    cap_titulo: str,
+    art_id: str,
+    art_titulo: str,
+    conteudo: str,
+) -> list[str]:
     """
-    Divide o conteúdo de um artigo em chunks de tamanho fixo.
+    Divide o artigo em chunks seguindo a estratégia de 3 zonas:
 
-    Args:
-        conteudo: texto integral do artigo (campo `conteudo` do JSON).
-
-    Returns:
-        chunks    — lista de strings. Um elemento se o artigo couber
-                    num único chunk; vários se for necessário dividir.
-        truncated — False se o artigo não foi dividido (chunk único).
-                    True  se foi dividido; nesse caso o retriever deve
-                    recuperar o artigo completo a partir do JSON.
+      Zona 1+2 — artigo completo cabe no limite → devolve um único chunk.
+      Zona 3   — divisão estrutural por padrão semântico (alíneas, números).
+                 Se uma alínea isolada exceder CHUNK_TARGET, aplica fallback
+                 com RecursiveCharacterTextSplitter.
     """
-    conteudo = conteudo.strip()
-    if not conteudo:
-        return [], False
+    conteudo  = conteudo.strip()
+    cabecalho = construir_cabecalho(filename, cap_titulo, art_id, art_titulo)
 
-    if len(conteudo) <= CHUNK_SIZE:
-        return [conteudo], False
+    # Zona 1 e 2: artigo completo cabe no limite
+    if len(conteudo) <= CHUNK_MAX:
+        return [cabecalho + conteudo]
 
+    # Zona 3: divisão estrutural
+    partes = _PATTERN_SEMANTICO.split(conteudo)
     chunks: list[str] = []
-    start = 0
-    while start < len(conteudo):
-        end = start + CHUNK_SIZE
-        chunks.append(conteudo[start:end])
-        start = end - OVERLAP          # recua OVERLAP para o próximo chunk
+    buffer = ""
 
-    return chunks, True
+    for parte in partes:
+        if not parte.strip():
+            continue
+
+        if len(buffer) + len(parte) <= CHUNK_TARGET:
+            buffer += parte
+        else:
+            if buffer:
+                chunks.append(cabecalho + buffer.strip())
+
+            # Alínea maior que CHUNK_TARGET → fallback genérico
+            if len(parte) > CHUNK_TARGET:
+                for frag in _splitter.split_text(parte):
+                    chunks.append(cabecalho + frag.strip())
+                buffer = ""
+            else:
+                buffer = parte
+
+    if buffer:
+        chunks.append(cabecalho + buffer.strip())
+
+    return chunks

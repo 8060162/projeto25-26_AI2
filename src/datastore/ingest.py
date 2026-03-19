@@ -1,149 +1,168 @@
 """
 ingest.py
 ---------
-Pipeline de ingestão: lê os JSONs processados, divide em chunks e indexa
-no ChromaDB com metadados completos de rastreabilidade.
+Responsabilidade única: orquestrar o pipeline de ingestão de documentos
+JSON para ChromaDB.
 
-Metadados por chunk
-───────────────────
-Campo               Descrição
-─────────────────── ──────────────────────────────────────────────────────────
-source              nome do ficheiro JSON de origem
-doc_titulo          título oficial do documento
-doc_numero          número/referência do despacho ou regulamento
-doc_data            data de publicação
-capitulo_id         chave interna do capítulo no JSON
-capitulo_titulo     título legível do capítulo
-artigo_id           identificador do artigo (ex.: "Artigo 5.º")
-artigo_titulo       título do artigo
-pagina              página no documento original
-chunk_index         índice deste chunk dentro do artigo (0-based)
-chunk_total         total de chunks do artigo
-truncated           "true" / "false" — se True, o artigo não cabe num chunk;
-                    para recuperar o texto completo, ler `source` + `artigo_id`
-                    directamente do JSON.
+Estrutura:
+  - descobrir_ficheiros()    → I/O: lista os JSONs a processar
+  - inicializar_colecao()    → infra: cria cliente ChromaDB + colecção
+  - _safe_doc_id()           → utilitário: produz IDs seguros e estáveis
+  - indexar_artigo()         → lógica: chunking + upsert de um artigo
+  - run_ingestion()          → orquestrador: liga todas as peças
 """
 
+import hashlib
+import logging
 import os
 import warnings
+
 import chromadb
 import torch
 
 warnings.filterwarnings("ignore", category=UserWarning)
 
-# ── Caminhos ──────────────────────────────────────────────────────────────────
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-INPUT_FOLDER = os.path.join(BASE_DIR, "data", "processed")
-DB_PATH      = os.path.join(BASE_DIR, "data", "chromaDB")
-COLLECTION_NAME = "artigos_legislativos"
+from config import COLLECTION_NAME, DB_PATH, INPUT_FOLDER
+from chunker import dividir_em_chunks
+from document_parser import Artigo, parse_ficheiro
+from embeddings import BGEM3EmbeddingFunction
 
-os.makedirs(DB_PATH, exist_ok=True)
+# ── Logging ───────────────────────────────────────────────────────────────────
 
-from embeddings       import BGEM3EmbeddingFunction
-from document_parser  import parse_ficheiro
-from chunker          import dividir_conteudo
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s — %(message)s",
+)
+logger = logging.getLogger(__name__)
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
+# ── Utilitários ───────────────────────────────────────────────────────────────
 
 def _safe_doc_id(filename: str, art_id: str) -> str:
-    """Gera um ID limpo para o ChromaDB (sem espaços nem caracteres especiais)."""
+    """
+    Produz um ID seguro para o ChromaDB a partir do nome do ficheiro e do
+    identificador do artigo.
+
+    Regras:
+      - Apenas caracteres alfanuméricos, '-', '_', '.' são mantidos.
+      - Se o ID resultante exceder 512 caracteres, é truncado e sufixado
+        com um hash MD5 (8 hex chars) para garantir unicidade.
+    """
     base = f"{filename}__{art_id}"
-    return "".join(c if c.isalnum() or c in "-_." else "_" for c in base)
+    safe = "".join(c if c.isalnum() or c in "-_." else "_" for c in base)
+
+    if len(safe) > 512:
+        digest = hashlib.md5(safe.encode()).hexdigest()[:8]
+        safe   = f"{safe[:480]}_{digest}"
+
+    return safe
 
 
-def _build_metadata(artigo, chunk_index: int, chunk_total: int, truncated: bool) -> dict:
-    """Constrói o dicionário de metadados para um chunk."""
-    return {
-        # rastreabilidade do documento
-        "source":          artigo.filename,
-        "doc_titulo":      artigo.doc_titulo,
-        "doc_numero":      artigo.doc_numero,
-        "doc_data":        artigo.doc_data,
-        # localização dentro do documento
-        "capitulo_id":     artigo.cap_id,
-        "capitulo_titulo": artigo.cap_titulo,
-        "artigo_id":       artigo.art_id,
-        "artigo_titulo":   artigo.art_titulo,
-        "pagina":          artigo.pagina,
-        # informação do chunk
-        "chunk_index":     chunk_index,
-        "chunk_total":     chunk_total,
-        "truncated":       str(truncated).lower(),   # ChromaDB não suporta bool nativamente
-    }
+# ── Inicialização de infra ────────────────────────────────────────────────────
+
+def descobrir_ficheiros(folder: str) -> list[str]:
+    """Devolve a lista de nomes de ficheiros JSON presentes em `folder`."""
+    return [f for f in os.listdir(folder) if f.endswith(".json")]
 
 
-# ── Pipeline principal ────────────────────────────────────────────────────────
+def inicializar_colecao(
+    db_path: str,
+    collection_name: str,
+    device: str,
+) -> chromadb.Collection:
+    """
+    Cria (ou abre) o cliente ChromaDB persistente e devolve a colecção.
 
-def run_ingestion():
-    if not os.path.exists(INPUT_FOLDER):
-        print(f"ERRO: Pasta de entrada não encontrada: {INPUT_FOLDER}")
-        return
-
-    json_files = [f for f in os.listdir(INPUT_FOLDER) if f.endswith(".json")]
-    if not json_files:
-        print(f"Nenhum ficheiro JSON encontrado em: {INPUT_FOLDER}")
-        return
-
-    # Inicializar modelo e base de dados uma única vez
-    device = "mps" if torch.backends.mps.is_available() else "cpu"
-    print(f"Dispositivo de embedding: {device}")
-
+    Isola toda a lógica de inicialização de infra, tornando `run_ingestion`
+    independente dos detalhes de configuração do ChromaDB.
+    """
+    os.makedirs(db_path, exist_ok=True)
     embedding_fn = BGEM3EmbeddingFunction(device=device)
-    client = chromadb.PersistentClient(path=DB_PATH)
-    collection = client.get_or_create_collection(
-        name=COLLECTION_NAME,
+    client       = chromadb.PersistentClient(path=db_path)
+    return client.get_or_create_collection(
+        name=collection_name,
         embedding_function=embedding_fn,
     )
 
-    print(f"A processar {len(json_files)} ficheiro(s)...\n")
 
-    total_chunks = 0
-    total_truncated = 0
+# ── Lógica de indexação ───────────────────────────────────────────────────────
+
+def indexar_artigo(collection: chromadb.Collection, artigo: Artigo) -> None:
+    """
+    Gera os chunks de um artigo e faz upsert na colecção ChromaDB.
+
+    Responsabilidade isolada: recebe um Artigo já parseado e uma colecção
+    já inicializada — não sabe nada sobre ficheiros nem sobre o ChromaDB client.
+    """
+    if not artigo.conteudo.strip():
+        return
+
+    chunks       = dividir_em_chunks(**artigo.to_chunks_args())
+    doc_id_base  = _safe_doc_id(artigo.filename, artigo.art_id)
+    is_divided   = len(chunks) > 1
+
+    for i, chunk_text in enumerate(chunks):
+        metadata = artigo.to_metadata()
+
+        if is_divided:
+            # Sinaliza expansão no retriever e actualiza o flag truncated
+            metadata["truncated"] = "true"
+            metadata["part"]      = i
+
+        collection.upsert(
+            documents=[chunk_text],
+            metadatas=[metadata],
+            ids=[f"{doc_id_base}_p{i}" if is_divided else doc_id_base],
+        )
+
+
+# ── Orquestrador ──────────────────────────────────────────────────────────────
+
+def run_ingestion() -> None:
+    """
+    Pipeline completo de ingestão:
+      1. Valida a pasta de entrada.
+      2. Inicializa o ChromaDB e o modelo de embeddings.
+      3. Para cada ficheiro JSON: parse → indexação de cada artigo.
+      4. Reporta ficheiros com erro no final.
+    """
+    if not os.path.exists(INPUT_FOLDER):
+        logger.error("Pasta de entrada não encontrada: %s", INPUT_FOLDER)
+        return
+
+    json_files = descobrir_ficheiros(INPUT_FOLDER)
+    if not json_files:
+        logger.warning("Nenhum ficheiro JSON encontrado em: %s", INPUT_FOLDER)
+        return
+
+    device     = "mps" if torch.backends.mps.is_available() else "cpu"
+    collection = inicializar_colecao(DB_PATH, COLLECTION_NAME, device)
+
+    failed: list[str] = []
 
     for filename in json_files:
         filepath = os.path.join(INPUT_FOLDER, filename)
         try:
             artigos = parse_ficheiro(filepath, filename)
-        except Exception as e:
-            print(f"  ✗ Erro ao ler {filename}: {e}")
+        except Exception:
+            logger.error("Erro ao parsear '%s'", filename, exc_info=True)
+            failed.append(filename)
             continue
 
-        file_chunks = 0
-        file_truncated = 0
-
         for artigo in artigos:
-            if not artigo.conteudo.strip():
-                continue  # artigos sem conteúdo são ignorados
+            indexar_artigo(collection, artigo)
 
-            chunks, truncated = dividir_conteudo(artigo.conteudo)
-            chunk_total = len(chunks)
-            doc_id_base = _safe_doc_id(filename, artigo.art_id)
+        logger.info("✓ %s indexado com sucesso.", filename)
 
-            if truncated:
-                file_truncated += 1
-
-            documents, metadatas, ids = [], [], []
-
-            for i, chunk_text in enumerate(chunks):
-                documents.append(chunk_text)
-                metadatas.append(_build_metadata(artigo, i, chunk_total, truncated))
-                ids.append(f"{doc_id_base}_part{i + 1}" if chunk_total > 1 else doc_id_base)
-
-            collection.upsert(documents=documents, metadatas=metadatas, ids=ids)
-            file_chunks += chunk_total
-
-        total_chunks    += file_chunks
-        total_truncated += file_truncated
-
-        trunc_info = f"  ({file_truncated} artigo(s) truncado(s))" if file_truncated else ""
-        print(f"  ✓ {filename}  →  {len(artigos)} artigos  /  {file_chunks} chunks{trunc_info}")
-
-    print(f"\n{'─'*60}")
-    print(f"Ingestão concluída.")
-    print(f"  Total de chunks indexados : {total_chunks}")
-    print(f"  Artigos com truncated=true: {total_truncated}")
-    print(f"  Base de dados em          : {DB_PATH}")
+    # Relatório final de falhas
+    if failed:
+        logger.warning(
+            "Ingestão concluída com %d erro(s). Ficheiros afectados: %s",
+            len(failed),
+            failed,
+        )
+    else:
+        logger.info("Ingestão concluída sem erros.")
 
 
 if __name__ == "__main__":

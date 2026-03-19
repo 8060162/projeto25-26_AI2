@@ -16,8 +16,8 @@ _SRC = Path(__file__).resolve().parent.parent
 if str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
 
-from indexer.loader_protocol  import LoaderProtocol
-from indexer.anchor_parser    import AnchorParser
+from indexer.loader_protocol    import LoaderProtocol
+from indexer.anchor_parser      import AnchorParser
 from indexer.metadata_extractor import MetadataExtractor
 
 
@@ -29,21 +29,32 @@ class PDFIndexer:
 
     def run(self, pdf_path: str) -> dict:
         """
-        Processa um PDF e devolve o documento estruturado completo:
+        Processa um PDF e devolve o documento estruturado completo.
 
+        Lança excepção em caso de erro — é responsabilidade do
+        batch_processor capturá-la e registá-la no relatório.
+
+        Returns:
             {
                 "document_info": { … },
                 "preambulo":     str,
                 "estrutura":     { … }
             }
-
-        Lança excepção em caso de erro — é responsabilidade do
-        batch_processor capturá-la e registá-la no relatório.
         """
-        filename = os.path.basename(pdf_path)
         elements = self._loader.load(pdf_path)
         parsed   = self._parser.parse(elements)
+        return self._build_document(os.path.basename(pdf_path), parsed)
 
+    # ── privado ───────────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _build_document(filename: str, parsed: dict) -> dict:
+        """
+        Monta o envelope do documento final a partir do resultado do parser.
+
+        Responsabilidade isolada: se a estrutura de saída mudar (ex: novo
+        campo de topo), só este método precisa de ser actualizado.
+        """
         return {
             "document_info": MetadataExtractor.extract(
                 filename=filename,
