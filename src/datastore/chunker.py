@@ -1,18 +1,20 @@
 """
-chunker.py
-----------
+chunker.py  [Abordagem B — Conteúdo Puro]
+------------------------------------------
 Responsabilidade única: dividir o conteúdo de um artigo em chunks
-com cabeçalho contextual (Context-Augmented Indexing).
+com conteúdo semântico puro, sem cabeçalho contextual.
 
-Constantes importadas de settings.py — não redefinir aqui.
-O separador CHUNK_HEADER_SEP é partilhado com search.py,
-garantindo que escrita e leitura usam sempre o mesmo valor.
+Toda a rastreabilidade (ficheiro, capítulo, artigo, página) é da
+responsabilidade dos metadados no ChromaDB — ver Artigo.to_metadata()
+em document_parser.py.
+
+Constantes de chunking importadas de config.py — não redefinir aqui.
 """
 
 import re
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-from settings import CHUNK_TARGET, CHUNK_OVERLAP, CHUNK_MAX, CHUNK_HEADER_SEP
+from config import CHUNK_TARGET, CHUNK_OVERLAP, CHUNK_MAX
 
 # ── Fallback genérico para artigos sem estrutura numerada clara ───────────────
 
@@ -34,16 +36,6 @@ _PATTERN_SEMANTICO = re.compile(
 )
 
 
-def construir_cabecalho(filename: str, cap_titulo: str, art_id: str, art_titulo: str) -> str:
-    """
-    Cria o prefixo contextual para o embedding (Context-Augmented Indexing).
-
-    O separador CHUNK_HEADER_SEP termina o cabeçalho — search.py usa
-    a mesma constante para o remover, mantendo os dois lados sincronizados.
-    """
-    return f"FICHEIRO: {filename} | CAP: {cap_titulo} | ART: {art_id} - {art_titulo}{CHUNK_HEADER_SEP}"
-
-
 def dividir_em_chunks(
     filename: str,
     cap_titulo: str,
@@ -52,19 +44,24 @@ def dividir_em_chunks(
     conteudo: str,
 ) -> list[str]:
     """
-    Divide o artigo em chunks seguindo a estratégia de 3 zonas:
+    Divide o artigo em chunks de conteúdo puro seguindo a estratégia de 3 zonas:
 
       Zona 1+2 — artigo completo cabe no limite → devolve um único chunk.
       Zona 3   — divisão estrutural por padrão semântico (alíneas, números).
                  Se uma alínea isolada exceder CHUNK_TARGET, aplica fallback
                  com RecursiveCharacterTextSplitter.
+
+    Nota: os parâmetros filename, cap_titulo, art_id, art_titulo são mantidos
+    na assinatura para compatibilidade com to_chunks_args() — não são usados
+    na construção do chunk, apenas nos metadados (ver Artigo.to_metadata()).
     """
-    conteudo  = conteudo.strip()
-    cabecalho = construir_cabecalho(filename, cap_titulo, art_id, art_titulo)
+    conteudo = conteudo.strip()
 
+    # Zona 1 e 2: artigo completo cabe no limite
     if len(conteudo) <= CHUNK_MAX:
-        return [cabecalho + conteudo]
+        return [conteudo]
 
+    # Zona 3: divisão estrutural
     partes = _PATTERN_SEMANTICO.split(conteudo)
     chunks: list[str] = []
     buffer = ""
@@ -77,16 +74,17 @@ def dividir_em_chunks(
             buffer += parte
         else:
             if buffer:
-                chunks.append(cabecalho + buffer.strip())
+                chunks.append(buffer.strip())
 
+            # Alínea maior que CHUNK_TARGET → fallback genérico
             if len(parte) > CHUNK_TARGET:
                 for frag in _splitter.split_text(parte):
-                    chunks.append(cabecalho + frag.strip())
+                    chunks.append(frag.strip())
                 buffer = ""
             else:
                 buffer = parte
 
     if buffer:
-        chunks.append(cabecalho + buffer.strip())
+        chunks.append(buffer.strip())
 
     return chunks
