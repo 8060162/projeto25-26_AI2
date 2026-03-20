@@ -4,13 +4,15 @@ chunker.py
 Responsabilidade única: dividir o conteúdo de um artigo em chunks
 com cabeçalho contextual (Context-Augmented Indexing).
 
-Constantes de chunking importadas de config.py — não redefinir aqui.
+Constantes importadas de settings.py — não redefinir aqui.
+O separador CHUNK_HEADER_SEP é partilhado com search.py,
+garantindo que escrita e leitura usam sempre o mesmo valor.
 """
 
 import re
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-from config import CHUNK_TARGET, CHUNK_OVERLAP, CHUNK_MAX
+from settings import CHUNK_TARGET, CHUNK_OVERLAP, CHUNK_MAX, CHUNK_HEADER_SEP
 
 # ── Fallback genérico para artigos sem estrutura numerada clara ───────────────
 
@@ -33,8 +35,13 @@ _PATTERN_SEMANTICO = re.compile(
 
 
 def construir_cabecalho(filename: str, cap_titulo: str, art_id: str, art_titulo: str) -> str:
-    """Cria o prefixo contextual para o embedding (Context-Augmented Indexing)."""
-    return f"FICHEIRO: {filename} | CAP: {cap_titulo} | ART: {art_id} - {art_titulo}\n\n"
+    """
+    Cria o prefixo contextual para o embedding (Context-Augmented Indexing).
+
+    O separador CHUNK_HEADER_SEP termina o cabeçalho — search.py usa
+    a mesma constante para o remover, mantendo os dois lados sincronizados.
+    """
+    return f"FICHEIRO: {filename} | CAP: {cap_titulo} | ART: {art_id} - {art_titulo}{CHUNK_HEADER_SEP}"
 
 
 def dividir_em_chunks(
@@ -55,11 +62,9 @@ def dividir_em_chunks(
     conteudo  = conteudo.strip()
     cabecalho = construir_cabecalho(filename, cap_titulo, art_id, art_titulo)
 
-    # Zona 1 e 2: artigo completo cabe no limite
     if len(conteudo) <= CHUNK_MAX:
         return [cabecalho + conteudo]
 
-    # Zona 3: divisão estrutural
     partes = _PATTERN_SEMANTICO.split(conteudo)
     chunks: list[str] = []
     buffer = ""
@@ -74,7 +79,6 @@ def dividir_em_chunks(
             if buffer:
                 chunks.append(cabecalho + buffer.strip())
 
-            # Alínea maior que CHUNK_TARGET → fallback genérico
             if len(parte) > CHUNK_TARGET:
                 for frag in _splitter.split_text(parte):
                     chunks.append(cabecalho + frag.strip())

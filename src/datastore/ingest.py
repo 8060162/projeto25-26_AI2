@@ -18,14 +18,15 @@ import os
 import warnings
 
 import chromadb
-import torch
 
 warnings.filterwarnings("ignore", category=UserWarning)
 
-from config import COLLECTION_NAME, DB_PATH, INPUT_FOLDER
-from chunker import dividir_em_chunks
-from document_parser import Artigo, parse_ficheiro
-from embeddings import BGEM3EmbeddingFunction
+from settings import COLLECTION_NAME, DB_PATH, INPUT_FOLDER
+from datastore.chunker import dividir_em_chunks
+from datastore.document_parser import Artigo, parse_ficheiro
+from datastore.embeddings import BGEM3EmbeddingFunction
+from shared.metadata_keys import MetaKey
+from shared.device import resolve_device
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 
@@ -72,9 +73,6 @@ def inicializar_colecao(
 ) -> chromadb.Collection:
     """
     Cria (ou abre) o cliente ChromaDB persistente e devolve a colecção.
-
-    Isola toda a lógica de inicialização de infra, tornando `run_ingestion`
-    independente dos detalhes de configuração do ChromaDB.
     """
     os.makedirs(db_path, exist_ok=True)
     embedding_fn = BGEM3EmbeddingFunction(device=device)
@@ -90,24 +88,20 @@ def inicializar_colecao(
 def indexar_artigo(collection: chromadb.Collection, artigo: Artigo) -> None:
     """
     Gera os chunks de um artigo e faz upsert na colecção ChromaDB.
-
-    Responsabilidade isolada: recebe um Artigo já parseado e uma colecção
-    já inicializada — não sabe nada sobre ficheiros nem sobre o ChromaDB client.
     """
     if not artigo.conteudo.strip():
         return
 
-    chunks       = dividir_em_chunks(**artigo.to_chunks_args())
-    doc_id_base  = _safe_doc_id(artigo.filename, artigo.art_id)
-    is_divided   = len(chunks) > 1
+    chunks      = dividir_em_chunks(**artigo.to_chunks_args())
+    doc_id_base = _safe_doc_id(artigo.filename, artigo.art_id)
+    is_divided  = len(chunks) > 1
 
     for i, chunk_text in enumerate(chunks):
         metadata = artigo.to_metadata()
 
         if is_divided:
-            # Sinaliza expansão no retriever e actualiza o flag truncated
-            metadata["truncated"] = "true"
-            metadata["part"]      = i
+            metadata[MetaKey.TRUNCATED] = "true"
+            metadata[MetaKey.PART]      = i
 
         collection.upsert(
             documents=[chunk_text],
@@ -135,9 +129,7 @@ def run_ingestion() -> None:
         logger.warning("Nenhum ficheiro JSON encontrado em: %s", INPUT_FOLDER)
         return
 
-    device     = "mps" if torch.backends.mps.is_available() else "cpu"
-    collection = inicializar_colecao(DB_PATH, COLLECTION_NAME, device)
-
+    collection = inicializar_colecao(DB_PATH, COLLECTION_NAME, resolve_device())
     failed: list[str] = []
 
     for filename in json_files:
@@ -154,12 +146,10 @@ def run_ingestion() -> None:
 
         logger.info("✓ %s indexado com sucesso.", filename)
 
-    # Relatório final de falhas
     if failed:
         logger.warning(
             "Ingestão concluída com %d erro(s). Ficheiros afectados: %s",
-            len(failed),
-            failed,
+            len(failed), failed,
         )
     else:
         logger.info("Ingestão concluída sem erros.")

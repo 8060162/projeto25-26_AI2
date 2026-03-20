@@ -7,10 +7,11 @@ uma lista de ArtigoContexto sem lógica de negócio embutida.
 
 import logging
 
-from retriever.settings import N_RESULTS, QUERY_FETCH
+from settings import N_RESULTS, QUERY_FETCH, CHUNK_HEADER_SEP
 from retriever.db_client import get_collection
 from retriever.json_store import get_artigo_completo
 from retriever.models import ArtigoContexto
+from shared.metadata_keys import MetaKey
 
 logger = logging.getLogger(__name__)
 
@@ -22,34 +23,58 @@ def _is_truncated(meta: dict) -> bool:
     Interpreta o campo 'truncated' dos metadados do ChromaDB de forma
     robusta, independentemente de estar serializado como bool ou string.
     """
-    val = meta.get("truncated", False)
+    val = meta.get(MetaKey.TRUNCATED, False)
     if isinstance(val, bool):
         return val
     return str(val).lower() == "true"
 
 
-def _resolver_conteudo(doc: str, meta: dict) -> str:
+def _remover_cabecalho(chunk: str) -> str:
     """
-    Decide qual o conteúdo a devolver para um artigo:
-      - Se truncado: tenta obter o texto completo do JSON de origem.
-      - Caso contrário: remove o cabeçalho técnico do chunk.
+    Remove o cabeçalho contextual inserido pelo chunker no momento de indexação.
 
-    A lógica de fallback garante que nunca se devolve uma string vazia
-    quando a fonte original não está disponível.
+    O separador é importado de settings.CHUNK_HEADER_SEP, garantindo que
+    chunker.py (escrita) e esta função (leitura) estão sempre sincronizados.
     """
-    if _is_truncated(meta):
-        completo = get_artigo_completo(meta["source"], meta["artigo_id"])
-        if completo is not None:
-            return completo
-        logger.warning(
-            "Não foi possível expandir artigo truncado '%s' de '%s'. "
-            "A usar conteúdo do chunk.",
-            meta.get("artigo_id"), meta.get("source"),
-        )
+    if CHUNK_HEADER_SEP in chunk:
+        return chunk.split(CHUNK_HEADER_SEP, 1)[-1]
+    return chunk
+
+
+def _expandir_se_truncado(doc: str, meta: dict) -> str:
+    """
+    Se o chunk estiver marcado como truncado, tenta obter o texto
+    completo do artigo a partir do ficheiro JSON de origem.
+
+    Devolve o chunk original como fallback se a expansão falhar,
+    garantindo que nunca se devolve uma string vazia.
+    """
+    if not _is_truncated(meta):
         return doc
 
-    # Remove cabeçalho técnico inserido no momento de indexação
-    return doc.split("\n\n", 1)[-1] if "\n\n" in doc else doc
+    completo = get_artigo_completo(meta[MetaKey.SOURCE], meta[MetaKey.ARTIGO_ID])
+    if completo is not None:
+        return completo
+
+    logger.warning(
+        "Não foi possível expandir artigo truncado '%s' de '%s'. "
+        "A usar conteúdo do chunk.",
+        meta.get(MetaKey.ARTIGO_ID),
+        meta.get(MetaKey.SOURCE),
+    )
+    return doc
+
+
+def _resolver_conteudo(doc: str, meta: dict) -> str:
+    """
+    Orquestra a resolução do conteúdo final de um chunk:
+      1. Expande o artigo completo se truncado.
+      2. Remove o cabeçalho técnico do chunk não truncado.
+    """
+    conteudo = _expandir_se_truncado(doc, meta)
+    if _is_truncated(meta):
+        return conteudo
+    return _remover_cabecalho(conteudo)
 
 
 # ── interface pública ─────────────────────────────────────────────────────────
@@ -63,13 +88,6 @@ def procurar_contexto(
 
     A deduplicação é feita por (source, artigo_id) para evitar que
     múltiplos chunks do mesmo artigo apareçam no resultado.
-
-    Args:
-        pergunta:     texto da questão do utilizador.
-        n_resultados: número máximo de artigos a devolver.
-
-    Returns:
-        Lista de ArtigoContexto ordenada por relevância.
     """
     collection = get_collection()
 
@@ -83,21 +101,19 @@ def procurar_contexto(
     vistos: set[tuple[str, str]] = set()
 
     for doc, meta in zip(results["documents"][0], results["metadatas"][0]):
-        id_unico = (meta["source"], meta["artigo_id"])
+        id_unico = (meta[MetaKey.SOURCE], meta[MetaKey.ARTIGO_ID])
         if id_unico in vistos:
             continue
         vistos.add(id_unico)
 
-
         artigos.append(ArtigoContexto(
-            artigo_id=meta["artigo_id"],
+            artigo_id=meta[MetaKey.ARTIGO_ID],
             conteudo=_resolver_conteudo(doc, meta),
-            source=meta["source"],
-            capitulo_titulo=meta.get("capitulo") or None,
-            artigo_titulo=meta.get("doc_titulo") or None,
-            pagina=meta.get("pagina") or None,
+            source=meta[MetaKey.SOURCE],
+            capitulo_titulo=meta.get(MetaKey.CAPITULO)  or None,
+            artigo_titulo=meta.get(MetaKey.ART_TITULO)  or None,
+            pagina=meta.get(MetaKey.PAGINA)              or None,
         ))
-
 
         if len(artigos) >= n_resultados:
             break

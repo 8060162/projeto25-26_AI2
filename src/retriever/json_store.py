@@ -9,7 +9,7 @@ import json
 import logging
 import os
 
-from retriever.settings import JSON_FOLDER
+from settings import JSON_FOLDER
 
 logger = logging.getLogger(__name__)
 
@@ -24,9 +24,6 @@ def get_artigo_completo(source: str, artigo_id: str) -> str | None:
 
     Returns:
         Conteúdo textual do artigo, ou None se não encontrado.
-
-    Raises:
-        Nunca — erros são registados e devolvem None.
     """
     filepath = os.path.join(JSON_FOLDER, source)
 

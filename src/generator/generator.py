@@ -19,11 +19,17 @@ from typing import Callable
 
 warnings.filterwarnings("ignore", category=UserWarning)
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Adiciona src/ ao path para que todos os pacotes sejam encontrados
+# independentemente do directório de trabalho no momento de execução.
+_THIS_DIR = os.path.dirname(os.path.abspath(__file__))   # src/generator/
+_SRC_DIR  = os.path.dirname(_THIS_DIR)                   # src/
+for _p in (_SRC_DIR, _THIS_DIR):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
 
 from retriever.query import obter_contexto
 from prompt_builder  import construir_prompt
-from config          import LLM_BACKEND, MODEL_DISPLAY_NAME
+from settings        import LLM_BACKEND, MODEL_DISPLAY_NAME
 
 
 def _get_cliente() -> Callable[[str, str], str]:
@@ -40,7 +46,8 @@ def _get_cliente() -> Callable[[str, str], str]:
 
 
 def gerar_resposta(pergunta: str) -> str:
-    """Pipeline RAG completo: retrieval → prompt → generation.
+    """
+    Pipeline RAG completo: retrieval → prompt → generation.
 
     Args:
         pergunta: Questão do utilizador.
@@ -53,7 +60,13 @@ def gerar_resposta(pergunta: str) -> str:
     if not artigos:
         return "Não encontrei informações nos documentos para responder a essa questão."
 
-    prompt_sistema, prompt_utilizador = construir_prompt(pergunta, artigos)
+    try:
+        prompt_sistema, prompt_utilizador = construir_prompt(pergunta, artigos)
+    except FileNotFoundError as e:
+        return (
+            f"Erro de configuração: o template do prompt não foi encontrado. "
+            f"Detalhes: {e}"
+        )
 
     try:
         chamar_modelo = _get_cliente()

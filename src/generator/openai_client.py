@@ -8,7 +8,7 @@ Responsabilidade única: enviar prompt e devolver texto da resposta.
 import json
 import requests
 
-from config import IAEDU_ENDPOINT, IAEDU_API_KEY, IAEDU_CHANNEL_ID, IAEDU_THREAD_ID
+from settings import IAEDU_ENDPOINT, IAEDU_API_KEY, IAEDU_CHANNEL_ID, IAEDU_THREAD_ID
 
 # Timeout em segundos para a chamada HTTP
 _REQUEST_TIMEOUT = 60

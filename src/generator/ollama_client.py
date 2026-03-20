@@ -7,7 +7,7 @@ Responsabilidade única: enviar prompt e devolver texto da resposta.
 
 import ollama
 
-from config import OLLAMA_MODEL
+from settings import OLLAMA_MODEL
 
 
 def chamar_modelo(prompt_sistema: str, prompt_utilizador: str) -> str:

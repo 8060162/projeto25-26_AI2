@@ -14,6 +14,8 @@ import json
 import logging
 from dataclasses import dataclass
 
+from shared.metadata_keys import MetaKey
+
 logger = logging.getLogger(__name__)
 
 
@@ -43,16 +45,21 @@ class Artigo:
         """
         Devolve os metadados de rastreabilidade prontos a inserir no ChromaDB.
 
-        Centraliza o mapeamento campo→chave, isolando os consumidores
-        (ex.: ingest.py) de alterações internas ao dataclass.
+        Centraliza o mapeamento campo→chave usando MetaKey,
+        isolando os consumidores de alterações internas ao dataclass.
+
+        Nota: 'art_titulo' foi adicionado para corrigir o mapeamento
+        semântico em search.py — anteriormente 'doc_titulo' era atribuído
+        erroneamente ao campo artigo_titulo do ArtigoContexto.
         """
         return {
-            "source":     self.filename,
-            "doc_titulo": self.doc_titulo,
-            "capitulo":   self.cap_titulo,
-            "artigo_id":  self.art_id,
-            "pagina":     self.pagina,
-            "truncated":  "false",   # valor base; ingest.py actualiza se necessário
+            MetaKey.SOURCE:     self.filename,
+            MetaKey.DOC_TITULO: self.doc_titulo,
+            MetaKey.ART_TITULO: self.art_titulo,
+            MetaKey.CAPITULO:   self.cap_titulo,
+            MetaKey.ARTIGO_ID:  self.art_id,
+            MetaKey.PAGINA:     self.pagina,
+            MetaKey.TRUNCATED:  "false",  # valor base; ingest.py actualiza se necessário
         }
 
     def to_chunks_args(self) -> dict:
@@ -85,10 +92,10 @@ def _extrair_doc_info(data: dict, filepath: str) -> tuple[str, str, str]:
     Emite aviso se campos críticos estiverem ausentes, para que documentos
     mal formados sejam detectados sem bloquear a ingestão.
     """
-    info   = data.get("document_info", {})
-    numero = info.get("doc_id",  info.get("numero",    info.get("referencia", "")))
-    titulo = info.get("titulo",  info.get("title",     info.get("nome", numero)))
-    data_pub = str(info.get("data", info.get("date",   info.get("ano", ""))))
+    info     = data.get("document_info", {})
+    numero   = info.get("doc_id",  info.get("numero",    info.get("referencia", "")))
+    titulo   = info.get("titulo",  info.get("title",     info.get("nome", numero)))
+    data_pub = str(info.get("data", info.get("date",     info.get("ano", ""))))
 
     if not numero:
         logger.warning(
