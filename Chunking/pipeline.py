@@ -76,15 +76,6 @@ def run_pipeline() -> None:
         )
     )
     parser.add_argument(
-        "--strategy",
-        choices=["article_smart", "structure_first", "hybrid", "all", "none"],
-        default="none",
-        help=(
-            "Chunking strategy to use. Use 'all' to run every available strategy. "
-            "Use 'none' to stop after structure export."
-        ),
-    )
-    parser.add_argument(
         "--raw-dir",
         type=str,
         default=str(default_settings.raw_dir),
@@ -102,6 +93,7 @@ def run_pipeline() -> None:
         raw_dir=Path(args.raw_dir),
         output_dir=Path(args.output_dir),
     )
+    strategy_names = _resolve_strategy_names(settings)
 
     # ------------------------------------------------------------------
     # Pipeline components
@@ -137,8 +129,6 @@ def run_pipeline() -> None:
         raise FileNotFoundError(
             f"No PDFs found in '{settings.raw_dir}'. Please place your source files there."
         )
-
-    strategy_names = _resolve_strategy_names(args.strategy)
 
     for pdf_path in pdf_files:
         print(f"[INFO] Processing: {pdf_path.name}")
@@ -327,13 +317,16 @@ def run_pipeline() -> None:
     print("[INFO] Pipeline execution completed successfully.")
 
 
-def _resolve_strategy_names(strategy_argument: str) -> List[str]:
+def _resolve_strategy_names(settings: PipelineSettings) -> List[str]:
     """
-    Resolve the CLI strategy argument into one or more concrete strategy names.
+    Resolve the configured chunking strategy into one or more strategy names.
 
     Why this helper exists
     ----------------------
-    The pipeline supports:
+    The pipeline now reads strategy selection from settings so chunking
+    behavior stays aligned with the central application configuration.
+
+    The configured value may still express:
     - a single strategy
     - all strategies
     - or no chunking at all
@@ -344,14 +337,29 @@ def _resolve_strategy_names(strategy_argument: str) -> List[str]:
 
     Parameters
     ----------
-    strategy_argument : str
-        CLI argument value.
+    settings : PipelineSettings
+        Shared runtime configuration.
 
     Returns
     -------
     List[str]
         Strategy names to execute in order.
     """
+    allowed_strategy_names = {
+        "article_smart",
+        "structure_first",
+        "hybrid",
+        "all",
+        "none",
+    }
+    strategy_argument = settings.chunking_strategy.strip().lower()
+
+    if strategy_argument not in allowed_strategy_names:
+        raise ValueError(
+            "Invalid chunking strategy configured in appsettings.json: "
+            f"'{settings.chunking_strategy}'."
+        )
+
     if strategy_argument == "all":
         return ["article_smart", "structure_first", "hybrid"]
 
