@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List
+from typing import Any, Dict, List
 
 
 # ============================================================================
@@ -22,6 +23,82 @@ from typing import List
 # operating systems.
 # ============================================================================
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+APPSETTINGS_PATH = PROJECT_ROOT / "config" / "appsettings.json"
+
+
+def _load_appsettings() -> Dict[str, Any]:
+    """
+    Load the central application settings from the project configuration file.
+
+    The loader is intentionally tolerant:
+    - missing files fall back to defaults defined in PipelineSettings
+    - invalid JSON falls back to defaults instead of breaking the pipeline
+    - non-dictionary payloads are ignored
+    """
+
+    if not APPSETTINGS_PATH.exists():
+        return {}
+
+    try:
+        with APPSETTINGS_PATH.open("r", encoding="utf-8") as settings_file:
+            loaded_settings = json.load(settings_file)
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+    if not isinstance(loaded_settings, dict):
+        return {}
+
+    return loaded_settings
+
+
+def _get_nested_value(
+    data: Dict[str, Any],
+    path: List[str],
+    default_value: Any,
+) -> Any:
+    """
+    Read a nested configuration value from a dictionary.
+
+    Parameters
+    ----------
+    data : Dict[str, Any]
+        Root configuration dictionary.
+    path : List[str]
+        Ordered key path to the desired nested value.
+    default_value : Any
+        Fallback value returned when the path is missing or invalid.
+    """
+
+    current_value: Any = data
+
+    for key in path:
+        if not isinstance(current_value, dict) or key not in current_value:
+            return default_value
+        current_value = current_value[key]
+
+    return current_value
+
+
+def _resolve_project_path(value: Any, default_path: Path) -> Path:
+    """
+    Resolve a configuration path relative to the project root when needed.
+
+    Parameters
+    ----------
+    value : Any
+        Raw configuration value expected to represent a filesystem path.
+    default_path : Path
+        Fallback path used when the configuration value is missing or invalid.
+    """
+
+    if not isinstance(value, str) or not value.strip():
+        return default_path
+
+    candidate_path = Path(value)
+    if candidate_path.is_absolute():
+        return candidate_path
+
+    return PROJECT_ROOT / candidate_path
 
 
 @dataclass(slots=True)
@@ -263,3 +340,198 @@ class PipelineSettings:
     supported_extensions: List[str] = field(
         default_factory=lambda: [".pdf"]
     )
+
+    # ---------------------------------------------------------------------
+    # Central pipeline settings from config/appsettings.json
+    # ---------------------------------------------------------------------
+    chunking_strategy: str = "article_smart"
+    embedding_enabled: bool = False
+    embedding_provider: str = "openai"
+    embedding_model: str = "text-embedding-3-large"
+    embedding_input_root: Path = PROJECT_ROOT / "data" / "chunks"
+    embedding_output_root: Path = PROJECT_ROOT / "data" / "embeddings"
+    embedding_input_text_field: str = "text_for_embedding"
+    embedding_batch_size: int = 100
+    embedding_visualization_enabled: bool = False
+    embedding_visualization_spotlight_enabled: bool = False
+
+    def __post_init__(self) -> None:
+        """
+        Merge central appsettings values into the runtime settings object.
+
+        Explicit constructor values remain authoritative because dataclass
+        defaults are only overridden when the current field still matches its
+        default value.
+        """
+
+        appsettings = _load_appsettings()
+        chunking_settings = _get_nested_value(appsettings, ["chunking"], {})
+        embedding_settings = _get_nested_value(appsettings, ["embedding"], {})
+        visualization_settings = _get_nested_value(
+            embedding_settings,
+            ["visualization"],
+            {},
+        )
+
+        self.chunking_strategy = self._resolve_string_setting(
+            current_value=self.chunking_strategy,
+            default_value="article_smart",
+            configured_value=_get_nested_value(
+                chunking_settings,
+                ["strategy"],
+                "article_smart",
+            ),
+        )
+        self.embedding_enabled = self._resolve_bool_setting(
+            current_value=self.embedding_enabled,
+            default_value=False,
+            configured_value=_get_nested_value(
+                embedding_settings,
+                ["enabled"],
+                False,
+            ),
+        )
+        self.embedding_provider = self._resolve_string_setting(
+            current_value=self.embedding_provider,
+            default_value="openai",
+            configured_value=_get_nested_value(
+                embedding_settings,
+                ["provider"],
+                "openai",
+            ),
+        )
+        self.embedding_model = self._resolve_string_setting(
+            current_value=self.embedding_model,
+            default_value="text-embedding-3-large",
+            configured_value=_get_nested_value(
+                embedding_settings,
+                ["model"],
+                "text-embedding-3-large",
+            ),
+        )
+        self.embedding_input_root = self._resolve_path_setting(
+            current_value=self.embedding_input_root,
+            default_value=PROJECT_ROOT / "data" / "chunks",
+            configured_value=_get_nested_value(
+                embedding_settings,
+                ["input_root"],
+                "data/chunks",
+            ),
+        )
+        self.embedding_output_root = self._resolve_path_setting(
+            current_value=self.embedding_output_root,
+            default_value=PROJECT_ROOT / "data" / "embeddings",
+            configured_value=_get_nested_value(
+                embedding_settings,
+                ["output_root"],
+                "data/embeddings",
+            ),
+        )
+        self.embedding_input_text_field = self._resolve_string_setting(
+            current_value=self.embedding_input_text_field,
+            default_value="text_for_embedding",
+            configured_value=_get_nested_value(
+                embedding_settings,
+                ["input_text_field"],
+                "text_for_embedding",
+            ),
+        )
+        self.embedding_batch_size = self._resolve_int_setting(
+            current_value=self.embedding_batch_size,
+            default_value=100,
+            configured_value=_get_nested_value(
+                embedding_settings,
+                ["batch_size"],
+                100,
+            ),
+        )
+        self.embedding_visualization_enabled = self._resolve_bool_setting(
+            current_value=self.embedding_visualization_enabled,
+            default_value=False,
+            configured_value=_get_nested_value(
+                visualization_settings,
+                ["enabled"],
+                False,
+            ),
+        )
+        self.embedding_visualization_spotlight_enabled = self._resolve_bool_setting(
+            current_value=self.embedding_visualization_spotlight_enabled,
+            default_value=False,
+            configured_value=_get_nested_value(
+                visualization_settings,
+                ["spotlight_enabled"],
+                False,
+            ),
+        )
+
+    def _resolve_string_setting(
+        self,
+        current_value: str,
+        default_value: str,
+        configured_value: Any,
+    ) -> str:
+        """
+        Resolve a string setting while preserving explicit constructor values.
+        """
+
+        if current_value != default_value:
+            return current_value
+
+        if isinstance(configured_value, str) and configured_value.strip():
+            return configured_value
+
+        return default_value
+
+    def _resolve_bool_setting(
+        self,
+        current_value: bool,
+        default_value: bool,
+        configured_value: Any,
+    ) -> bool:
+        """
+        Resolve a boolean setting while preserving explicit constructor values.
+        """
+
+        if current_value != default_value:
+            return current_value
+
+        if isinstance(configured_value, bool):
+            return configured_value
+
+        return default_value
+
+    def _resolve_int_setting(
+        self,
+        current_value: int,
+        default_value: int,
+        configured_value: Any,
+    ) -> int:
+        """
+        Resolve an integer setting while preserving explicit constructor values.
+        """
+
+        if current_value != default_value:
+            return current_value
+
+        if isinstance(configured_value, int) and not isinstance(configured_value, bool):
+            return configured_value
+
+        return default_value
+
+    def _resolve_path_setting(
+        self,
+        current_value: Path,
+        default_value: Path,
+        configured_value: Any,
+    ) -> Path:
+        """
+        Resolve a path setting while preserving explicit constructor values.
+        """
+
+        if current_value != default_value:
+            return current_value
+
+        return _resolve_project_path(
+            value=configured_value,
+            default_path=default_value,
+        )
