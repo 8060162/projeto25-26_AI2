@@ -1,130 +1,167 @@
-# Chunking project for regulatory PDFs
+# Regulatory PDF Chunking and Embedding Pipeline
 
-This project is a practical, modular starting point for chunking structured regulatory documents such as:
+This project processes structured regulatory PDFs through two separate phases:
+
+1. chunking, which extracts structure, normalizes text, parses the document tree, and exports chunk artifacts
+2. embedding, which loads the chunk output for the configured strategy and generates vectors through a provider-based embedding step
+
+The downstream retrieval flow is intended for a final OpenAI GPT-4o agent via API. Vector generation is handled separately by the embedding provider and is not the same step as the final GPT-4o agent call.
+
+## Supported document types
+
+The pipeline is designed for documents such as:
 
 - regulations
-- dispatches / legal notices
+- dispatches and legal notices
 - annex-heavy institutional rules
-- documents segmented by chapter, article, numbered items, and subitems
+- PDFs segmented by chapter, article, numbered items, and subitems
 
-## High-level strategy
+## Central configuration
 
-The project intentionally does **not** rely on one single naive splitter.
-Instead, it supports three strategies:
+Runtime behavior is controlled from `config/appsettings.json`.
 
-1. **article_smart**
-   - First split by article-like structure.
-   - Then split long articles by numbered sections and subpoints.
-   - Best first production strategy for your type of PDFs.
+Current example:
 
-2. **structure_first**
-   - Parse more structure first: preamble, chapter, article, numbered items.
-   - Produce chunks from logical blocks.
-   - Better when documents are consistently formatted.
+```json
+{
+  "chunking": {
+    "strategy": "article_smart"
+  },
+  "embedding": {
+    "enabled": false,
+    "provider": "openai",
+    "model": "text-embedding-3-large",
+    "input_root": "data/chunks",
+    "output_root": "data/embeddings",
+    "input_text_field": "text_for_embedding",
+    "batch_size": 100,
+    "visualization": {
+      "enabled": false,
+      "spotlight_enabled": false
+    }
+  }
+}
+```
 
-3. **hybrid**
-   - Try structure-first parsing.
-   - Fall back to article-smart or paragraph-aware splitting when structure is weak.
-   - Better for more variable documents.
+Important points:
 
-## Recommended production flow
+- `chunking.strategy` is now the single source of truth for chunking strategy selection
+- chunking no longer depends on `--strategy` in the normal execution flow
+- embedding reads the same configured strategy and only loads chunk outputs generated for that strategy
+- embedding execution is enabled or disabled through `embedding.enabled`
+- embedding provider and model are configured independently from the final GPT-4o agent
 
-For your current corpus, I recommend this sequence:
+## Chunking strategies
 
-### Phase 1
-Use `article_smart` as the default strategy.
+The project supports three chunking strategies:
 
-Why:
-- easier to debug
-- robust enough for regulations
-- good balance between chunk cleanliness and implementation complexity
+1. `article_smart`
+2. `structure_first`
+3. `hybrid`
 
-### Phase 2
-Use `structure_first` on the same files and compare outputs.
+The active one is selected in `config/appsettings.json`, not at runtime through a CLI strategy flag.
 
-Why:
-- often produces more semantically precise chunks
-- better metadata precision for chapter / article / section mapping
+## Pipeline overview
 
-### Phase 3
-Keep `hybrid` as the safety net when a document does not fully follow the expected structure.
+### Chunking phase
 
-## Cleaning approach
+The chunking pipeline:
 
-The project does **not** send raw PDF text directly into chunking.
-A dedicated normalization phase runs first.
+- reads PDFs from `data/raw`
+- extracts document text and structure
+- runs extraction quality analysis
+- applies OCR fallback when needed
+- normalizes PDF noise conservatively
+- parses the document into a structural tree
+- exports structure artifacts and chunk artifacts for the configured strategy
 
-That phase removes or reduces:
-- repeated headers
-- repeated footers
-- page counters like `3|14`
-- institutional repeated banners
-- line breaks caused by PDF layout extraction
-- excessive whitespace
-- duplicate artifacts around page transitions
+Chunking is executed with:
 
-The code is careful to preserve the meaningful legal content while minimizing layout noise.
+```bash
+python3 src/main.py
+```
+
+### Embedding phase
+
+The embedding pipeline is a separate step that runs only after chunk outputs already exist.
+
+It:
+
+- reads the configured strategy from `config/appsettings.json`
+- discovers `05_chunks.json` files under the configured input root
+- builds the text sent for embedding
+- generates vectors through the configured embedding provider
+- stores embedding records and a run manifest
+- optionally exports a Renumics Spotlight dataset
+
+Embedding is executed with:
+
+```bash
+python3 -m embedding.main
+```
+
+Before running embedding:
+
+- set `embedding.enabled` to `true`
+- ensure chunk outputs already exist for the configured strategy
+- export `OPENAI_API_KEY` when using the OpenAI provider
 
 ## Output folders
 
-The code expects:
+Expected input:
 
-- input PDFs in `/data/raw`
-- outputs in `/data/chunks`
+- PDFs in `data/raw`
 
-For each processed PDF, the pipeline writes:
+Chunking outputs:
 
-- normalized text snapshots
-- structured JSON
-- chunk JSON
-- inspection DOCX
+- structure artifacts under `data/chunks/<doc_id>/structure/`
+- strategy-specific chunk artifacts under `data/chunks/<doc_id>/<strategy>/`
 
-The inspection DOCX is designed for human QA.
-It helps you inspect:
-- the text quality of each chunk
-- metadata richness
-- whether the semantic split makes sense
+Embedding outputs:
 
-## Suggested first run
+- run artifacts under `data/embeddings/<strategy>/<run_id>/`
 
-```bash
-python main.py --strategy article_smart
+Typical embedding artifacts:
+
+- `embedding_records.json`
+- `run_manifest.json`
+- `spotlight_dataset.jsonl` when Spotlight export is enabled
+
+## Recommended working flow
+
+1. Choose the active strategy in `config/appsettings.json`.
+2. Run `python3 src/main.py`.
+3. Inspect the generated JSON and DOCX artifacts under `data/chunks`.
+4. Enable embedding in `config/appsettings.json` when chunk quality is acceptable.
+5. Run `python3 -m embedding.main`.
+6. Inspect embedding outputs under `data/embeddings`.
+
+## Visualization
+
+Renumics Spotlight is supported as a visualization and inspection tool for embeddings.
+
+To export Spotlight data during embedding execution, enable:
+
+```json
+"visualization": {
+  "enabled": true,
+  "spotlight_enabled": true
+}
 ```
 
-Then inspect files under:
+Then run:
 
 ```bash
-/data/chunks
+python3 -m embedding.main
+python3 -m embedding.visualization.spotlight_viewer
 ```
 
-## Suggested comparison workflow
+## Design principles
 
-Run the same corpus with the three strategies:
-
-```bash
-python main.py --strategy article_smart
-python main.py --strategy structure_first
-python main.py --strategy hybrid
-```
-
-Compare the generated DOCX files and JSON outputs.
-
-## Main design principles used here
-
-- clean text, rich metadata
-- chunks should be semantically coherent
-- chunk boundaries should not be blindly tied to article boundaries
-- metadata should carry chapter / article / page context
-- pipeline should be modular and easy to tune
-- comments are intentionally verbose and in English for maintainability
-
-## When you may want to provide more input later
-
-You do **not** need to provide anything else to start.
-
-However, later it may help to provide:
-- 2 to 5 more PDFs with unusual formatting
-- examples of bad chunks that you want to avoid
-- your preferred maximum chunk size in tokens or characters
-- whether annexes should be chunked differently from the main body
+- clean text and traceable metadata
+- settings-driven execution
+- chunking and embedding kept as separate phases
+- minimal PDF noise carried into chunks and embeddings
+- provider-based embedding generation
+- outputs suitable for manual QA and downstream retrieval workflows
 
