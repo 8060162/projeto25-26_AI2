@@ -293,9 +293,10 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
                     )
                     group_page_start, group_page_end = self._group_page_range(group)
 
-                    if len(group_text) > self.settings.hard_max_chunk_chars:
-                        paragraph_groups, split_mode = self._split_oversized_text(
-                            group_text
+                    if len(group_text) > self.settings.target_chunk_chars:
+                        paragraph_groups, split_mode = self._split_grouped_node_texts(
+                            nodes=group,
+                            source_node=article,
                         )
 
                         for part_index, paragraph_group in enumerate(
@@ -387,9 +388,10 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
                     )
                     group_page_start, group_page_end = self._group_page_range(group)
 
-                    if len(group_text) > self.settings.hard_max_chunk_chars:
-                        paragraph_groups, split_mode = self._split_oversized_text(
-                            group_text
+                    if len(group_text) > self.settings.target_chunk_chars:
+                        paragraph_groups, split_mode = self._split_grouped_node_texts(
+                            nodes=group,
+                            source_node=article,
                         )
 
                         for part_index, paragraph_group in enumerate(
@@ -590,8 +592,13 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
                 remove_structural_prefixes=True,
             )
             if len(last_group_text) < self.settings.min_chunk_chars:
-                groups[-2].extend(groups[-1])
-                groups.pop()
+                merged_text = self._join_cleaned_node_texts(
+                    nodes=groups[-2] + groups[-1],
+                    remove_structural_prefixes=True,
+                )
+                if len(merged_text) <= self.settings.target_chunk_chars:
+                    groups[-2].extend(groups[-1])
+                    groups.pop()
 
         return groups
 
@@ -651,8 +658,13 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
                 remove_structural_prefixes=True,
             )
             if len(last_group_text) < self.settings.min_chunk_chars:
-                groups[-2].extend(groups[-1])
-                groups.pop()
+                merged_text = self._join_cleaned_node_texts(
+                    nodes=groups[-2] + groups[-1],
+                    remove_structural_prefixes=True,
+                )
+                if len(merged_text) <= self.settings.target_chunk_chars:
+                    groups[-2].extend(groups[-1])
+                    groups.pop()
 
         return groups
 
@@ -708,8 +720,10 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
 
         # Merge a very small trailing group into the previous one.
         if len(groups) >= 2 and len(groups[-1]) < self.settings.min_chunk_chars:
-            groups[-2] = f"{groups[-2]}\n\n{groups[-1]}".strip()
-            groups.pop()
+            merged_text = f"{groups[-2]}\n\n{groups[-1]}".strip()
+            if len(merged_text) <= self.settings.target_chunk_chars:
+                groups[-2] = merged_text
+                groups.pop()
 
         return groups
 
@@ -782,6 +796,12 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
             if len(regrouped_line_blocks) >= 2:
                 return regrouped_line_blocks
 
+        clause_blocks = self._split_clause_like_lines(text)
+        if len(clause_blocks) >= 2:
+            regrouped_clause_blocks = self._group_text_parts(clause_blocks)
+            if len(regrouped_clause_blocks) >= 2:
+                return regrouped_clause_blocks
+
         inline_blocks = self._split_inline_legal_blocks(text)
         if len(inline_blocks) >= 2:
             regrouped_inline_blocks = self._group_text_parts(inline_blocks)
@@ -834,6 +854,109 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
                 blocks.append(block_text)
 
         return blocks
+
+    def _split_clause_like_lines(self, text: str) -> List[str]:
+        """
+        Split clause-like legal lines when numbering is absent but boundaries remain.
+
+        Why this helper exists
+        ----------------------
+        Some regulations encode lists as one introductory line followed by
+        clause lines separated only by line breaks and punctuation such as
+        ":" or ";". Those lines are still meaningful legal boundaries even
+        when numbering or letter markers are missing.
+
+        Parameters
+        ----------
+        text : str
+            Candidate oversized text.
+
+        Returns
+        -------
+        List[str]
+            Clause-like blocks when the pattern looks trustworthy.
+        """
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
+        if len(lines) < 3:
+            return []
+
+        blocks: List[str] = []
+        current_lines: List[str] = []
+        boundary_count = 0
+
+        for line in lines:
+            starts_new_block = False
+
+            if current_lines:
+                previous_line = current_lines[-1].strip()
+                starts_new_block = self._is_clause_line_boundary(
+                    previous_line=previous_line,
+                    current_line=line,
+                )
+
+            if starts_new_block:
+                block_text = normalize_block_whitespace("\n".join(current_lines)).strip()
+                if block_text:
+                    blocks.append(block_text)
+                current_lines = [line]
+                boundary_count += 1
+            else:
+                current_lines.append(line)
+
+        if current_lines:
+            block_text = normalize_block_whitespace("\n".join(current_lines)).strip()
+            if block_text:
+                blocks.append(block_text)
+
+        if boundary_count < 2:
+            return []
+
+        return blocks
+
+    def _is_clause_line_boundary(
+        self,
+        previous_line: str,
+        current_line: str,
+    ) -> bool:
+        """
+        Decide whether one line starts a new clause-like legal block.
+
+        Parameters
+        ----------
+        previous_line : str
+            Previous non-empty line in the current candidate block.
+
+        current_line : str
+            Current line being inspected.
+
+        Returns
+        -------
+        bool
+            True when the transition behaves like a clause boundary.
+        """
+        if not previous_line or not current_line:
+            return False
+
+        if previous_line[-1] not in {":", ";", "."}:
+            return False
+
+        if len(current_line) < 24:
+            return False
+
+        if ARTICLE_HEADER_RE.match(current_line):
+            return False
+
+        if LINE_NUMBERED_SPLIT_RE.match(current_line) is not None:
+            return False
+
+        if LINE_LETTERED_SPLIT_RE.match(current_line) is not None:
+            return False
+
+        first_character = current_line[0]
+        if not (first_character.isupper() or first_character.isdigit()):
+            return False
+
+        return True
 
     def _split_inline_legal_blocks(self, text: str) -> List[str]:
         """
@@ -958,10 +1081,74 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
             groups.append("\n\n".join(current_parts).strip())
 
         if len(groups) >= 2 and len(groups[-1]) < self.settings.min_chunk_chars:
-            groups[-2] = f"{groups[-2]}\n\n{groups[-1]}".strip()
-            groups.pop()
+            merged_text = f"{groups[-2]}\n\n{groups[-1]}".strip()
+            if len(merged_text) <= self.settings.target_chunk_chars:
+                groups[-2] = merged_text
+                groups.pop()
 
         return groups
+
+    def _split_grouped_node_texts(
+        self,
+        nodes: Sequence[StructuralNode],
+        source_node: StructuralNode,
+    ) -> Tuple[List[str], str]:
+        """
+        Split grouped structural nodes without losing legal split markers early.
+
+        Why this helper exists
+        ----------------------
+        Grouped SECTION or LETTERED_ITEM chunks may still exceed the target
+        size. Their final visible text intentionally removes structural
+        prefixes, but the split heuristics need those markers to recover
+        trustworthy boundaries before the final cleanup step.
+
+        Parameters
+        ----------
+        nodes : Sequence[StructuralNode]
+            Adjacent structural nodes that currently form one grouped chunk.
+
+        source_node : StructuralNode
+            Parent article used for final visible-text cleanup.
+
+        Returns
+        -------
+        Tuple[List[str], str]
+            Final cleaned chunk parts and the split mode used.
+        """
+        visible_text = self._join_cleaned_node_texts(
+            nodes=nodes,
+            remove_structural_prefixes=True,
+        )
+        if not visible_text:
+            return [], "paragraph_split"
+
+        if len(visible_text) <= self.settings.target_chunk_chars:
+            return [visible_text], "paragraph_split"
+
+        split_candidate_text = self._join_cleaned_node_texts(
+            nodes=nodes,
+            remove_structural_prefixes=False,
+        )
+        if not split_candidate_text:
+            return [visible_text], "paragraph_split"
+
+        raw_parts, split_mode = self._split_oversized_text(split_candidate_text)
+        cleaned_parts: List[str] = []
+
+        for raw_part in raw_parts:
+            cleaned_part = self._clean_chunk_text(
+                raw_part,
+                remove_structural_prefixes=True,
+                source_node=source_node,
+            )
+            if cleaned_part:
+                cleaned_parts.append(cleaned_part)
+
+        if not cleaned_parts:
+            return [visible_text], "paragraph_split"
+
+        return cleaned_parts, split_mode
 
     def _clean_chunk_text(
         self,
