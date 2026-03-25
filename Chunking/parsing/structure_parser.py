@@ -75,6 +75,15 @@ NUMBERED_BLOCK_RE = re.compile(
     r"(?m)^(?P<label>(?:n\.?\s*[ºo]\s*)?\d+(?:\.\d+)*)(?:\.\s+|\)\s+|\s+[—–\-]\s+|\s+)"
 )
 
+# Detect numbered blocks that survived inline inside one long body span.
+#
+# Examples:
+# - "Definições: 1. ... 2. ..."
+# - "Considera-se: 1) ... 2) ..."
+INLINE_NUMBERED_BLOCK_RE = re.compile(
+    r"(?P<label>(?:n\.?\s*[ºo]\s*)?\d+(?:\.\d+)*)(?:\.\s+|\)\s+|\s+[—–\-]\s+|\s+)"
+)
+
 # Accept legal-style lettered items such as:
 # - "a) ..."
 # - "b) ..."
@@ -109,6 +118,17 @@ INLINE_TITLE_BODY_SPLIT_RE = re.compile(
     r"(?P<title>[A-ZÁÀÂÃÉÈÊÍÌÎÓÒÔÕÚÙÛÇ][A-ZÁÀÂÃÉÈÊÍÌÎÓÒÔÕÚÙÛÇ0-9 /().,\-–—ºª]{1,80}?)"
     r"\s+"
     r"(?P<body>(?:O|A|Os|As|No|Na|Nos|Nas|Em|Para|Por|Quando|Sempre|Caso|Se|Nos\s+termos|Deve|Devem|Pode|Podem|É|São)\b.*)$",
+    re.IGNORECASE,
+)
+
+# Detect likely body starts inside an article header suffix so the parser can
+# recover the clean title and move the remaining text back into article body.
+HEADER_SUFFIX_BODY_START_RE = re.compile(
+    r"(?P<body>"
+    r"(?:n\.?\s*[ºo]\s*)?\d+(?:\.\d+)*(?:\.\s+|\)\s+|\s+[—–\-]\s+|\s+)"
+    r"|[a-z]\)\s+"
+    r"|(?:O|A|Os|As|No|Na|Nos|Nas|Em|Para|Por|Quando|Sempre|Caso|Se|Nos\s+termos|Deve|Devem|Pode|Podem|É|São)\b"
+    r")",
     re.IGNORECASE,
 )
 
@@ -436,6 +456,13 @@ class StructureParser:
                 )
 
                 article_title = inline_title or consumed_title
+                header_body = ""
+
+                if inline_title:
+                    split_header = self._split_header_suffix_title_and_body(inline_title)
+                    if split_header is not None:
+                        article_title, header_body = split_header
+
                 current_parent = container_stack[-1]
 
                 current_article = self._make_node(
@@ -460,6 +487,13 @@ class StructureParser:
                 )
 
                 current_parent.children.append(current_article)
+
+                if header_body:
+                    self._append_text_to_node(
+                        node=current_article,
+                        line=header_body,
+                        page_number=page_number,
+                    )
 
                 # -----------------------------------------------------
                 # Recovery heuristic:
@@ -850,8 +884,34 @@ class StructureParser:
             collected.append(line)
             index += 1
 
-        title = " | ".join(collected).strip()
+        title = self._merge_title_lines(collected)
         return title, index
+
+    def _merge_title_lines(self, lines: Sequence[str]) -> str:
+        """
+        Merge multiple title lines without injecting artificial separators.
+
+        Why this helper exists
+        ----------------------
+        Structural titles may legitimately span multiple physical lines in the
+        PDF, but those line breaks should not become synthetic markers such as
+        " | " in parser output or downstream embedding text.
+
+        Parameters
+        ----------
+        lines : Sequence[str]
+            Title-like lines collected after one structural marker.
+
+        Returns
+        -------
+        str
+            Title rebuilt as ordinary readable text.
+        """
+        cleaned_lines = [line.strip() for line in lines if line and line.strip()]
+        if not cleaned_lines:
+            return ""
+
+        return re.sub(r"\s+", " ", " ".join(cleaned_lines)).strip()
 
     def _is_probable_title_line(self, line: str, collected_count: int = 0) -> bool:
         """
@@ -1024,6 +1084,56 @@ class StructureParser:
             return None
 
         return title, body
+
+    def _split_header_suffix_title_and_body(
+        self,
+        header_suffix: str,
+    ) -> Optional[Tuple[str, str]]:
+        """
+        Recover title/body boundaries inside an inline article header suffix.
+
+        Example
+        -------
+        "Definições 1. Para efeitos do presente regulamento..."
+        -> ("Definições", "1. Para efeitos do presente regulamento...")
+
+        Parameters
+        ----------
+        header_suffix : str
+            Text captured after the article marker in the same header line.
+
+        Returns
+        -------
+        Optional[Tuple[str, str]]
+            (title, body) when the split looks trustworthy, otherwise None.
+        """
+        if not header_suffix:
+            return None
+
+        stripped_suffix = header_suffix.strip()
+        if not stripped_suffix:
+            return None
+
+        for match in HEADER_SUFFIX_BODY_START_RE.finditer(stripped_suffix):
+            body_start = match.start("body")
+            if body_start <= 0:
+                continue
+
+            title = stripped_suffix[:body_start].strip()
+            body = stripped_suffix[body_start:].strip()
+
+            if not title or not body:
+                continue
+
+            if not self._is_probable_title_line(title):
+                continue
+
+            if len(body.split()) < 3:
+                continue
+
+            return title, body
+
+        return None
 
     # ------------------------------------------------------------------
     # Node text accumulation
@@ -1214,7 +1324,7 @@ class StructureParser:
         if not text:
             return []
 
-        matches = list(NUMBERED_BLOCK_RE.finditer(text))
+        matches = self._find_numbered_block_matches(text)
         if len(matches) < 2:
             return []
 
@@ -1261,6 +1371,78 @@ class StructureParser:
             children.append(section_node)
 
         return children
+
+    def _find_numbered_block_matches(self, text: str) -> List[re.Match[str]]:
+        """
+        Find numbered structural markers using line-based and inline recovery.
+
+        Why this helper exists
+        ----------------------
+        Real article bodies sometimes preserve legal numbering inside one long
+        paragraph instead of keeping each item at the start of a separate line.
+        The parser should recover that structure when the numbering remains
+        clear, but only with conservative boundaries.
+
+        Parameters
+        ----------
+        text : str
+            Article text to inspect.
+
+        Returns
+        -------
+        List[re.Match[str]]
+            Ordered numbered-block matches suitable for SECTION extraction.
+        """
+        line_matches = list(NUMBERED_BLOCK_RE.finditer(text))
+        if len(line_matches) >= 2:
+            return line_matches
+
+        if len(text) < 160:
+            return line_matches
+
+        inline_matches: List[re.Match[str]] = []
+
+        for match in INLINE_NUMBERED_BLOCK_RE.finditer(text):
+            if self._has_inline_numbered_boundary(text, match.start("label")):
+                inline_matches.append(match)
+
+        return inline_matches if len(inline_matches) >= 2 else line_matches
+
+    def _has_inline_numbered_boundary(self, text: str, start_index: int) -> bool:
+        """
+        Validate that one inline numeric marker starts at a strong boundary.
+
+        Accepted boundaries
+        -------------------
+        - start of text
+        - newline
+        - colon
+        - semicolon
+
+        Parameters
+        ----------
+        text : str
+            Full article text.
+
+        start_index : int
+            Start offset of the numeric label.
+
+        Returns
+        -------
+        bool
+            True when the inline label begins at a conservative boundary.
+        """
+        if start_index <= 0:
+            return True
+
+        probe_index = start_index - 1
+        while probe_index >= 0 and text[probe_index].isspace():
+            probe_index -= 1
+
+        if probe_index < 0:
+            return True
+
+        return text[probe_index] in {":", ";", "\n"}
 
     def _normalize_numbered_label(self, label: str) -> str:
         """
