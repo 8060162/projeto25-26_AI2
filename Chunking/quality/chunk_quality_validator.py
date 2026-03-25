@@ -2,10 +2,15 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Callable, Dict, List, Optional, Sequence
 
 from Chunking.chunking.models import Chunk
 from Chunking.config.settings import PipelineSettings
+from Chunking.utils.text import (
+    join_hyphenated_linebreaks,
+    repair_broken_enclitic_hyphenation,
+    repair_broken_inline_hyphenation,
+)
 
 
 # ============================================================================
@@ -32,10 +37,10 @@ ARTIFICIAL_STRUCTURE_TOKEN_RE = re.compile(
     re.IGNORECASE,
 )
 BROKEN_INLINE_HYPHENATION_RE = re.compile(
-    r"\b([A-Za-zÀ-ÿ]{2,})-\s+([a-zà-ÿ]{3,})\b"
+    r"\b([A-Za-zÀ-ÿ]{2,})-[ \t]+([a-zà-ÿ]{3,})\b"
 )
 BROKEN_ENCLITIC_HYPHEN_RE = re.compile(
-    r"\b([A-Za-zÀ-ÿ]{3,})\s*-\s*"
+    r"\b([A-Za-zÀ-ÿ]{3,})(?:\s+-\s*|-\s+)"
     r"(se|lo|la|los|las|lhe|lhes|me|te|nos|vos)\b",
     re.IGNORECASE,
 )
@@ -312,17 +317,7 @@ class ChunkQualityValidator:
             if not text_field:
                 continue
 
-            inline_match = BROKEN_INLINE_HYPHENATION_RE.search(text_field)
-            if inline_match is not None:
-                evidence.append(inline_match.group(0))
-
-            enclitic_match = BROKEN_ENCLITIC_HYPHEN_RE.search(text_field)
-            if enclitic_match is not None:
-                evidence.append(enclitic_match.group(0))
-
-            linebreak_match = HYPHENATED_LINEBREAK_RE.search(text_field)
-            if linebreak_match is not None:
-                evidence.append(linebreak_match.group(0).replace("\n", "\\n"))
+            evidence.extend(self._collect_broken_hyphenation_evidence(text_field))
 
         unique_evidence = list(dict.fromkeys(evidence))
         if not unique_evidence:
@@ -334,6 +329,98 @@ class ChunkQualityValidator:
             "message": "Chunk output still contains repairable broken hyphenation.",
             "evidence": unique_evidence[:3],
         }
+
+    def _collect_broken_hyphenation_evidence(self, text: str) -> List[str]:
+        """
+        Collect only hyphenation patterns that the shared repair helpers change.
+
+        Why compare with repair helpers
+        -------------------------------
+        The validator should flag only repairable defects, not every string that
+        superficially resembles a hyphenated word. Legitimate forms such as
+        "inscrever-se" must not be reported as broken hyphenation.
+
+        Parameters
+        ----------
+        text : str
+            Candidate text field from one chunk.
+
+        Returns
+        -------
+        List[str]
+            Concrete matched evidence snippets that remain repairable.
+        """
+        evidence: List[str] = []
+
+        evidence.extend(
+            self._collect_repairable_matches(
+                text=text,
+                pattern=HYPHENATED_LINEBREAK_RE,
+                repair_func=join_hyphenated_linebreaks,
+                escape_newlines=True,
+            )
+        )
+        evidence.extend(
+            self._collect_repairable_matches(
+                text=text,
+                pattern=BROKEN_INLINE_HYPHENATION_RE,
+                repair_func=repair_broken_inline_hyphenation,
+            )
+        )
+        evidence.extend(
+            self._collect_repairable_matches(
+                text=text,
+                pattern=BROKEN_ENCLITIC_HYPHEN_RE,
+                repair_func=repair_broken_enclitic_hyphenation,
+            )
+        )
+
+        return evidence
+
+    def _collect_repairable_matches(
+        self,
+        text: str,
+        pattern: re.Pattern[str],
+        repair_func: Callable[[str], str],
+        escape_newlines: bool = False,
+    ) -> List[str]:
+        """
+        Return only pattern matches whose matched snippet changes after repair.
+
+        Parameters
+        ----------
+        text : str
+            Candidate text field.
+
+        pattern : re.Pattern[str]
+            Regex used to locate suspicious substrings.
+
+        repair_func : Any
+            Shared repair helper applied to the matched substring.
+
+        escape_newlines : bool, default=False
+            Whether to render newline evidence in escaped form.
+
+        Returns
+        -------
+        List[str]
+            Evidence snippets that remain truly repairable.
+        """
+        evidence: List[str] = []
+
+        for match in pattern.finditer(text):
+            matched_text = match.group(0)
+            repaired_text = repair_func(matched_text)
+
+            if repaired_text == matched_text:
+                continue
+
+            if escape_newlines:
+                matched_text = matched_text.replace("\n", "\\n")
+
+            evidence.append(matched_text)
+
+        return evidence
 
     def _validate_traceability(self, chunk: Chunk) -> Optional[Dict[str, Any]]:
         """
