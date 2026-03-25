@@ -70,6 +70,30 @@ SPACE_BEFORE_CLOSING_BRACKET_RE = re.compile(r"\s+([)\]}])")
 # we only join when both sides look alphabetic.
 HYPHENATED_LINEBREAK_RE = re.compile(r"([A-Za-zÀ-ÿ])-\n([A-Za-zÀ-ÿ])")
 
+# Repair same-line broken hyphenation only when the right fragment starts with a
+# lowercase letter and is long enough to look like the continuation of a word.
+#
+# Examples:
+# - "ava- liação" -> "avaliação"
+# - "apli- cável" -> "aplicável"
+#
+# This must remain conservative because some valid expressions may contain
+# hyphen-like separators followed by a distinct word.
+BROKEN_INLINE_HYPHENATION_RE = re.compile(
+    r"\b([A-Za-zÀ-ÿ]{2,})-\s+([a-zà-ÿ]{3,})\b"
+)
+
+# Repair broken spacing around Portuguese enclitic forms while preserving the
+# hyphen itself.
+#
+# Example:
+# - "inscrever -se" -> "inscrever-se"
+BROKEN_ENCLITIC_HYPHEN_RE = re.compile(
+    r"\b([A-Za-zÀ-ÿ]{3,})\s*-\s*"
+    r"(se|lo|la|los|las|lhe|lhes|me|te|nos|vos)\b",
+    re.IGNORECASE,
+)
+
 # Some extracted PDFs also break lines inside words without a hyphen.
 # Repairing those cases safely is much harder and much riskier.
 # We deliberately do not attempt aggressive word fusion here.
@@ -307,6 +331,66 @@ def join_hyphenated_linebreaks(text: str) -> str:
         return ""
 
     return HYPHENATED_LINEBREAK_RE.sub(r"\1\2", text)
+
+
+def repair_broken_inline_hyphenation(text: str) -> str:
+    """
+    Repair conservative same-line broken hyphenation artifacts.
+
+    This helper targets OCR or PDF extraction cases where a word was split
+    inside the same visual line and later rejoined with a stray space after the
+    hyphen.
+
+    Examples
+    --------
+    "ava- liação" -> "avaliação"
+    "cré- ditos" -> "créditos"
+
+    Safety rules
+    ------------
+    - the left fragment must be alphabetic
+    - the right fragment must start in lowercase
+    - the right fragment must be at least three letters long
+
+    These rules intentionally avoid broad word merging.
+    """
+    if not text:
+        return ""
+
+    return BROKEN_INLINE_HYPHENATION_RE.sub(r"\1\2", text)
+
+
+def repair_broken_enclitic_hyphenation(text: str) -> str:
+    """
+    Normalize broken spacing around Portuguese enclitic hyphen forms.
+
+    This helper preserves legitimate hyphenated verb-pronoun forms while
+    removing extraction-introduced spaces around the hyphen.
+
+    Example
+    -------
+    "inscrever -se" -> "inscrever-se"
+    """
+    if not text:
+        return ""
+
+    return BROKEN_ENCLITIC_HYPHEN_RE.sub(r"\1-\2", text)
+
+
+def repair_broken_hyphenation(text: str) -> str:
+    """
+    Apply the shared conservative broken-hyphenation cleanup sequence.
+
+    This helper exists so normalization and chunking stages can reuse the same
+    deterministic repair order when Task 1 utilities are integrated elsewhere.
+    """
+    if not text:
+        return ""
+
+    text = join_hyphenated_linebreaks(text)
+    text = repair_broken_inline_hyphenation(text)
+    text = repair_broken_enclitic_hyphenation(text)
+    return text
 
 
 def unwrap_single_newlines(text: str) -> str:
