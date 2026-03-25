@@ -1,15 +1,16 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from collections import Counter
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
 from Chunking.chunking.models import ExtractedDocument, ExtractedPage, PageText
 from Chunking.utils.text import (
-    join_hyphenated_linebreaks,
     normalize_block_whitespace,
     normalize_line_endings,
+    repair_broken_hyphenation,
     strip_control_characters,
 )
 
@@ -87,8 +88,13 @@ INSTITUTIONAL_BANNER_RE = re.compile(
 # - "CAPÍTULO |"
 # - "CAPITULO |"
 SHORT_LAYOUT_RESIDUE_RE = re.compile(
-    r"^\s*(?:[Vv][o0]/|CAP[ÍI]TULO\s*\|)\s*$",
+    r"^\s*(?:[Vv][o0]/?|CAP[ÍI]TULO\s*\|)\s*$",
     re.IGNORECASE,
+)
+
+# Common editorial date formats found in publication headers.
+EDITORIAL_DATE_RE = re.compile(
+    r"\b\d{1,2}\s*[-/.]\s*\d{1,2}\s*[-/.]\s*\d{2,4}\b"
 )
 
 # Dot leaders typical of table-of-contents lines.
@@ -105,6 +111,10 @@ INDEX_HEADING_RE = re.compile(
 
 # Normalize inner whitespace for comparison and reporting.
 MULTISPACE_RE = re.compile(r"\s+")
+
+# Remove non-alphanumeric separators when building conservative editorial
+# comparison strings.
+NON_ALNUM_EDITORIAL_RE = re.compile(r"[^a-z0-9]+")
 
 # Structural headers that should usually remain on their own line.
 ARTICLE_HEADER_RE = re.compile(
@@ -499,7 +509,7 @@ class TextNormalizer:
         #
         # The length cap is a safety mechanism so we do not remove large lines
         # that merely begin similarly but contain meaningful text.
-        if DR_EDITORIAL_RE.match(line) and len(line) <= 160:
+        if self._looks_like_dr_editorial_line(line):
             return None, "dr_editorial_line"
 
         # Remove signature metadata lines.
@@ -676,6 +686,94 @@ class TextNormalizer:
         line = LEADING_PAGE_MARKER_RE.sub("", line).strip()
         line = MULTISPACE_RE.sub(" ", line).strip()
         return line
+
+    def _looks_like_dr_editorial_line(self, line: str) -> bool:
+        """
+        Detect short standalone Diário da República editorial residue.
+
+        Why this helper exists
+        ----------------------
+        OCR and PDF extraction often degrade official publication headers into
+        variants such as:
+        - "DIARIO DA REPUBLICA"
+        - "DIARIO o DA REPUBLICA | 07-06-2024"
+        - "N.o 109 | 07-06-2024"
+
+        The cleanup must remain conservative. Legal prose that merely mentions
+        the Diário da República should not be removed.
+
+        Parameters
+        ----------
+        line : str
+            Candidate line.
+
+        Returns
+        -------
+        bool
+            True when the line behaves like short editorial page furniture.
+        """
+        if not line or len(line) > 180:
+            return False
+
+        if DR_EDITORIAL_RE.match(line):
+            return True
+
+        folded_line = self._fold_editorial_text(line)
+        if not folded_line:
+            return False
+
+        tokens = folded_line.split()
+        if len(tokens) > 14:
+            return False
+
+        has_publication_marker = (
+            "republica" in tokens
+            and "diario" in tokens
+            and abs(tokens.index("republica") - tokens.index("diario")) <= 4
+        )
+        if not has_publication_marker:
+            return False
+
+        has_header_shape = (
+            "|" in line
+            or EDITORIAL_DATE_RE.search(line) is not None
+            or "parte" in tokens
+            or any(token.startswith("n") and len(token) <= 3 for token in tokens)
+        )
+        if not has_header_shape:
+            return False
+
+        return not PROSE_START_RE.match(line)
+
+    def _fold_editorial_text(self, text: str) -> str:
+        """
+        Fold a short line into an ASCII-like comparison form.
+
+        Why this helper exists
+        ----------------------
+        Editorial headers often suffer from OCR noise in accents, casing, and
+        separators. This helper removes only those superficial differences so
+        conservative line classification can compare stable tokens.
+
+        Parameters
+        ----------
+        text : str
+            Raw candidate text.
+
+        Returns
+        -------
+        str
+            Lowercased accent-folded comparison string.
+        """
+        normalized_text = unicodedata.normalize("NFKD", text)
+        without_marks = "".join(
+            character
+            for character in normalized_text
+            if not unicodedata.combining(character)
+        )
+        lowered_text = without_marks.lower()
+        collapsed_text = NON_ALNUM_EDITORIAL_RE.sub(" ", lowered_text)
+        return MULTISPACE_RE.sub(" ", collapsed_text).strip()
 
     # ------------------------------------------------------------------
     # TOC / index handling
@@ -1217,7 +1315,7 @@ class TextNormalizer:
         Final cleanup steps
         -------------------
         1. Rejoin the page using preserved line boundaries
-        2. Repair hyphenated line breaks
+        2. Repair conservative broken hyphenation artifacts
         3. Apply shared conservative block normalization
 
         Important
@@ -1229,9 +1327,9 @@ class TextNormalizer:
 
         text = "\n".join(cleaned_lines)
 
-        # Repair words split by PDF wrapping:
-        # "matrí-\ncula" -> "matrícula"
-        text = join_hyphenated_linebreaks(text)
+        # Reuse the shared conservative Task 1 repair sequence so normalized
+        # parser input no longer carries broken line-break or inline hyphenation.
+        text = repair_broken_hyphenation(text)
 
         # Apply shared conservative block cleanup without flattening structure.
         text = normalize_block_whitespace(text)
