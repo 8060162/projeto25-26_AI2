@@ -58,6 +58,22 @@ PROSE_START_RE = re.compile(
     re.IGNORECASE,
 )
 
+TITLE_SEPARATOR_RE = re.compile(r"\s*\|\s*")
+
+LINE_NUMBERED_SPLIT_RE = re.compile(
+    r"^\s*(?:n\.?\s*[ºo]\s*)?\d+(?:\.\d+)*(?:\.\s+|\)\s+|\s+[—–\-]\s+|\s+)",
+    re.IGNORECASE,
+)
+
+LINE_LETTERED_SPLIT_RE = re.compile(r"^\s*[a-z]\)\s+", re.IGNORECASE)
+
+INLINE_NUMBERED_SPLIT_RE = re.compile(
+    r"(?:n\.?\s*[ºo]\s*)?\d+(?:\.\d+)*(?:\.\s+|\)\s+|\s+[—–\-]\s+)",
+    re.IGNORECASE,
+)
+
+INLINE_LETTERED_SPLIT_RE = re.compile(r"[a-z]\)\s+", re.IGNORECASE)
+
 
 class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
     """
@@ -278,9 +294,9 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
                     group_page_start, group_page_end = self._group_page_range(group)
 
                     if len(group_text) > self.settings.hard_max_chunk_chars:
-                        paragraph_groups = self._paragraph_grouping(group_text)
-                        if not paragraph_groups:
-                            paragraph_groups = [group_text]
+                        paragraph_groups, split_mode = self._split_oversized_text(
+                            group_text
+                        )
 
                         for part_index, paragraph_group in enumerate(
                             paragraph_groups,
@@ -296,13 +312,15 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
                                 source_node_type_override="SECTION_GROUP",
                                 source_node_label_override=",".join(group_labels),
                                 hierarchy_path=hierarchy_path,
-                                chunk_reason="grouped_sections_paragraph_split",
+                                chunk_reason=f"grouped_sections_{split_mode}",
                                 metadata={
                                     **article_meta,
                                     "section_labels": group_labels,
                                     "part_index": part_index,
                                     "part_count": len(paragraph_groups),
-                                    "source_span_type": "article_section_group_paragraph_split",
+                                    "source_span_type": (
+                                        f"article_section_group_{split_mode}"
+                                    ),
                                     "source_node_ids": [section.node_id for section in group],
                                     "group_page_start": group_page_start,
                                     "group_page_end": group_page_end,
@@ -370,9 +388,9 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
                     group_page_start, group_page_end = self._group_page_range(group)
 
                     if len(group_text) > self.settings.hard_max_chunk_chars:
-                        paragraph_groups = self._paragraph_grouping(group_text)
-                        if not paragraph_groups:
-                            paragraph_groups = [group_text]
+                        paragraph_groups, split_mode = self._split_oversized_text(
+                            group_text
+                        )
 
                         for part_index, paragraph_group in enumerate(
                             paragraph_groups,
@@ -388,13 +406,15 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
                                 source_node_type_override="LETTERED_GROUP",
                                 source_node_label_override=",".join(group_labels),
                                 hierarchy_path=hierarchy_path,
-                                chunk_reason="grouped_lettered_items_paragraph_split",
+                                chunk_reason=f"grouped_lettered_items_{split_mode}",
                                 metadata={
                                     **article_meta,
                                     "lettered_labels": group_labels,
                                     "part_index": part_index,
                                     "part_count": len(paragraph_groups),
-                                    "source_span_type": "article_lettered_group_paragraph_split",
+                                    "source_span_type": (
+                                        f"article_lettered_group_{split_mode}"
+                                    ),
                                     "source_node_ids": [item.node_id for item in group],
                                     "group_page_start": group_page_start,
                                     "group_page_end": group_page_end,
@@ -437,9 +457,7 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
             # This is the safety fallback for imperfect parsing or documents
             # whose internal formatting is too weak/inconsistent.
             # -------------------------------------------------------------
-            paragraph_groups = self._paragraph_grouping(article_text)
-            if not paragraph_groups:
-                paragraph_groups = [article_text]
+            paragraph_groups, split_mode = self._split_oversized_text(article_text)
 
             for part_index, paragraph_group in enumerate(paragraph_groups, start=1):
                 chunk = self._make_chunk(
@@ -451,12 +469,12 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
                     source_node=article,
                     source_node_type_override="ARTICLE_PART",
                     source_node_label_override=article.label,
-                    chunk_reason="fallback_paragraph_split",
+                    chunk_reason=f"fallback_{split_mode}",
                     metadata={
                         **article_meta,
                         "part_index": part_index,
                         "part_count": len(paragraph_groups),
-                        "source_span_type": "article_paragraph_group",
+                        "source_span_type": f"article_{split_mode}",
                     },
                 )
                 if chunk is not None:
@@ -689,6 +707,256 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
             groups.append("\n\n".join(current))
 
         # Merge a very small trailing group into the previous one.
+        if len(groups) >= 2 and len(groups[-1]) < self.settings.min_chunk_chars:
+            groups[-2] = f"{groups[-2]}\n\n{groups[-1]}".strip()
+            groups.pop()
+
+        return groups
+
+    def _split_oversized_text(self, text: str) -> Tuple[List[str], str]:
+        """
+        Split oversized text using paragraphs first, then legal split cues.
+
+        Why this helper exists
+        ----------------------
+        Paragraph grouping is the preferred fallback because paragraph breaks
+        are usually safe semantic boundaries. However, some long legal blocks
+        survive as a single paragraph even when clear numbering or alinea cues
+        are still visible inside the text.
+
+        Parameters
+        ----------
+        text : str
+            Candidate text to split.
+
+        Returns
+        -------
+        Tuple[List[str], str]
+            Chunk parts and the split mode used.
+        """
+        paragraph_groups = self._paragraph_grouping(text)
+        if not paragraph_groups:
+            return [text], "paragraph_split"
+
+        if len(paragraph_groups) > 1:
+            return paragraph_groups, "paragraph_split"
+
+        only_group = paragraph_groups[0].strip()
+        if len(only_group) <= self.settings.target_chunk_chars:
+            return paragraph_groups, "paragraph_split"
+
+        legal_groups = self._split_by_legal_signals(only_group)
+        if len(legal_groups) >= 2:
+            return legal_groups, "legal_signal_split"
+
+        return paragraph_groups, "paragraph_split"
+
+    def _split_by_legal_signals(self, text: str) -> List[str]:
+        """
+        Split text using visible legal numbering or alinea cues.
+
+        Safety behavior
+        ---------------
+        This helper remains conservative:
+        - existing line-based list structure is preferred
+        - inline splitting only triggers on trustworthy boundary cues
+        - final parts are regrouped to stay near chunk-size targets
+
+        Parameters
+        ----------
+        text : str
+            Candidate oversized text.
+
+        Returns
+        -------
+        List[str]
+            Deterministically split parts, or the original text when no
+            trustworthy legal boundaries are found.
+        """
+        if not text:
+            return []
+
+        line_blocks = self._split_line_based_legal_blocks(text)
+        if len(line_blocks) >= 2:
+            regrouped_line_blocks = self._group_text_parts(line_blocks)
+            if len(regrouped_line_blocks) >= 2:
+                return regrouped_line_blocks
+
+        inline_blocks = self._split_inline_legal_blocks(text)
+        if len(inline_blocks) >= 2:
+            regrouped_inline_blocks = self._group_text_parts(inline_blocks)
+            if len(regrouped_inline_blocks) >= 2:
+                return regrouped_inline_blocks
+
+        return [text.strip()]
+
+    def _split_line_based_legal_blocks(self, text: str) -> List[str]:
+        """
+        Split text when numbered items already start on separate lines.
+
+        Parameters
+        ----------
+        text : str
+            Candidate text.
+
+        Returns
+        -------
+        List[str]
+            Extracted line-based legal blocks.
+        """
+        blocks: List[str] = []
+        current_lines: List[str] = []
+
+        for raw_line in text.splitlines():
+            line = raw_line.strip()
+            if not line:
+                continue
+
+            starts_new_block = (
+                bool(current_lines)
+                and (
+                    LINE_NUMBERED_SPLIT_RE.match(line) is not None
+                    or LINE_LETTERED_SPLIT_RE.match(line) is not None
+                )
+            )
+
+            if starts_new_block:
+                block_text = normalize_block_whitespace("\n".join(current_lines)).strip()
+                if block_text:
+                    blocks.append(block_text)
+                current_lines = [line]
+            else:
+                current_lines.append(line)
+
+        if current_lines:
+            block_text = normalize_block_whitespace("\n".join(current_lines)).strip()
+            if block_text:
+                blocks.append(block_text)
+
+        return blocks
+
+    def _split_inline_legal_blocks(self, text: str) -> List[str]:
+        """
+        Split one long block using inline numbering or alinea signals.
+
+        Parameters
+        ----------
+        text : str
+            Candidate text.
+
+        Returns
+        -------
+        List[str]
+            Inline-derived legal blocks.
+        """
+        normalized_text = normalize_block_whitespace(text).strip()
+        if not normalized_text:
+            return []
+
+        split_points: List[int] = []
+
+        for pattern in (INLINE_NUMBERED_SPLIT_RE, INLINE_LETTERED_SPLIT_RE):
+            for match in pattern.finditer(normalized_text):
+                start_index = match.start()
+                if self._is_valid_inline_legal_split(
+                    normalized_text,
+                    start_index,
+                ):
+                    split_points.append(start_index)
+
+        unique_split_points = sorted(set(split_points))
+        if not unique_split_points:
+            return [normalized_text]
+
+        parts: List[str] = []
+        previous_index = 0
+
+        for split_index in unique_split_points:
+            part = normalized_text[previous_index:split_index].strip()
+            if part:
+                parts.append(part)
+            previous_index = split_index
+
+        trailing_part = normalized_text[previous_index:].strip()
+        if trailing_part:
+            parts.append(trailing_part)
+
+        return parts
+
+    def _is_valid_inline_legal_split(
+        self,
+        text: str,
+        split_index: int,
+    ) -> bool:
+        """
+        Decide whether an inline numbering cue is a trustworthy split point.
+
+        Parameters
+        ----------
+        text : str
+            Full candidate text.
+
+        split_index : int
+            Candidate start index of the legal cue.
+
+        Returns
+        -------
+        bool
+            True when the boundary looks structurally meaningful.
+        """
+        if split_index <= 0:
+            return False
+
+        prefix = text[:split_index].rstrip()
+        if not prefix:
+            return False
+
+        previous_char = prefix[-1]
+        return previous_char in {":", ";", "\n"}
+
+    def _group_text_parts(self, parts: Sequence[str]) -> List[str]:
+        """
+        Group already split text parts into chunk-sized bundles.
+
+        Parameters
+        ----------
+        parts : Sequence[str]
+            Ordered split candidates.
+
+        Returns
+        -------
+        List[str]
+            Regrouped chunk-sized bundles.
+        """
+        if not parts:
+            return []
+
+        groups: List[str] = []
+        current_parts: List[str] = []
+
+        for part in parts:
+            cleaned_part = normalize_block_whitespace(part).strip()
+            if not cleaned_part:
+                continue
+
+            candidate = "\n\n".join(current_parts + [cleaned_part]).strip()
+            current_text = "\n\n".join(current_parts).strip()
+
+            should_flush = (
+                bool(current_parts)
+                and len(candidate) > self.settings.target_chunk_chars
+                and len(current_text) >= self.settings.min_chunk_chars
+            )
+
+            if should_flush:
+                groups.append(current_text)
+                current_parts = [cleaned_part]
+            else:
+                current_parts.append(cleaned_part)
+
+        if current_parts:
+            groups.append("\n\n".join(current_parts).strip())
+
         if len(groups) >= 2 and len(groups[-1]) < self.settings.min_chunk_chars:
             groups[-2] = f"{groups[-2]}\n\n{groups[-1]}".strip()
             groups.pop()
@@ -1110,31 +1378,46 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
         effective_type = source_node_type_override or source_node.node_type
 
         article_number = source_node.metadata.get("article_number")
-        article_title = source_node.title or metadata.get("article_title") or ""
+        article_title = self._sanitize_embedding_header_text(
+            source_node.title or metadata.get("article_title") or ""
+        )
 
         if article_number:
-            header_parts.append(f"Artigo {article_number}")
+            self._append_unique_header_part(
+                header_parts,
+                f"Artigo {article_number}",
+                keep_article_header=True,
+            )
         elif source_node.label:
-            header_parts.append(source_node.label)
+            self._append_unique_header_part(header_parts, source_node.label)
 
         if article_title:
-            header_parts.append(article_title)
+            self._append_unique_header_part(header_parts, article_title)
 
         if effective_type == "SECTION_GROUP":
             section_labels = metadata.get("section_labels") or []
             if section_labels:
-                header_parts.append("Secções " + ", ".join(section_labels))
+                self._append_unique_header_part(
+                    header_parts,
+                    "Secções " + ", ".join(section_labels),
+                )
 
         if effective_type == "LETTERED_GROUP":
             lettered_labels = metadata.get("lettered_labels") or []
             if lettered_labels:
-                header_parts.append("Alíneas " + ", ".join(lettered_labels))
+                self._append_unique_header_part(
+                    header_parts,
+                    "Alíneas " + ", ".join(lettered_labels),
+                )
 
         if effective_type == "ARTICLE_PART":
             part_index = metadata.get("part_index")
             part_count = metadata.get("part_count")
             if part_index is not None and part_count is not None:
-                header_parts.append(f"Parte {part_index}/{part_count}")
+                self._append_unique_header_part(
+                    header_parts,
+                    f"Parte {part_index}/{part_count}",
+                )
 
         if effective_type == "PREAMBLE":
             header_parts = ["Preamble"]
@@ -1144,6 +1427,96 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
             return visible_text
 
         return f"{header}\n\n{visible_text}".strip()
+
+    def _sanitize_embedding_header_text(
+        self,
+        text: str,
+        keep_article_header: bool = False,
+    ) -> str:
+        """
+        Remove structural and editorial pollution from embedding header text.
+
+        Why this helper exists
+        ----------------------
+        Parser improvements should already keep titles clean, but embedding
+        text must remain defensive because polluted titles or line residues can
+        still degrade retrieval quality.
+
+        Parameters
+        ----------
+        text : str
+            Candidate header text.
+
+        keep_article_header : bool
+            When True, preserve an explicit article header provided by the
+            strategy itself.
+
+        Returns
+        -------
+        str
+            Sanitized one-line header text.
+        """
+        if not text:
+            return ""
+
+        cleaned_parts: List[str] = []
+
+        for raw_line in text.splitlines():
+            line = TITLE_SEPARATOR_RE.sub(" ", raw_line.strip())
+            line = LEADING_PAGE_MARKER_RE.sub("", line).strip()
+
+            if not line:
+                continue
+
+            if INLINE_PAGE_COUNTER_RE.match(line):
+                continue
+
+            if LOOSE_PAGE_COUNTER_RE.match(line):
+                continue
+
+            if DR_EDITORIAL_RE.match(line):
+                continue
+
+            if not keep_article_header and ARTICLE_HEADER_RE.match(line):
+                continue
+
+            cleaned_parts.append(line)
+
+        return normalize_block_whitespace(" ".join(cleaned_parts)).strip()
+
+    def _append_unique_header_part(
+        self,
+        header_parts: List[str],
+        candidate_part: str,
+        keep_article_header: bool = False,
+    ) -> None:
+        """
+        Append a sanitized header part only when it adds new information.
+
+        Parameters
+        ----------
+        header_parts : List[str]
+            Mutable list of current header parts.
+
+        candidate_part : str
+            Candidate part to append.
+
+        keep_article_header : bool
+            When True, preserve an explicit article header part.
+        """
+        sanitized_part = self._sanitize_embedding_header_text(
+            candidate_part,
+            keep_article_header=keep_article_header,
+        )
+        if not sanitized_part:
+            return
+
+        candidate_key = sanitized_part.casefold()
+        for existing_part in header_parts:
+            if existing_part.casefold() == candidate_key:
+                return
+
+        header_parts.append(sanitized_part)
 
     def _make_chunk(
         self,
