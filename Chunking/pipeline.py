@@ -23,6 +23,7 @@ from Chunking.extraction.extraction_quality import ExtractionQualityAnalyzer
 from Chunking.extraction.ocr_fallback import OcrFallbackReader
 from Chunking.extraction.pdf_reader import PdfReader
 from Chunking.parsing.structure_parser import StructureParser
+from Chunking.quality.chunk_quality_validator import ChunkQualityValidator
 from Chunking.utils.text import slugify_file_stem
 
 
@@ -299,6 +300,7 @@ def run_pipeline() -> None:
                                     chunks=chunks,
                                     strategy_name=strategy.name,
                                     extraction_mode_used=extraction_mode_used,
+                                    settings=settings,
                                 )
                             ),
                             encoding="utf-8",
@@ -556,6 +558,7 @@ def _build_chunk_quality_summary(
     chunks: List[Chunk],
     strategy_name: str,
     extraction_mode_used: str,
+    settings: PipelineSettings,
 ) -> Dict[str, object]:
     """
     Build a lightweight chunk-stage quality summary for one document run.
@@ -588,6 +591,9 @@ def _build_chunk_quality_summary(
     extraction_mode_used : str
         "native" or "ocr".
 
+    settings : PipelineSettings
+        Shared runtime configuration used by the chunk validator.
+
     Returns
     -------
     Dict[str, object]
@@ -596,6 +602,8 @@ def _build_chunk_quality_summary(
     chunk_count = len(chunks)
     char_counts = [getattr(chunk, "char_count", len(chunk.text)) for chunk in chunks]
     chunk_reasons = CounterLike()
+    validator = ChunkQualityValidator(settings)
+    validation_report = validator.validate_chunks(chunks)
 
     for chunk in chunks:
         chunk_reasons.increment(getattr(chunk, "chunk_reason", "") or "unspecified")
@@ -628,6 +636,13 @@ def _build_chunk_quality_summary(
             "max_chars": max(char_counts) if char_counts else 0,
             "avg_chars": (sum(char_counts) / len(char_counts)) if char_counts else 0,
         },
+        "overall_status": validation_report["overall_status"],
+        "acceptable_for_next_phase": validation_report["overall_status"] == "pass",
+        "next_phase_decision": _build_next_phase_decision(
+            strategy_name=strategy_name,
+            validation_report=validation_report,
+        ),
+        "validator_summary": _build_validator_summary(validation_report),
         "chunk_neighbor_links_complete": all(
             (index == 0 or getattr(chunks[index], "prev_chunk_id", None) is not None)
             and (
@@ -635,6 +650,73 @@ def _build_chunk_quality_summary(
                 or getattr(chunks[index], "next_chunk_id", None) is not None
             )
             for index in range(len(chunks))
+        ),
+    }
+
+
+def _build_validator_summary(validation_report: Dict[str, object]) -> Dict[str, object]:
+    """
+    Build a compact validator summary for chunk-quality reporting.
+
+    Parameters
+    ----------
+    validation_report : Dict[str, object]
+        Aggregate validator output for one chunk sequence.
+
+    Returns
+    -------
+    Dict[str, object]
+        Reduced validator payload focused on automation-friendly fields.
+    """
+    issue_type_counts = dict(validation_report.get("issue_type_counts", {}))
+    issue_examples = dict(validation_report.get("issue_examples", {}))
+
+    return {
+        "chunk_count": validation_report.get("chunk_count", 0),
+        "valid_chunk_count": validation_report.get("valid_chunk_count", 0),
+        "invalid_chunk_count": validation_report.get("invalid_chunk_count", 0),
+        "overall_status": validation_report.get("overall_status", "fail"),
+        "failure_type_counts": issue_type_counts,
+        "failure_examples": issue_examples,
+        "failed_chunk_ids": [
+            report.get("chunk_id")
+            for report in validation_report.get("chunk_reports", [])
+            if not report.get("is_valid") and report.get("chunk_id")
+        ][:10],
+    }
+
+
+def _build_next_phase_decision(
+    strategy_name: str,
+    validation_report: Dict[str, object],
+) -> Dict[str, object]:
+    """
+    Convert validator output into a clear accept/reject pipeline signal.
+
+    Parameters
+    ----------
+    strategy_name : str
+        Strategy evaluated for the current summary.
+
+    validation_report : Dict[str, object]
+        Aggregate validator output for one chunk sequence.
+
+    Returns
+    -------
+    Dict[str, object]
+        Deterministic acceptance decision for downstream consumption.
+    """
+    is_acceptable = validation_report.get("overall_status") == "pass"
+
+    return {
+        "target_phase": "embedding_consumption",
+        "strategy": strategy_name,
+        "decision": "accept" if is_acceptable else "reject",
+        "is_acceptable": is_acceptable,
+        "reason": (
+            "Validator reported no blocking chunk-quality failures."
+            if is_acceptable
+            else "Validator reported chunk-quality failures that block downstream embedding consumption."
         ),
     }
 
