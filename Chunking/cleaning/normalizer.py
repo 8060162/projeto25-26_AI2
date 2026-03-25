@@ -377,6 +377,11 @@ class TextNormalizer:
 
                 cleaned_lines.append(line)
 
+            cleaned_lines, split_editorial_report = self._remove_split_editorial_blocks(
+                cleaned_lines
+            )
+            dropped_counter.update(split_editorial_report)
+
             # Remove likely TOC/index blocks conservatively and mainly on early pages.
             cleaned_lines, block_drop_report = self._remove_index_blocks(
                 lines=cleaned_lines,
@@ -744,6 +749,99 @@ class TextNormalizer:
             return False
 
         return not PROSE_START_RE.match(line)
+
+    def _remove_split_editorial_blocks(
+        self,
+        lines: List[str],
+    ) -> Tuple[List[str], Counter[str]]:
+        """
+        Remove short multi-line editorial residue that escaped line cleanup.
+
+        Why this helper exists
+        ----------------------
+        Some publication headers survive as adjacent short lines instead of one
+        standalone line, for example:
+        - "DIARIO o"
+        - "DA REPUBLICA |"
+
+        Line-by-line cleanup may keep each fragment because neither line alone
+        is conclusive enough. Recombining only very short local windows keeps
+        the rule conservative while removing this recurring noise.
+
+        Parameters
+        ----------
+        lines : List[str]
+            Already cleaned lines for one page.
+
+        Returns
+        -------
+        Tuple[List[str], Counter[str]]
+            Kept lines plus a block-level dropped-lines report.
+        """
+        if not lines:
+            return [], Counter()
+
+        kept_lines: List[str] = []
+        dropped_counter: Counter[str] = Counter()
+        index = 0
+
+        while index < len(lines):
+            removed = False
+
+            for window_size in (3, 2):
+                if index + window_size > len(lines):
+                    continue
+
+                candidate_lines = lines[index : index + window_size]
+                if not self._looks_like_split_dr_editorial_block(candidate_lines):
+                    continue
+
+                dropped_counter["dr_editorial_block_line"] += len(candidate_lines)
+                index += window_size
+                removed = True
+                break
+
+            if removed:
+                continue
+
+            kept_lines.append(lines[index])
+            index += 1
+
+        return kept_lines, dropped_counter
+
+    def _looks_like_split_dr_editorial_block(self, lines: Sequence[str]) -> bool:
+        """
+        Decide whether a short adjacent line window is editorial residue.
+
+        Parameters
+        ----------
+        lines : Sequence[str]
+            Adjacent page lines to inspect together.
+
+        Returns
+        -------
+        bool
+            True when the window behaves like split publication header noise.
+        """
+        if len(lines) < 2 or len(lines) > 3:
+            return False
+
+        stripped_lines = [line.strip() for line in lines if line and line.strip()]
+        if len(stripped_lines) != len(lines):
+            return False
+
+        if any(len(line) > 80 for line in stripped_lines):
+            return False
+
+        combined = " ".join(stripped_lines)
+        folded_combined = self._fold_editorial_text(combined)
+        if not folded_combined:
+            return False
+
+        if "diario" not in folded_combined and "republica" not in folded_combined:
+            return False
+
+        return self._looks_like_dr_editorial_line(combined)
 
     def _fold_editorial_text(self, text: str) -> str:
         """
