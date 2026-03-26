@@ -188,6 +188,22 @@ class ArticleSmartQualityRegressionTests(unittest.TestCase):
         self.assertNotIn("Acessível", chunks[0].text)
         self.assertNotIn("https://", chunks[0].text)
 
+    def test_residual_article_title_does_not_leak_into_chunk_text(self) -> None:
+        """Ensure merged article titles are removed from visible chunk text."""
+        chunks = build_article_smart_chunks(
+            (
+                "Artigo 2.o\n"
+                "ÂMBITO O presente regulamento aplica-se a todos os ciclos de estudo."
+            )
+        )
+
+        self.assertEqual(len(chunks), 1)
+        self.assertEqual(
+            chunks[0].text,
+            "O presente regulamento aplica-se a todos os ciclos de estudo.",
+        )
+        self.assertNotIn("ÂMBITO O presente", chunks[0].text)
+
     def test_inline_heading_residue_is_removed_from_chunk_text(self) -> None:
         """Ensure glued uppercase heading residue is removed from final text."""
         article = StructuralNode(
@@ -265,6 +281,30 @@ class ArticleSmartQualityRegressionTests(unittest.TestCase):
         self.assertIn("2.", chunks[1].text)
         self.assertTrue(chunks[-1].text.startswith("Nas situações previstas no presente artigo:"))
         self.assertIn("3.", chunks[-1].text)
+
+    def test_article_smart_output_keeps_full_non_truncated_article_body(self) -> None:
+        """Ensure final chunks keep the complete article body in citation cases."""
+        chunks = build_article_smart_chunks(
+            (
+                "ANEXO\n"
+                "Artigo 17.o\n"
+                "Inscrições em estágio profissional\n"
+                "1 - O presente artigo regulamenta as medidas de apoio aos licenciados "
+                "e mestres, previstas no\n"
+                "artigo 46.o -B do Decreto -Lei n.o 74/2006, de 24 de março.\n"
+                "2 - Aplica-se aos titulares do grau de licenciatura."
+            )
+        )
+
+        self.assertEqual(len(chunks), 1)
+        self.assertIn(
+            "artigo 46.o -B do Decreto -Lei n.o 74/2006, de 24 de março.",
+            chunks[0].text,
+        )
+        self.assertIn(
+            "2 - Aplica-se aos titulares do grau de licenciatura.",
+            chunks[0].text,
+        )
 
     def test_garbled_fragment_line_is_removed_from_final_chunk_text(self) -> None:
         """Ensure strongly garbled residue does not survive chunk cleanup."""
