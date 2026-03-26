@@ -97,6 +97,9 @@ EDITORIAL_DATE_RE = re.compile(
     r"\b\d{1,2}\s*[-/.]\s*\d{1,2}\s*[-/.]\s*\d{2,4}\b"
 )
 
+# Publication summary lines from Diario da Republica pages.
+SUMMARY_LINE_RE = re.compile(r"^\s*Sum[áa]rio:\s+", re.IGNORECASE)
+
 # Dot leaders typical of table-of-contents lines.
 INDEX_DOT_LEADER_RE = re.compile(r"\.{3,}")
 
@@ -165,6 +168,33 @@ MOSTLY_SYMBOLIC_RE = re.compile(r"^[^\wÀ-ÿ]{6,}$")
 # Detect highly suspicious garbled-looking lines.
 SUSPICIOUS_GARBLED_LINE_RE = re.compile(
     r"^[^A-Za-zÀ-ÿ]{0,3}(?:[\*\+\-/=<>\\\[\]\{\}_`~]{2,}|[0-9\W]{12,})$"
+)
+
+# Detect footnote-style editorial notes that only carry publication/access
+# residue rather than legal meaning.
+ACCESS_NOTE_RE = re.compile(
+    r"^\s*\(?\d+\)?\s+"
+    r"(?:Acess[íi]vel|Dispon[íi]vel|Publicado|Publicada|Publicados|Publicadas)\b",
+    re.IGNORECASE,
+)
+
+# Detect short signature residue lines commonly injected around publication
+# closing metadata.
+SIGNATURE_RESIDUE_RE = re.compile(
+    r"^\s*(?:"
+    r".{0,80}\bO\s+PRESIDENTE\b.*|"
+    r".{0,80}\bO\s+DIRETOR\b.*|"
+    r".{0,80}\bA\s+PRESIDENTE\b.*|"
+    r".{0,80}\bA\s+DIRETORA\b.*|"
+    r".{0,80}[—-]\s*O\s+Presidente\b.*"
+    r")$",
+    re.IGNORECASE,
+)
+
+# Detect date/location publication closing lines tied to sign-off metadata.
+PUBLICATION_SIGNOFF_RE = re.compile(
+    r"^\s*.+?,\s+\d{1,2}\s+de\s+[A-Za-zÀ-ÿ]+\s+de\s+\d{4}\s*$",
+    re.IGNORECASE,
 )
 
 # Detect uppercase-heavy heading fragments that often behave like
@@ -517,6 +547,14 @@ class TextNormalizer:
         if self._looks_like_dr_editorial_line(line):
             return None, "dr_editorial_line"
 
+        # Remove publication summary lines that belong to editorial front matter.
+        if self._looks_like_publication_summary_line(
+            line=line,
+            page_number=page_number,
+            total_pages=total_pages,
+        ):
+            return None, "publication_summary_line"
+
         # Remove signature metadata lines.
         if SIGNATURE_LINE_RE.match(line):
             return None, "signature_line"
@@ -536,6 +574,15 @@ class TextNormalizer:
         # garbage, not whole-page extraction failures.
         if self._looks_like_garbled_line(line):
             return None, "garbled_line"
+
+        # Remove clearly non-semantic publication/access notes.
+        if self._looks_like_non_semantic_note_line(line):
+            return None, "non_semantic_note_line"
+
+        # Remove short publication sign-off residue such as names, roles, and
+        # date/location lines that do not belong to the normative body.
+        if self._looks_like_signature_residue_line(line):
+            return None, "signature_residue_line"
 
         # Remove repeated page furniture lines.
         #
@@ -749,6 +796,84 @@ class TextNormalizer:
             return False
 
         return not PROSE_START_RE.match(line)
+
+    def _looks_like_publication_summary_line(
+        self,
+        line: str,
+        page_number: int,
+        total_pages: int,
+    ) -> bool:
+        """
+        Detect short Diario da Republica summary lines on early pages.
+
+        Safety behavior
+        ---------------
+        The rule is limited to the document front region because genuine body
+        text may legitimately contain the word "sumario" later.
+        """
+        if not self._is_early_document_page(page_number, total_pages):
+            return False
+
+        if not SUMMARY_LINE_RE.match(line):
+            return False
+
+        return len(line.split()) <= 24
+
+    def _looks_like_non_semantic_note_line(self, line: str) -> bool:
+        """
+        Detect publication/access notes that should not survive normalization.
+
+        This helper intentionally targets only strongly non-semantic residue,
+        such as web access notes or short publication metadata notes.
+        """
+        if not line or len(line) > 280:
+            return False
+
+        folded_line = self._fold_editorial_text(line)
+        if not folded_line:
+            return False
+
+        if ACCESS_NOTE_RE.match(line):
+            return True
+
+        if folded_line.startswith("nota "):
+            has_publication_signal = (
+                "diario" in folded_line
+                or "republica" in folded_line
+                or "publicado" in folded_line
+                or "publicada" in folded_line
+                or "https" in folded_line
+                or "www" in folded_line
+            )
+            if has_publication_signal and len(line.split()) <= 28:
+                return True
+
+        return False
+
+    def _looks_like_signature_residue_line(self, line: str) -> bool:
+        """
+        Detect short sign-off residue that belongs to publication metadata.
+
+        The normalizer removes only lines that look like dates, roles, or
+        names attached to sign-off furniture rather than legal provisions.
+        """
+        if not line or len(line) > 180:
+            return False
+
+        if SIGNATURE_RESIDUE_RE.match(line):
+            return True
+
+        if PUBLICATION_SIGNOFF_RE.match(line):
+            folded_line = self._fold_editorial_text(line)
+            return (
+                "instituto" in folded_line
+                or "porto" in folded_line
+                or "presidente" in folded_line
+                or "diretor" in folded_line
+                or "diretora" in folded_line
+            )
+
+        return False
 
     def _remove_split_editorial_blocks(
         self,
@@ -1383,6 +1508,12 @@ class TextNormalizer:
         if SUSPICIOUS_GARBLED_LINE_RE.match(line):
             return True
 
+        c1_control_count = sum(1 for ch in line if 0x80 <= ord(ch) <= 0x9F)
+        if c1_control_count >= 1:
+            compact_line = MULTISPACE_RE.sub("", line)
+            if len(compact_line) >= 18:
+                return True
+
         total_len = len(line)
         alpha_count = sum(1 for ch in line if ch.isalpha())
         whitespace_count = sum(1 for ch in line if ch.isspace())
@@ -1398,6 +1529,19 @@ class TextNormalizer:
         # Strongly suspicious when a line has very little alphabetic content,
         # many symbols, and almost no visible word separation.
         if alpha_ratio < 0.20 and symbol_ratio > 0.35 and whitespace_count <= 1:
+            return True
+
+        # Some corrupted publication lines still contain many letters, but they
+        # collapse into unusually long compact strings mixed with punctuation or
+        # mojibake markers. Treat those as garbled only when the line keeps
+        # little visible word structure.
+        compact_tokens = re.findall(r"[A-Za-zÀ-ÿ0-9]+", line)
+        longest_compact_token = max((len(token) for token in compact_tokens), default=0)
+        if (
+            longest_compact_token >= 28
+            and whitespace_count <= 3
+            and symbol_ratio > 0.08
+        ):
             return True
 
         return False
