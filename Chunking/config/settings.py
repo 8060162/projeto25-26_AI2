@@ -264,10 +264,10 @@ class PipelineSettings:
     # - avoids tokenizer dependencies too early
     # - is sufficient for the current stage of experimentation
     # ---------------------------------------------------------------------
-    target_chunk_chars: int = 1800
-    hard_max_chunk_chars: int = 2600
+    target_chunk_chars: int = 900
+    hard_max_chunk_chars: int = 1024
     min_chunk_chars: int = 350
-    overlap_chars: int = 180
+    overlap_chars: int = 80
 
     # ---------------------------------------------------------------------
     # Strategy execution behavior
