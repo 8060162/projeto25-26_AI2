@@ -74,6 +74,24 @@ INLINE_NUMBERED_SPLIT_RE = re.compile(
 
 INLINE_LETTERED_SPLIT_RE = re.compile(r"[a-z]\)\s+", re.IGNORECASE)
 
+ACCESS_FOOTNOTE_RE = re.compile(
+    r"^\s*\(?\d+\)?\s+"
+    r"(?:Acess[íi]vel|Dispon[íi]vel|Publicado|Publicada|Publicados|Publicadas)\b",
+    re.IGNORECASE,
+)
+
+FOOTNOTE_URL_RE = re.compile(r"^\s*\(?\d+\)?\s+.*(?:https?://|www\.)", re.IGNORECASE)
+
+INLINE_HEADING_WITH_PROSE_RE = re.compile(
+    r"^(?P<heading>[A-ZÁÀÂÃÉÈÊÍÌÎÓÒÔÕÚÙÛÇ0-9 /().,\-–—ºª]{5,80})\s+"
+    r"(?P<body>(?:O|A|Os|As|No|Na|Nos|Nas|Em|Para|Por|Quando|Sempre|Caso|Se|"
+    r"Nos\s+termos|Deve|Devem|Pode|Podem|É|São)\b.*)$"
+)
+
+SUSPICIOUS_GARBLED_LINE_RE = re.compile(
+    r"^[^A-Za-zÀ-ÿ]{0,3}(?:[\*\+\-/=<>\\\[\]\{\}_`~]{2,}|[0-9\W]{12,})$"
+)
+
 
 class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
     """
@@ -299,6 +317,11 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
                             source_node=article,
                         )
 
+                        paragraph_groups = self._apply_split_overlap(
+                            paragraph_groups,
+                            split_candidate_text,
+                        )
+
                         for part_index, paragraph_group in enumerate(
                             paragraph_groups,
                             start=1,
@@ -394,6 +417,11 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
                             source_node=article,
                         )
 
+                        paragraph_groups = self._apply_split_overlap(
+                            paragraph_groups,
+                            split_candidate_text,
+                        )
+
                         for part_index, paragraph_group in enumerate(
                             paragraph_groups,
                             start=1,
@@ -460,6 +488,10 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
             # whose internal formatting is too weak/inconsistent.
             # -------------------------------------------------------------
             paragraph_groups, split_mode = self._split_oversized_text(article_text)
+            paragraph_groups = self._apply_split_overlap(
+                paragraph_groups,
+                article_text,
+            )
 
             for part_index, paragraph_group in enumerate(paragraph_groups, start=1):
                 chunk = self._make_chunk(
@@ -1220,6 +1252,12 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
             if ARTICLE_HEADER_RE.match(line):
                 continue
 
+            if self._looks_like_chunk_footnote_line(line):
+                continue
+
+            if self._looks_like_garbled_chunk_line(line):
+                continue
+
             # Remove numbering/alínea prefixes only when the structural label
             # is already preserved in metadata.
             if remove_structural_prefixes:
@@ -1245,8 +1283,71 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
         # Remove a short uppercase heading residue at the beginning when it
         # clearly behaves like a title fragment rather than body text.
         cleaned = self._remove_leading_heading_residue(cleaned)
+        cleaned = self._remove_inline_heading_residue(cleaned)
 
         return cleaned.strip()
+
+    def _looks_like_chunk_footnote_line(self, line: str) -> bool:
+        """
+        Detect footnote-style residue that should not remain in final chunk text.
+
+        Parameters
+        ----------
+        line : str
+            Candidate visible line.
+
+        Returns
+        -------
+        bool
+            True when the line behaves like an editorial footnote.
+        """
+        if not line:
+            return False
+
+        return bool(
+            ACCESS_FOOTNOTE_RE.match(line)
+            or FOOTNOTE_URL_RE.match(line)
+        )
+
+    def _looks_like_garbled_chunk_line(self, line: str) -> bool:
+        """
+        Detect strongly suspicious garbled residue in final chunk cleanup.
+
+        Parameters
+        ----------
+        line : str
+            Candidate visible line.
+
+        Returns
+        -------
+        bool
+            True when the line looks clearly corrupted.
+        """
+        if not line:
+            return False
+
+        if len(line) < 10:
+            return False
+
+        if SUSPICIOUS_GARBLED_LINE_RE.match(line):
+            return True
+
+        total_len = len(line)
+        alpha_count = sum(1 for ch in line if ch.isalpha())
+        whitespace_count = sum(1 for ch in line if ch.isspace())
+        symbol_like_count = sum(
+            1
+            for ch in line
+            if not ch.isalnum() and not ch.isspace()
+        )
+
+        alpha_ratio = alpha_count / max(total_len, 1)
+        symbol_ratio = symbol_like_count / max(total_len, 1)
+
+        if alpha_ratio < 0.20 and symbol_ratio > 0.35 and whitespace_count <= 1:
+            return True
+
+        return False
 
     def _remove_residual_title_prefix(
         self,
@@ -1356,6 +1457,259 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
             return "\n".join(lines[1:]).strip()
 
         return text.strip()
+
+    def _remove_inline_heading_residue(self, text: str) -> str:
+        """
+        Remove heading residue glued to prose on the first visible line.
+
+        Parameters
+        ----------
+        text : str
+            Candidate visible chunk text.
+
+        Returns
+        -------
+        str
+            Cleaned text.
+        """
+        if not text:
+            return ""
+
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
+        if not lines:
+            return ""
+
+        match = INLINE_HEADING_WITH_PROSE_RE.match(lines[0])
+        if match is None:
+            return text.strip()
+
+        heading = match.group("heading").strip()
+        body = match.group("body").strip()
+
+        if len(heading.split()) > 8:
+            return text.strip()
+
+        if ARTICLE_HEADER_RE.match(heading):
+            return text.strip()
+
+        lines[0] = body
+        return "\n".join(lines).strip()
+
+    def _apply_split_overlap(
+        self,
+        parts: Sequence[str],
+        source_text: str,
+    ) -> List[str]:
+        """
+        Apply real overlap to split outputs so later parts keep context.
+
+        Parameters
+        ----------
+        parts : Sequence[str]
+            Ordered split parts after cleanup.
+
+        source_text : str
+            Unsplitted source text used to recover introductory context.
+
+        Returns
+        -------
+        List[str]
+            Split parts with visible overlap when it is safe and useful.
+        """
+        normalized_parts = [
+            normalize_block_whitespace(part).strip()
+            for part in parts
+            if normalize_block_whitespace(part).strip()
+        ]
+        if len(normalized_parts) < 2:
+            return normalized_parts
+
+        if self.settings.overlap_chars <= 0:
+            return normalized_parts
+
+        intro_context = self._extract_intro_overlap(source_text)
+        overlapped_parts: List[str] = [normalized_parts[0]]
+
+        for index in range(1, len(normalized_parts)):
+            current_part = normalized_parts[index]
+            previous_part = normalized_parts[index - 1]
+            overlap_prefix = ""
+
+            if self._part_starts_with_legal_marker(current_part):
+                overlap_prefix = intro_context
+
+            if not overlap_prefix:
+                overlap_prefix = self._extract_trailing_overlap(previous_part)
+
+            overlapped_parts.append(
+                self._prepend_overlap_prefix(
+                    current_part=current_part,
+                    overlap_prefix=overlap_prefix,
+                )
+            )
+
+        return overlapped_parts
+
+    def _extract_intro_overlap(self, source_text: str) -> str:
+        """
+        Extract a short introductory context to repeat across legal splits.
+
+        Parameters
+        ----------
+        source_text : str
+            Full split source text.
+
+        Returns
+        -------
+        str
+            Introductory context trimmed to overlap size.
+        """
+        normalized_text = normalize_block_whitespace(source_text).strip()
+        if not normalized_text:
+            return ""
+
+        split_points: List[int] = []
+        for pattern in (INLINE_NUMBERED_SPLIT_RE, INLINE_LETTERED_SPLIT_RE):
+            for match in pattern.finditer(normalized_text):
+                split_index = match.start()
+                if self._is_valid_inline_legal_split(normalized_text, split_index):
+                    split_points.append(split_index)
+
+        if not split_points:
+            return ""
+
+        intro_text = normalized_text[: min(split_points)].strip()
+        if not intro_text:
+            return ""
+
+        if intro_text[-1] not in {":", ";"}:
+            return ""
+
+        return self._trim_overlap_text(intro_text)
+
+    def _extract_trailing_overlap(self, text: str) -> str:
+        """
+        Extract a short trailing context window from the previous chunk part.
+
+        Parameters
+        ----------
+        text : str
+            Previous split part.
+
+        Returns
+        -------
+        str
+            Trailing overlap text.
+        """
+        paragraphs = split_paragraphs(text)
+        if paragraphs:
+            last_paragraph = normalize_block_whitespace(paragraphs[-1]).strip()
+            if (
+                last_paragraph
+                and len(last_paragraph) <= self.settings.overlap_chars
+                and not self._part_starts_with_legal_marker(last_paragraph)
+            ):
+                return last_paragraph
+
+        return self._trim_overlap_text(text)
+
+    def _trim_overlap_text(self, text: str) -> str:
+        """
+        Trim overlap text to a safe size while preserving readable boundaries.
+
+        Parameters
+        ----------
+        text : str
+            Candidate overlap text.
+
+        Returns
+        -------
+        str
+            Trimmed overlap text.
+        """
+        cleaned_text = normalize_block_whitespace(text).strip()
+        if not cleaned_text:
+            return ""
+
+        if len(cleaned_text) <= self.settings.overlap_chars:
+            return cleaned_text
+
+        trimmed = cleaned_text[-self.settings.overlap_chars :].strip()
+        first_space = trimmed.find(" ")
+        if first_space > 0 and first_space < len(trimmed) - 1:
+            trimmed = trimmed[first_space + 1 :].strip()
+
+        return trimmed
+
+    def _part_starts_with_legal_marker(self, text: str) -> bool:
+        """
+        Decide whether a split part starts with a legal list marker.
+
+        Parameters
+        ----------
+        text : str
+            Candidate split part.
+
+        Returns
+        -------
+        bool
+            True when the text begins with numbered or lettered cues.
+        """
+        if not text:
+            return False
+
+        return bool(
+            LINE_NUMBERED_SPLIT_RE.match(text)
+            or LINE_LETTERED_SPLIT_RE.match(text)
+        )
+
+    def _prepend_overlap_prefix(
+        self,
+        current_part: str,
+        overlap_prefix: str,
+    ) -> str:
+        """
+        Prepend overlap text to one split part without breaking size ceilings.
+
+        Parameters
+        ----------
+        current_part : str
+            Current split part.
+
+        overlap_prefix : str
+            Context to prepend.
+
+        Returns
+        -------
+        str
+            Current part with overlap applied when safe.
+        """
+        normalized_part = normalize_block_whitespace(current_part).strip()
+        normalized_prefix = normalize_block_whitespace(overlap_prefix).strip()
+
+        if not normalized_prefix:
+            return normalized_part
+
+        if normalized_part.startswith(normalized_prefix):
+            return normalized_part
+
+        candidate = f"{normalized_prefix}\n\n{normalized_part}".strip()
+        if len(candidate) <= self.settings.hard_max_chunk_chars:
+            return candidate
+
+        available_chars = self.settings.hard_max_chunk_chars - len(normalized_part) - 2
+        if available_chars < 24:
+            return normalized_part
+
+        reduced_prefix = self._trim_overlap_text(normalized_prefix[-available_chars:])
+        if not reduced_prefix:
+            return normalized_part
+
+        candidate = f"{reduced_prefix}\n\n{normalized_part}".strip()
+        if len(candidate) <= self.settings.hard_max_chunk_chars:
+            return candidate
+
+        return normalized_part
 
     def _join_cleaned_node_texts(
         self,
