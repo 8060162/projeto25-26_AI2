@@ -149,8 +149,154 @@ class ArticleSmartQualityRegressionTests(unittest.TestCase):
             all(chunk.char_count <= settings.hard_max_chunk_chars for chunk in chunks)
         )
         self.assertTrue(chunks[0].text.startswith("Definições:"))
-        self.assertTrue(any(chunk.text.startswith("2.") for chunk in chunks[1:]))
-        self.assertTrue(any(chunk.text.startswith("3.") for chunk in chunks[1:]))
+        self.assertTrue(any("2." in chunk.text for chunk in chunks[1:]))
+        self.assertTrue(any("3." in chunk.text for chunk in chunks[1:]))
+
+    def test_access_footnote_is_removed_from_final_chunk_text(self) -> None:
+        """Ensure access footnotes do not survive final article_smart cleanup."""
+        article = StructuralNode(
+            node_type="ARTICLE",
+            label="ART_10",
+            title="Disposições finais",
+            text=(
+                "Disposições finais\n"
+                "O presente regulamento entra em vigor no próximo ano letivo.\n"
+                "(1) Acessível em https://domus.ipp.pt/."
+            ),
+            page_start=1,
+            page_end=1,
+            metadata={
+                "article_number": "10",
+                "article_title": "Disposições finais",
+                "document_part": "regulation_body",
+            },
+        )
+        root = StructuralNode(
+            node_type="DOCUMENT",
+            label="DOCUMENT",
+            children=[article],
+        )
+        strategy = ArticleSmartChunkingStrategy(PipelineSettings())
+
+        chunks = strategy.build_chunks(build_document_metadata(), root)
+
+        self.assertEqual(len(chunks), 1)
+        self.assertEqual(
+            chunks[0].text,
+            "O presente regulamento entra em vigor no próximo ano letivo.",
+        )
+        self.assertNotIn("Acessível", chunks[0].text)
+        self.assertNotIn("https://", chunks[0].text)
+
+    def test_inline_heading_residue_is_removed_from_chunk_text(self) -> None:
+        """Ensure glued uppercase heading residue is removed from final text."""
+        article = StructuralNode(
+            node_type="ARTICLE",
+            label="ART_11",
+            title="Projeto/Dissertação/Estágio",
+            text=(
+                "PROJETO/DISSERTAÇÃO/ESTÁGIO Os/as estudantes de mestrado "
+                "devem formalizar a inscrição no prazo definido."
+            ),
+            page_start=1,
+            page_end=1,
+            metadata={
+                "article_number": "11",
+                "article_title": "Projeto/Dissertação/Estágio",
+                "document_part": "regulation_body",
+            },
+        )
+        root = StructuralNode(
+            node_type="DOCUMENT",
+            label="DOCUMENT",
+            children=[article],
+        )
+        strategy = ArticleSmartChunkingStrategy(PipelineSettings())
+
+        chunks = strategy.build_chunks(build_document_metadata(), root)
+
+        self.assertEqual(len(chunks), 1)
+        self.assertEqual(
+            chunks[0].text,
+            "Os/as estudantes de mestrado devem formalizar a inscrição no prazo definido.",
+        )
+        self.assertNotIn("PROJETO/DISSERTAÇÃO/ESTÁGIO", chunks[0].text)
+
+    def test_split_overlap_repeats_intro_context_for_numbered_parts(self) -> None:
+        """Ensure later legal-split chunks keep the article intro context."""
+        article = StructuralNode(
+            node_type="ARTICLE",
+            label="ART_12",
+            title="Situações especiais",
+            text=(
+                "Nas situações previstas no presente artigo:\n"
+                "1. O estudante deve submeter o pedido no prazo definido "
+                "pela escola e juntar a documentação necessária.\n"
+                "2. O estudante deve aguardar a validação administrativa "
+                "antes de concluir a inscrição.\n"
+                "3. O estudante deve regularizar os elementos em falta "
+                "logo que seja notificado."
+            ),
+            page_start=1,
+            page_end=1,
+            metadata={
+                "article_number": "12",
+                "article_title": "Situações especiais",
+                "document_part": "regulation_body",
+            },
+        )
+        root = StructuralNode(
+            node_type="DOCUMENT",
+            label="DOCUMENT",
+            children=[article],
+        )
+        settings = PipelineSettings(
+            target_chunk_chars=135,
+            min_chunk_chars=60,
+            hard_max_chunk_chars=180,
+            overlap_chars=70,
+        )
+        strategy = ArticleSmartChunkingStrategy(settings)
+
+        chunks = strategy.build_chunks(build_document_metadata(), root)
+
+        self.assertGreater(len(chunks), 1)
+        self.assertTrue(chunks[1].text.startswith("Nas situações previstas no presente artigo:"))
+        self.assertIn("2.", chunks[1].text)
+        self.assertTrue(chunks[-1].text.startswith("Nas situações previstas no presente artigo:"))
+        self.assertIn("3.", chunks[-1].text)
+
+    def test_garbled_fragment_line_is_removed_from_final_chunk_text(self) -> None:
+        """Ensure strongly garbled residue does not survive chunk cleanup."""
+        article = StructuralNode(
+            node_type="ARTICLE",
+            label="ART_13",
+            title="Objeto",
+            text=(
+                "O presente regulamento define o objeto do procedimento.\n"
+                "[]]--==//__~~\n"
+                "Aplica-se a todos os cursos conferentes de grau."
+            ),
+            page_start=1,
+            page_end=1,
+            metadata={
+                "article_number": "13",
+                "article_title": "Objeto",
+                "document_part": "regulation_body",
+            },
+        )
+        root = StructuralNode(
+            node_type="DOCUMENT",
+            label="DOCUMENT",
+            children=[article],
+        )
+        strategy = ArticleSmartChunkingStrategy(PipelineSettings())
+
+        chunks = strategy.build_chunks(build_document_metadata(), root)
+
+        self.assertEqual(len(chunks), 1)
+        self.assertNotIn("[]]--==//__~~", chunks[0].text)
+        self.assertIn("Aplica-se a todos os cursos conferentes de grau.", chunks[0].text)
 
 
 if __name__ == "__main__":
