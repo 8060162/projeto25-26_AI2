@@ -975,7 +975,7 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
         if len(current_line) < 24:
             return False
 
-        if ARTICLE_HEADER_RE.match(current_line):
+        if self._is_standalone_article_header_line(current_line):
             return False
 
         if LINE_NUMBERED_SPLIT_RE.match(current_line) is not None:
@@ -1249,7 +1249,7 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
             if DR_EDITORIAL_RE.match(line):
                 continue
 
-            if ARTICLE_HEADER_RE.match(line):
+            if self._is_standalone_article_header_line(line):
                 continue
 
             if self._looks_like_chunk_footnote_line(line):
@@ -1286,6 +1286,49 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
         cleaned = self._remove_inline_heading_residue(cleaned)
 
         return cleaned.strip()
+
+    def _is_standalone_article_header_line(self, line: str) -> bool:
+        """
+        Decide whether one line is a real article header, not a body citation.
+
+        Parameters
+        ----------
+        line : str
+            Candidate visible line.
+
+        Returns
+        -------
+        bool
+            True when the line behaves like a standalone article header.
+        """
+        normalized_line = normalize_block_whitespace(line).strip()
+        if not normalized_line:
+            return False
+
+        if ARTICLE_HEADER_RE.match(normalized_line) is None:
+            return False
+
+        suffix_match = re.match(
+            r"^\s*(?:ARTIGO|ART\.?)\s+\d+(?:\.\d+)?\s*(?:\.?\s*[ºo°])?\s*(?:[—–\-:]\s*(.*))?$",
+            normalized_line,
+            re.IGNORECASE,
+        )
+        if suffix_match is None:
+            return False
+
+        suffix = (suffix_match.group(1) or "").strip()
+        if not suffix:
+            return True
+
+        # Standalone headers may carry a short title suffix, but citation-heavy
+        # spans such as "artigo 46.o -B do Decreto-Lei ..." belong to body text.
+        if len(suffix.split()) > 8:
+            return False
+
+        if suffix[-1] in {".", ",", ";"}:
+            return False
+
+        return True
 
     def _looks_like_chunk_footnote_line(self, line: str) -> bool:
         """
@@ -1489,7 +1532,7 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
         if len(heading.split()) > 8:
             return text.strip()
 
-        if ARTICLE_HEADER_RE.match(heading):
+        if self._is_standalone_article_header_line(heading):
             return text.strip()
 
         lines[0] = body
@@ -2018,7 +2061,7 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
             if DR_EDITORIAL_RE.match(line):
                 continue
 
-            if not keep_article_header and ARTICLE_HEADER_RE.match(line):
+            if not keep_article_header and self._is_standalone_article_header_line(line):
                 continue
 
             cleaned_parts.append(line)
