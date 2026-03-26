@@ -94,6 +94,34 @@ BROKEN_ENCLITIC_HYPHEN_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Detect endings that strongly suggest a truncated or damaged text fragment.
+#
+# These patterns are intentionally limited to high-suspicion cases so later
+# stages can inspect them without treating every punctuation-free sentence as a
+# defect.
+TRAILING_DANGLING_CONNECTOR_RE = re.compile(
+    r"\b(?:a|ao|aos|as|com|da|das|de|do|dos|e|em|na|nas|no|nos|o|os|ou|para|por|sem)\s*$",
+    re.IGNORECASE,
+)
+TRAILING_FRAGMENT_PUNCTUATION_RE = re.compile(r"[-/(\[{:\"'«]\s*$")
+TRAILING_ENUMERATION_PREFIX_RE = re.compile(
+    r"(?:^|\s)(?:n\.?\s*[ºo]\s*)?\d+(?:\.\d+)*(?:\.\s*|[)\-–—]\s*)$",
+    re.IGNORECASE,
+)
+
+# Detect footer-like lines that should not survive as the visible ending of a
+# cleaned block.
+FOOTER_LIKE_ENDING_RE = re.compile(
+    r"^\s*(?:"
+    r"\d+\s*\|\s*\d+\s*[\-–—.]?|"
+    r"Pág\.\s*\d+|"
+    r"N\.?\s*º\s+\d+|"
+    r"PARTE\s+[A-Z]|"
+    r"Di[aá]rio\s+da\s+Rep[úu]blica"
+    r")\s*$",
+    re.IGNORECASE,
+)
+
 # Some extracted PDFs also break lines inside words without a hyphen.
 # Repairing those cases safely is much harder and much riskier.
 # We deliberately do not attempt aggressive word fusion here.
@@ -391,6 +419,73 @@ def repair_broken_hyphenation(text: str) -> str:
     text = repair_broken_inline_hyphenation(text)
     text = repair_broken_enclitic_hyphenation(text)
     return text
+
+
+def get_last_non_empty_line(text: str) -> str:
+    """
+    Return the last non-empty line from a block of text.
+
+    This helper supports conservative ending inspection without flattening the
+    original block structure.
+    """
+    if not text:
+        return ""
+
+    for line in reversed(normalize_line_endings(text).split("\n")):
+        if line.strip():
+            return line.strip()
+
+    return ""
+
+
+def has_footer_like_ending(text: str) -> bool:
+    """
+    Detect whether the visible block ending looks like page furniture.
+
+    This helper targets strong footer-like residue such as page counters,
+    editorial lines, or page markers. It intentionally does not attempt broad
+    heading classification.
+    """
+    last_line = get_last_non_empty_line(text)
+    if not last_line:
+        return False
+
+    return bool(FOOTER_LIKE_ENDING_RE.match(last_line))
+
+
+def has_suspicious_truncated_ending(text: str) -> bool:
+    """
+    Detect whether a text block ends like a damaged or incomplete fragment.
+
+    The detection remains conservative:
+    - ordinary prose without final punctuation is not automatically flagged
+    - only strong dangling-ending signals are treated as suspicious
+    - footer-like endings are handled separately and also count as suspicious
+    """
+    if not text:
+        return False
+
+    if has_footer_like_ending(text):
+        return True
+
+    stripped_text = text.rstrip()
+    if not stripped_text:
+        return False
+
+    last_line = get_last_non_empty_line(stripped_text)
+    if not last_line:
+        return False
+
+    if TRAILING_FRAGMENT_PUNCTUATION_RE.search(last_line):
+        return True
+
+    if TRAILING_ENUMERATION_PREFIX_RE.search(last_line):
+        return True
+
+    if TRAILING_DANGLING_CONNECTOR_RE.search(last_line):
+        return True
+
+    return False
 
 
 def unwrap_single_newlines(text: str) -> str:
