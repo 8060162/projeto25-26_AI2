@@ -7,6 +7,7 @@ from typing import Any, Callable, Dict, List, Optional, Sequence
 from Chunking.chunking.models import Chunk
 from Chunking.config.settings import PipelineSettings
 from Chunking.utils.text import (
+    has_suspicious_truncated_ending,
     join_hyphenated_linebreaks,
     repair_broken_enclitic_hyphenation,
     repair_broken_inline_hyphenation,
@@ -45,6 +46,21 @@ BROKEN_ENCLITIC_HYPHEN_RE = re.compile(
     re.IGNORECASE,
 )
 HYPHENATED_LINEBREAK_RE = re.compile(r"([A-Za-zÀ-ÿ])-\n([A-Za-zÀ-ÿ])")
+NUMBERED_ITEM_PREFIX_RE = re.compile(
+    r"^\s*(?:n\.?\s*[ºo]\s*)?\d+(?:\.\d+)*(?:\.\s+|\)\s+|\s+[—–\-]\s+)",
+    re.IGNORECASE,
+)
+LETTERED_ITEM_PREFIX_RE = re.compile(r"^\s*[a-z]\)\s+", re.IGNORECASE)
+ACCESS_FOOTNOTE_RE = re.compile(
+    r"^\s*\(?\d+\)?\s+"
+    r"(?:Acess[íi]vel|Dispon[íi]vel|Publicado|Publicada|Publicados|Publicadas)\b",
+    re.IGNORECASE,
+)
+FOOTNOTE_URL_RE = re.compile(r"^\s*\(?\d+\)?\s+.*(?:https?://|www\.)", re.IGNORECASE)
+SUSPICIOUS_GARBLED_LINE_RE = re.compile(
+    r"^[^A-Za-zÀ-ÿ]{0,3}(?:[\*\+\-/=<>\\\[\]\{\}_`~]{2,}|[0-9\W]{12,})$"
+)
+TITLE_SEPARATOR_RE = re.compile(r"\s*\|\s*")
 
 TRACEABILITY_METADATA_KEYS = (
     "article_number",
@@ -120,6 +136,30 @@ class ChunkQualityValidator:
         broken_hyphenation_issue = self._validate_broken_hyphenation(chunk)
         if broken_hyphenation_issue is not None:
             issues.append(broken_hyphenation_issue)
+
+        footnote_issue = self._validate_note_or_footnote_leakage(chunk)
+        if footnote_issue is not None:
+            issues.append(footnote_issue)
+
+        title_leakage_issue = self._validate_title_leakage(chunk)
+        if title_leakage_issue is not None:
+            issues.append(title_leakage_issue)
+
+        garbled_text_issue = self._validate_garbled_text(chunk)
+        if garbled_text_issue is not None:
+            issues.append(garbled_text_issue)
+
+        truncated_ending_issue = self._validate_truncated_or_abrupt_ending(chunk)
+        if truncated_ending_issue is not None:
+            issues.append(truncated_ending_issue)
+
+        undersized_issue = self._validate_problematic_undersized_chunk(chunk)
+        if undersized_issue is not None:
+            issues.append(undersized_issue)
+
+        autonomy_issue = self._validate_low_semantic_autonomy(chunk)
+        if autonomy_issue is not None:
+            issues.append(autonomy_issue)
 
         traceability_issue = self._validate_traceability(chunk)
         if traceability_issue is not None:
@@ -330,6 +370,224 @@ class ChunkQualityValidator:
             "evidence": unique_evidence[:3],
         }
 
+    def _validate_note_or_footnote_leakage(
+        self,
+        chunk: Chunk,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Detect publication or access notes that should not survive in `text`.
+
+        Parameters
+        ----------
+        chunk : Chunk
+            Chunk under validation.
+
+        Returns
+        -------
+        Optional[Dict[str, Any]]
+            Issue payload when note-like leakage remains visible.
+        """
+        evidence: List[str] = []
+
+        for raw_line in chunk.text.splitlines():
+            line = raw_line.strip()
+            if not line:
+                continue
+
+            if ACCESS_FOOTNOTE_RE.match(line) or FOOTNOTE_URL_RE.match(line):
+                evidence.append(line)
+
+        if not evidence:
+            return None
+
+        return {
+            "code": "note_or_footnote_in_text",
+            "severity": "error",
+            "message": "Visible chunk text still contains note or footnote residue.",
+            "evidence": evidence[:3],
+        }
+
+    def _validate_title_leakage(self, chunk: Chunk) -> Optional[Dict[str, Any]]:
+        """
+        Detect article titles that leaked into visible body text.
+
+        Parameters
+        ----------
+        chunk : Chunk
+            Chunk under validation.
+
+        Returns
+        -------
+        Optional[Dict[str, Any]]
+            Issue payload when the chunk starts with its own title.
+        """
+        article_title = self._get_article_title(chunk)
+        if not article_title:
+            return None
+
+        first_line = self._get_first_non_empty_line(chunk.text)
+        if not first_line:
+            return None
+
+        normalized_title = self._normalize_title_signature(article_title)
+        normalized_first_line = self._normalize_title_signature(first_line)
+
+        if not normalized_title or len(normalized_title) < 6:
+            return None
+
+        if normalized_first_line == normalized_title:
+            evidence = first_line
+        elif normalized_first_line.startswith(normalized_title):
+            evidence = first_line
+        else:
+            return None
+
+        return {
+            "code": "title_leakage_in_text",
+            "severity": "error",
+            "message": "Visible chunk text still starts with leaked title content.",
+            "evidence": [evidence],
+        }
+
+    def _validate_garbled_text(self, chunk: Chunk) -> Optional[Dict[str, Any]]:
+        """
+        Detect clearly garbled lines that remain in chunk text.
+
+        Parameters
+        ----------
+        chunk : Chunk
+            Chunk under validation.
+
+        Returns
+        -------
+        Optional[Dict[str, Any]]
+            Issue payload when visible text still contains corruption.
+        """
+        evidence: List[str] = []
+
+        for raw_line in chunk.text.splitlines():
+            line = raw_line.strip()
+            if not line:
+                continue
+
+            if SUSPICIOUS_GARBLED_LINE_RE.match(line):
+                evidence.append(line)
+
+        if not evidence:
+            return None
+
+        return {
+            "code": "garbled_text_in_chunk",
+            "severity": "error",
+            "message": "Visible chunk text still contains garbled or non-semantic residue.",
+            "evidence": evidence[:3],
+        }
+
+    def _validate_truncated_or_abrupt_ending(
+        self,
+        chunk: Chunk,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Detect chunk endings that still look damaged or abruptly cut.
+
+        Parameters
+        ----------
+        chunk : Chunk
+            Chunk under validation.
+
+        Returns
+        -------
+        Optional[Dict[str, Any]]
+            Issue payload when the final visible ending looks truncated.
+        """
+        if not has_suspicious_truncated_ending(chunk.text):
+            return None
+
+        return {
+            "code": "truncated_or_abrupt_chunk_ending",
+            "severity": "error",
+            "message": "Chunk ends with a suspicious truncated or abrupt fragment.",
+            "evidence": [self._get_last_non_empty_line(chunk.text)],
+        }
+
+    def _validate_problematic_undersized_chunk(
+        self,
+        chunk: Chunk,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Detect short split fragments that are unlikely to stand alone well.
+
+        Parameters
+        ----------
+        chunk : Chunk
+            Chunk under validation.
+
+        Returns
+        -------
+        Optional[Dict[str, Any]]
+            Issue payload when a short split fragment looks semantically weak.
+        """
+        if not self._is_split_chunk(chunk):
+            return None
+
+        visible_length = len((chunk.text or "").strip())
+        short_threshold = min(self.settings.min_chunk_chars, 180)
+        if visible_length >= short_threshold:
+            return None
+
+        signals = self._collect_semantic_weakness_signals(chunk)
+        if not signals:
+            return None
+
+        return {
+            "code": "problematic_undersized_chunk",
+            "severity": "error",
+            "message": "Chunk is an undersized split fragment with weak standalone quality.",
+            "evidence": {
+                "char_count": visible_length,
+                "threshold": short_threshold,
+                "signals": signals[:3],
+            },
+        }
+
+    def _validate_low_semantic_autonomy(
+        self,
+        chunk: Chunk,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Detect split chunks that still read like semantically orphaned fragments.
+
+        Parameters
+        ----------
+        chunk : Chunk
+            Chunk under validation.
+
+        Returns
+        -------
+        Optional[Dict[str, Any]]
+            Issue payload when the chunk lacks enough standalone context.
+        """
+        if not self._is_split_chunk(chunk):
+            return None
+
+        signals = self._collect_semantic_weakness_signals(chunk)
+        if "starts_with_numbered_item" not in signals and "starts_with_lettered_item" not in signals:
+            return None
+
+        if "too_few_words" not in signals and "missing_terminal_punctuation" not in signals:
+            return None
+
+        return {
+            "code": "low_semantic_autonomy_chunk",
+            "severity": "error",
+            "message": "Split chunk still behaves like a semantically orphaned fragment.",
+            "evidence": {
+                "chunk_reason": getattr(chunk, "chunk_reason", ""),
+                "signals": signals[:4],
+                "opening_line": self._get_first_non_empty_line(chunk.text),
+            },
+        }
+
     def _collect_broken_hyphenation_evidence(self, text: str) -> List[str]:
         """
         Collect only hyphenation patterns that the shared repair helpers change.
@@ -421,6 +679,140 @@ class ChunkQualityValidator:
             evidence.append(matched_text)
 
         return evidence
+
+    def _collect_semantic_weakness_signals(self, chunk: Chunk) -> List[str]:
+        """
+        Collect deterministic signals for weak standalone chunk quality.
+
+        Parameters
+        ----------
+        chunk : Chunk
+            Chunk under validation.
+
+        Returns
+        -------
+        List[str]
+            Short signal labels explaining why the chunk looks weak.
+        """
+        text = (chunk.text or "").strip()
+        if not text:
+            return ["empty_text"]
+
+        first_line = self._get_first_non_empty_line(text)
+        word_count = len(re.findall(r"\b[A-Za-zÀ-ÿ0-9]+\b", text))
+        signals: List[str] = []
+
+        if NUMBERED_ITEM_PREFIX_RE.match(first_line):
+            signals.append("starts_with_numbered_item")
+
+        if LETTERED_ITEM_PREFIX_RE.match(first_line):
+            signals.append("starts_with_lettered_item")
+
+        if word_count < 8:
+            signals.append("too_few_words")
+
+        if text[-1] not in ".!?;:":
+            signals.append("missing_terminal_punctuation")
+
+        return signals
+
+    def _is_split_chunk(self, chunk: Chunk) -> bool:
+        """
+        Decide whether the chunk was produced as part of a larger split unit.
+
+        Parameters
+        ----------
+        chunk : Chunk
+            Chunk under validation.
+
+        Returns
+        -------
+        bool
+            True when metadata or chunk reason indicate split output.
+        """
+        metadata = getattr(chunk, "metadata", {}) or {}
+        if metadata.get("part_count", 1) and metadata.get("part_count", 1) > 1:
+            return True
+
+        chunk_reason = getattr(chunk, "chunk_reason", "") or ""
+        return "split" in chunk_reason
+
+    def _get_article_title(self, chunk: Chunk) -> str:
+        """
+        Return the best available article title candidate from chunk metadata.
+
+        Parameters
+        ----------
+        chunk : Chunk
+            Chunk under validation.
+
+        Returns
+        -------
+        str
+            Article title candidate when available.
+        """
+        metadata = getattr(chunk, "metadata", {}) or {}
+        return str(metadata.get("article_title") or "").strip()
+
+    def _normalize_title_signature(self, text: str) -> str:
+        """
+        Normalize title-like text into a comparison-friendly signature.
+
+        Parameters
+        ----------
+        text : str
+            Candidate title or line.
+
+        Returns
+        -------
+        str
+            Folded signature for conservative prefix comparison.
+        """
+        normalized = TITLE_SEPARATOR_RE.sub(" ", text or "")
+        normalized = normalized.strip(" .;:-")
+        return self._fold_editorial_text(normalized)
+
+    def _get_first_non_empty_line(self, text: str) -> str:
+        """
+        Return the first non-empty line from a visible chunk block.
+
+        Parameters
+        ----------
+        text : str
+            Candidate text block.
+
+        Returns
+        -------
+        str
+            First non-empty line, or an empty string.
+        """
+        for raw_line in (text or "").splitlines():
+            line = raw_line.strip()
+            if line:
+                return line
+
+        return ""
+
+    def _get_last_non_empty_line(self, text: str) -> str:
+        """
+        Return the last non-empty line from a visible chunk block.
+
+        Parameters
+        ----------
+        text : str
+            Candidate text block.
+
+        Returns
+        -------
+        str
+            Last non-empty line, or an empty string.
+        """
+        for raw_line in reversed((text or "").splitlines()):
+            line = raw_line.strip()
+            if line:
+                return line
+
+        return ""
 
     def _validate_traceability(self, chunk: Chunk) -> Optional[Dict[str, Any]]:
         """
