@@ -604,6 +604,10 @@ def _build_chunk_quality_summary(
     chunk_reasons = CounterLike()
     validator = ChunkQualityValidator(settings)
     validation_report = validator.validate_chunks(chunks)
+    next_phase_decision = _build_next_phase_decision(
+        strategy_name=strategy_name,
+        validation_report=validation_report,
+    )
 
     for chunk in chunks:
         chunk_reasons.increment(getattr(chunk, "chunk_reason", "") or "unspecified")
@@ -637,11 +641,10 @@ def _build_chunk_quality_summary(
             "avg_chars": (sum(char_counts) / len(char_counts)) if char_counts else 0,
         },
         "overall_status": validation_report["overall_status"],
-        "acceptable_for_next_phase": validation_report["overall_status"] == "pass",
-        "next_phase_decision": _build_next_phase_decision(
-            strategy_name=strategy_name,
-            validation_report=validation_report,
-        ),
+        "acceptable_for_next_phase": next_phase_decision["is_acceptable"],
+        "blocking_failure_count": next_phase_decision["blocking_failure_count"],
+        "blocking_failure_types": next_phase_decision["blocking_failure_types"],
+        "next_phase_decision": next_phase_decision,
         "validator_summary": _build_validator_summary(validation_report),
         "chunk_neighbor_links_complete": all(
             (index == 0 or getattr(chunks[index], "prev_chunk_id", None) is not None)
@@ -670,12 +673,18 @@ def _build_validator_summary(validation_report: Dict[str, object]) -> Dict[str, 
     """
     issue_type_counts = dict(validation_report.get("issue_type_counts", {}))
     issue_examples = dict(validation_report.get("issue_examples", {}))
+    blocking_failure_types = _get_sorted_blocking_failure_types(validation_report)
+    blocking_failure_count = sum(issue_type_counts.values())
+    invalid_chunk_count = validation_report.get("invalid_chunk_count", 0)
 
     return {
         "chunk_count": validation_report.get("chunk_count", 0),
         "valid_chunk_count": validation_report.get("valid_chunk_count", 0),
-        "invalid_chunk_count": validation_report.get("invalid_chunk_count", 0),
+        "invalid_chunk_count": invalid_chunk_count,
         "overall_status": validation_report.get("overall_status", "fail"),
+        "has_blocking_failures": invalid_chunk_count > 0,
+        "blocking_failure_count": blocking_failure_count,
+        "blocking_failure_types": blocking_failure_types,
         "failure_type_counts": issue_type_counts,
         "failure_examples": issue_examples,
         "failed_chunk_ids": [
@@ -707,18 +716,63 @@ def _build_next_phase_decision(
         Deterministic acceptance decision for downstream consumption.
     """
     is_acceptable = validation_report.get("overall_status") == "pass"
+    issue_type_counts = dict(validation_report.get("issue_type_counts", {}))
+    blocking_failure_types = _get_sorted_blocking_failure_types(validation_report)
+    blocking_failure_count = sum(issue_type_counts.values())
+    failed_chunk_ids = [
+        report.get("chunk_id")
+        for report in validation_report.get("chunk_reports", [])
+        if not report.get("is_valid") and report.get("chunk_id")
+    ][:10]
+
+    if is_acceptable:
+        decision_reason = "Validator reported no blocking chunk-quality failures."
+    else:
+        failure_label = ", ".join(blocking_failure_types[:3])
+        if len(blocking_failure_types) > 3:
+            failure_label = f"{failure_label}, ..."
+        decision_reason = (
+            "Validator reported blocking chunk-quality failures for downstream "
+            f"embedding consumption: {failure_label}."
+        )
 
     return {
         "target_phase": "embedding_consumption",
         "strategy": strategy_name,
         "decision": "accept" if is_acceptable else "reject",
         "is_acceptable": is_acceptable,
-        "reason": (
-            "Validator reported no blocking chunk-quality failures."
-            if is_acceptable
-            else "Validator reported chunk-quality failures that block downstream embedding consumption."
-        ),
+        "blocking_failure_count": blocking_failure_count,
+        "blocking_failure_types": blocking_failure_types,
+        "failed_chunk_ids": failed_chunk_ids,
+        "reason": decision_reason,
     }
+
+
+def _get_sorted_blocking_failure_types(
+    validation_report: Dict[str, object],
+) -> List[str]:
+    """
+    Order blocking failure codes by frequency for stable summary export.
+
+    Parameters
+    ----------
+    validation_report : Dict[str, object]
+        Aggregate validator output for one chunk sequence.
+
+    Returns
+    -------
+    List[str]
+        Blocking validator issue codes ordered by descending frequency.
+    """
+    issue_type_counts = dict(validation_report.get("issue_type_counts", {}))
+
+    return [
+        issue_code
+        for issue_code, _count in sorted(
+            issue_type_counts.items(),
+            key=lambda item: (-item[1], item[0]),
+        )
+    ]
 
 
 def _count_node_type(node: StructuralNode, node_type: str) -> int:
