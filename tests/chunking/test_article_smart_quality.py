@@ -306,6 +306,44 @@ class ArticleSmartQualityRegressionTests(unittest.TestCase):
             chunks[0].text,
         )
 
+    def test_default_settings_keep_article_smart_chunks_within_1024_chars(self) -> None:
+        """Ensure the default chunk-size source of truth respects the 1024 ceiling."""
+        article = StructuralNode(
+            node_type="ARTICLE",
+            label="ART_18",
+            title="Medidas aplicáveis",
+            text="\n".join(
+                [
+                    (
+                        f"{number}. O presente regulamento estabelece a medida {number} "
+                        "com detalhe suficiente para manter contexto juridico, "
+                        "preservar autonomia semantica e exigir divisao controlada."
+                    )
+                    for number in range(1, 10)
+                ]
+            ),
+            page_start=1,
+            page_end=1,
+            metadata={
+                "article_number": "18",
+                "article_title": "Medidas aplicáveis",
+                "document_part": "regulation_body",
+            },
+        )
+        root = StructuralNode(
+            node_type="DOCUMENT",
+            label="DOCUMENT",
+            children=[article],
+        )
+        settings = PipelineSettings()
+        strategy = ArticleSmartChunkingStrategy(settings)
+
+        chunks = strategy.build_chunks(build_document_metadata(), root)
+
+        self.assertGreater(len(chunks), 1)
+        self.assertEqual(settings.hard_max_chunk_chars, 1024)
+        self.assertTrue(all(chunk.char_count <= 1024 for chunk in chunks))
+
     def test_garbled_fragment_line_is_removed_from_final_chunk_text(self) -> None:
         """Ensure strongly garbled residue does not survive chunk cleanup."""
         article = StructuralNode(
