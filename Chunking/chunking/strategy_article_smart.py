@@ -312,6 +312,10 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
                     group_page_start, group_page_end = self._group_page_range(group)
 
                     if len(group_text) > self.settings.target_chunk_chars:
+                        split_candidate_text = self._join_cleaned_node_texts(
+                            nodes=group,
+                            remove_structural_prefixes=False,
+                        )
                         paragraph_groups, split_mode = self._split_grouped_node_texts(
                             nodes=group,
                             source_node=article,
@@ -412,6 +416,10 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
                     group_page_start, group_page_end = self._group_page_range(group)
 
                     if len(group_text) > self.settings.target_chunk_chars:
+                        split_candidate_text = self._join_cleaned_node_texts(
+                            nodes=group,
+                            remove_structural_prefixes=False,
+                        )
                         paragraph_groups, split_mode = self._split_grouped_node_texts(
                             nodes=group,
                             source_node=article,
