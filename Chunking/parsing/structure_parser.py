@@ -124,7 +124,7 @@ INLINE_TITLE_BODY_SPLIT_RE = re.compile(
 # Detect likely body starts inside an article header suffix so the parser can
 # recover the clean title and move the remaining text back into article body.
 HEADER_SUFFIX_BODY_START_RE = re.compile(
-    r"(?P<body>"
+    r"(?:^|\s)(?P<body>"
     r"(?:n\.?\s*[ºo]\s*)?\d+(?:\.\d+)*(?:\.\s+|\)\s+|\s+[—–\-]\s+|\s+)"
     r"|[a-z]\)\s+"
     r"|(?:O|A|Os|As|No|Na|Nos|Nas|Em|Para|Por|Quando|Sempre|Caso|Se|Nos\s+termos|Deve|Devem|Pode|Podem|É|São)\b"
@@ -162,6 +162,19 @@ SUSPICIOUS_GARBLED_LINE_RE = re.compile(
 # Detect page-counter-like or synthetic page residues that sometimes survive
 # normalization and later pollute PREAMBLE or article bodies.
 PAGE_COUNTER_RE = re.compile(r"^\s*\d+\s*/\s*\d+\s*$")
+
+# Detect citation-heavy header suffixes that actually belong to body prose.
+#
+# Example:
+# - "B do Decreto-Lei n.o 74/2006, de 24 de março"
+#
+# These fragments may appear after "artigo 46.o -" inside citations and must
+# not be promoted to article titles.
+CITATION_HEAVY_SUFFIX_RE = re.compile(
+    r"\b(?:Decreto|Lei|Regulamento|Estatutos?|Código|RJIES)\b.*"
+    r"(?:\bn\.?\s*[ºo]\b|\b\d{1,4}/\d{2,4}\b|\bde\s+\d{1,2}\s+de\b|,)",
+    re.IGNORECASE,
+)
 
 
 class StructureParser:
@@ -439,7 +452,7 @@ class StructureParser:
             # ---------------------------------------------------------
             # Article detection
             # ---------------------------------------------------------
-            article_match = ARTICLE_HEADER_RE.match(line)
+            article_match = self._match_article_header(line)
             if article_match:
                 if not first_article_seen and pre_article_lines:
                     self._attach_pre_article_content(root, pre_article_lines)
@@ -951,7 +964,7 @@ class StructureParser:
         if not line:
             return False
 
-        if ARTICLE_HEADER_RE.match(line):
+        if self._match_article_header(line):
             return False
 
         if CHAPTER_HEADER_RE.match(line):
@@ -970,6 +983,9 @@ class StructureParser:
             return False
 
         if self._looks_like_garbled_line(line):
+            return False
+
+        if CITATION_HEAVY_SUFFIX_RE.search(line):
             return False
 
         if len(line) > 120:
@@ -1132,6 +1148,56 @@ class StructureParser:
                 continue
 
             return title, body
+
+        return None
+
+    def _match_article_header(self, line: str) -> Optional[re.Match[str]]:
+        """
+        Match article headers only when the line looks structurally plausible.
+
+        Why this helper exists
+        ----------------------
+        Legal prose often contains internal references such as:
+
+            artigo 46.o -B do Decreto-Lei n.o 74/2006
+
+        A regex-only match would incorrectly treat those citations as new
+        article headers, truncating the current article body and creating
+        spurious ARTICLE nodes.
+
+        This helper keeps article detection conservative:
+        - plain markers such as "Artigo 5.o" remain valid
+        - inline title variants such as "Artigo 5 - Objeto" remain valid
+        - merged header/body lines that can be cleanly split remain valid
+        - citation-like body lines are rejected
+
+        Parameters
+        ----------
+        line : str
+            Candidate line from normalized parser input.
+
+        Returns
+        -------
+        Optional[re.Match[str]]
+            The regex match when the line behaves like a real article header,
+            otherwise None.
+        """
+        if not line:
+            return None
+
+        match = ARTICLE_HEADER_RE.match(line)
+        if not match:
+            return None
+
+        header_suffix = (match.group(2) or "").strip()
+        if not header_suffix:
+            return match
+
+        if self._is_probable_title_line(header_suffix):
+            return match
+
+        if self._split_header_suffix_title_and_body(header_suffix) is not None:
+            return match
 
         return None
 
