@@ -5,6 +5,13 @@ from typing import Any, Dict, Iterator, List, Optional, Sequence, Tuple
 
 from Chunking.chunking.models import Chunk, DocumentMetadata, StructuralNode
 from Chunking.chunking.strategy_base import BaseChunkingStrategy
+from Chunking.config.patterns import (
+    LEADING_PAGE_MARKER_RE,
+    LOOSE_PAGE_COUNTER_LINE_RE,
+    PROSE_START_RE,
+    SUSPICIOUS_GARBLED_LINE_RE,
+    UPPERCASE_HEAVY_RE,
+)
 from Chunking.utils.text import normalize_block_whitespace, split_paragraphs
 
 
@@ -29,8 +36,6 @@ from Chunking.utils.text import normalize_block_whitespace, split_paragraphs
 # ============================================================================
 
 INLINE_PAGE_COUNTER_RE = re.compile(r"^\s*\d+\s*\|\s*\d+\s*$")
-LOOSE_PAGE_COUNTER_RE = re.compile(r"^\s*\d+\s*\|\s*\d+\s*[\-–—.]?\s*$")
-LEADING_PAGE_MARKER_RE = re.compile(r"^\s*Pág\.\s*\d+\s*", re.IGNORECASE)
 
 DR_EDITORIAL_RE = re.compile(
     r"^\s*(N\.?\s*º|PARTE\s+[A-Z]|Diário da República)\b",
@@ -49,15 +54,6 @@ NUMBERED_ITEM_PREFIX_RE = re.compile(
 
 LETTERED_ITEM_PREFIX_RE = re.compile(r"^\s*[a-z]\)\s+", re.IGNORECASE)
 
-UPPERCASE_HEADING_RE = re.compile(
-    r"^[A-ZÁÀÂÃÉÈÊÍÌÎÓÒÔÕÚÙÛÇ0-9 /().,\-–—ºª]{3,}$"
-)
-
-PROSE_START_RE = re.compile(
-    r"^\s*(?:O|A|Os|As|No|Na|Nos|Nas|Em|Para|Por|Quando|Sempre|Caso|Se|Nos\s+termos|Deve|Devem|Pode|Podem|É|São)\b",
-    re.IGNORECASE,
-)
-
 TITLE_SEPARATOR_RE = re.compile(r"\s*\|\s*")
 
 LINE_NUMBERED_SPLIT_RE = re.compile(
@@ -75,21 +71,20 @@ INLINE_NUMBERED_SPLIT_RE = re.compile(
 INLINE_LETTERED_SPLIT_RE = re.compile(r"[a-z]\)\s+", re.IGNORECASE)
 
 ACCESS_FOOTNOTE_RE = re.compile(
-    r"^\s*\(?\d+\)?\s+"
+    r"^\s*(?:\(?\d+\)?\s+)?"
     r"(?:Acess[íi]vel|Dispon[íi]vel|Publicado|Publicada|Publicados|Publicadas)\b",
     re.IGNORECASE,
 )
 
-FOOTNOTE_URL_RE = re.compile(r"^\s*\(?\d+\)?\s+.*(?:https?://|www\.)", re.IGNORECASE)
+FOOTNOTE_URL_RE = re.compile(
+    r"^\s*(?:\(?\d+\)?\s+)?(?:cf\.\s+|ver\s+)?(?:.*(?:https?://|www\.))",
+    re.IGNORECASE,
+)
 
 INLINE_HEADING_WITH_PROSE_RE = re.compile(
     r"^(?P<heading>[A-ZÁÀÂÃÉÈÊÍÌÎÓÒÔÕÚÙÛÇ0-9 /().,\-–—ºª]{5,80})\s+"
     r"(?P<body>(?:O|A|Os|As|No|Na|Nos|Nas|Em|Para|Por|Quando|Sempre|Caso|Se|"
     r"Nos\s+termos|Deve|Devem|Pode|Podem|É|São)\b.*)$"
-)
-
-SUSPICIOUS_GARBLED_LINE_RE = re.compile(
-    r"^[^A-Za-zÀ-ÿ]{0,3}(?:[\*\+\-/=<>\\\[\]\{\}_`~]{2,}|[0-9\W]{12,})$"
 )
 
 
@@ -739,13 +734,14 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
 
         groups: List[str] = []
         current: List[str] = []
+        split_target_chars = self._split_target_chars()
 
         for paragraph in paragraphs:
             candidate = "\n\n".join(current + [paragraph]).strip()
 
             should_flush = (
                 current
-                and len(candidate) > self.settings.target_chunk_chars
+                and len(candidate) > split_target_chars
                 and len("\n\n".join(current)) >= self.settings.min_chunk_chars
             )
 
@@ -761,7 +757,7 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
         # Merge a very small trailing group into the previous one.
         if len(groups) >= 2 and len(groups[-1]) < self.settings.min_chunk_chars:
             merged_text = f"{groups[-2]}\n\n{groups[-1]}".strip()
-            if len(merged_text) <= self.settings.target_chunk_chars:
+            if len(merged_text) <= split_target_chars:
                 groups[-2] = merged_text
                 groups.pop()
 
@@ -796,7 +792,7 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
             return paragraph_groups, "paragraph_split"
 
         only_group = paragraph_groups[0].strip()
-        if len(only_group) <= self.settings.target_chunk_chars:
+        if len(only_group) <= self._split_target_chars():
             return paragraph_groups, "paragraph_split"
 
         legal_groups = self._split_by_legal_signals(only_group)
@@ -1096,6 +1092,7 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
 
         groups: List[str] = []
         current_parts: List[str] = []
+        split_target_chars = self._split_target_chars()
 
         for part in parts:
             cleaned_part = normalize_block_whitespace(part).strip()
@@ -1107,7 +1104,7 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
 
             should_flush = (
                 bool(current_parts)
-                and len(candidate) > self.settings.target_chunk_chars
+                and len(candidate) > split_target_chars
                 and len(current_text) >= self.settings.min_chunk_chars
             )
 
@@ -1122,11 +1119,38 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
 
         if len(groups) >= 2 and len(groups[-1]) < self.settings.min_chunk_chars:
             merged_text = f"{groups[-2]}\n\n{groups[-1]}".strip()
-            if len(merged_text) <= self.settings.target_chunk_chars:
+            if len(merged_text) <= split_target_chars:
                 groups[-2] = merged_text
                 groups.pop()
 
         return groups
+
+    def _split_target_chars(self) -> int:
+        """
+        Reserve headroom for visible overlap when split chunks need continuity.
+
+        Returns
+        -------
+        int
+            Effective target size for split-only grouping decisions.
+        """
+        if self.settings.overlap_chars <= 0:
+            return self.settings.target_chunk_chars
+
+        reserved_overlap = min(self.settings.overlap_chars, 160)
+        reserved_separator = 2
+        reserved_padding = 24
+        effective_target = (
+            self.settings.hard_max_chunk_chars
+            - reserved_overlap
+            - reserved_separator
+            - reserved_padding
+        )
+
+        return max(
+            self.settings.min_chunk_chars,
+            min(self.settings.target_chunk_chars, effective_target),
+        )
 
     def _split_grouped_node_texts(
         self,
@@ -1251,7 +1275,7 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
             if INLINE_PAGE_COUNTER_RE.match(line):
                 continue
 
-            if LOOSE_PAGE_COUNTER_RE.match(line):
+            if LOOSE_PAGE_COUNTER_LINE_RE.match(line):
                 continue
 
             if DR_EDITORIAL_RE.match(line):
@@ -1500,7 +1524,7 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
 
         first_line = lines[0]
         if (
-            UPPERCASE_HEADING_RE.match(first_line)
+            UPPERCASE_HEAVY_RE.match(first_line)
             and len(first_line.split()) <= 8
             and len(lines) >= 2
             and PROSE_START_RE.match(lines[1])
@@ -1653,16 +1677,36 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
             Trailing overlap text.
         """
         paragraphs = split_paragraphs(text)
-        if paragraphs:
-            last_paragraph = normalize_block_whitespace(paragraphs[-1]).strip()
-            if (
-                last_paragraph
-                and len(last_paragraph) <= self.settings.overlap_chars
-                and not self._part_starts_with_legal_marker(last_paragraph)
-            ):
-                return last_paragraph
+        candidate_blocks: List[str] = []
 
-        return self._trim_overlap_text(text)
+        if paragraphs:
+            candidate_blocks.append(paragraphs[-1])
+
+        candidate_blocks.append(text)
+
+        seen_candidates = set()
+        for block in candidate_blocks:
+            normalized_block = normalize_block_whitespace(block).strip()
+            if not normalized_block or normalized_block in seen_candidates:
+                continue
+
+            seen_candidates.add(normalized_block)
+
+            if (
+                len(normalized_block) <= self.settings.overlap_chars
+                and self._is_coherent_overlap_prefix(normalized_block)
+            ):
+                return normalized_block
+
+            trailing_sentence = self._extract_trailing_sentence(normalized_block)
+            if (
+                trailing_sentence
+                and len(trailing_sentence) <= self.settings.overlap_chars
+                and self._is_coherent_overlap_prefix(trailing_sentence)
+            ):
+                return trailing_sentence
+
+        return ""
 
     def _trim_overlap_text(self, text: str) -> str:
         """
@@ -1691,6 +1735,58 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
             trimmed = trimmed[first_space + 1 :].strip()
 
         return trimmed
+
+    def _extract_trailing_sentence(self, text: str) -> str:
+        """
+        Extract the last sentence-like unit when it fits overlap safely.
+
+        Parameters
+        ----------
+        text : str
+            Candidate overlap source text.
+
+        Returns
+        -------
+        str
+            Last sentence-like unit, or an empty string when none is reliable.
+        """
+        normalized_text = normalize_block_whitespace(text).strip()
+        if not normalized_text:
+            return ""
+
+        sentence_boundaries = list(re.finditer(r"[.!?;:]\s+", normalized_text))
+        if not sentence_boundaries:
+            return ""
+
+        trailing_sentence = normalized_text[sentence_boundaries[-1].end() :].strip()
+        return trailing_sentence
+
+    def _is_coherent_overlap_prefix(self, text: str) -> bool:
+        """
+        Decide whether overlap text starts cleanly enough to be shown again.
+
+        Parameters
+        ----------
+        text : str
+            Candidate overlap prefix.
+
+        Returns
+        -------
+        bool
+            True when the overlap behaves like a visible context prefix.
+        """
+        normalized_text = normalize_block_whitespace(text).strip()
+        if not normalized_text:
+            return False
+
+        first_character = normalized_text[0]
+        if first_character in {",", ";", ":", "-", "—", "–", ")", "]"}:
+            return False
+
+        if normalized_text[:1].islower():
+            return False
+
+        return True
 
     def _part_starts_with_legal_marker(self, text: str) -> bool:
         """
@@ -2063,7 +2159,7 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
             if INLINE_PAGE_COUNTER_RE.match(line):
                 continue
 
-            if LOOSE_PAGE_COUNTER_RE.match(line):
+            if LOOSE_PAGE_COUNTER_LINE_RE.match(line):
                 continue
 
             if DR_EDITORIAL_RE.match(line):
