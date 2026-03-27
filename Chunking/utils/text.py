@@ -488,6 +488,47 @@ def has_suspicious_truncated_ending(text: str) -> bool:
     return False
 
 
+def fold_editorial_text(
+    text: str,
+    *,
+    preserve_word_boundaries: bool = True,
+) -> str:
+    """
+    Fold editorial-like text into a stable comparison form.
+
+    This helper exists for conservative cross-layer comparison of short
+    editorial or publication residue. It removes accent and casing variation
+    while letting callers choose whether word boundaries should remain visible.
+
+    Parameters
+    ----------
+    text : str
+        Candidate text to fold.
+
+    preserve_word_boundaries : bool
+        When True, collapse non-alphanumeric separators into single spaces.
+        When False, remove those separators entirely.
+
+    Returns
+    -------
+    str
+        Folded comparison string suitable for conservative matching.
+    """
+    if not text:
+        return ""
+
+    normalized_text = unicodedata.normalize("NFKD", text)
+    without_marks = "".join(
+        character
+        for character in normalized_text
+        if not unicodedata.combining(character)
+    )
+    lowered_text = without_marks.lower()
+    separator = " " if preserve_word_boundaries else ""
+    folded_text = re.sub(r"[^a-z0-9]+", separator, lowered_text)
+    return folded_text.strip() if preserve_word_boundaries else folded_text
+
+
 def unwrap_single_newlines(text: str) -> str:
     """
     Convert most single newlines into spaces while preserving paragraph breaks.
