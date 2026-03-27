@@ -51,16 +51,25 @@ NUMBERED_ITEM_PREFIX_RE = re.compile(
     re.IGNORECASE,
 )
 LETTERED_ITEM_PREFIX_RE = re.compile(r"^\s*[a-z]\)\s+", re.IGNORECASE)
+DASH_CONTINUATION_PREFIX_RE = re.compile(r"^\s*[—–-]\s+")
 ACCESS_FOOTNOTE_RE = re.compile(
     r"^\s*\(?\d+\)?\s+"
     r"(?:Acess[íi]vel|Dispon[íi]vel|Publicado|Publicada|Publicados|Publicadas)\b",
     re.IGNORECASE,
 )
 FOOTNOTE_URL_RE = re.compile(r"^\s*\(?\d+\)?\s+.*(?:https?://|www\.)", re.IGNORECASE)
+STANDALONE_URL_LINE_RE = re.compile(r"^\s*(?:https?://|www\.)\S+\s*$", re.IGNORECASE)
 SUSPICIOUS_GARBLED_LINE_RE = re.compile(
     r"^[^A-Za-zÀ-ÿ]{0,3}(?:[\*\+\-/=<>\\\[\]\{\}_`~]{2,}|[0-9\W]{12,})$"
 )
 TITLE_SEPARATOR_RE = re.compile(r"\s*\|\s*")
+DOCUMENT_TITLE_RESIDUE_RE = re.compile(
+    r"^\s*"
+    r"(?:Regulamento|Despacho|Delibera(?:ç|c)ão|Edital|Anexo)"
+    r"(?:\s+(?:de\b.*|n\.?\s*[ºo].*|P\.?\s*PORTO.*|[A-Z0-9].*))?"
+    r"\s*$",
+    re.IGNORECASE,
+)
 
 TRACEABILITY_METADATA_KEYS = (
     "article_number",
@@ -140,6 +149,10 @@ class ChunkQualityValidator:
         footnote_issue = self._validate_note_or_footnote_leakage(chunk)
         if footnote_issue is not None:
             issues.append(footnote_issue)
+
+        document_title_issue = self._validate_document_title_residue(chunk)
+        if document_title_issue is not None:
+            issues.append(document_title_issue)
 
         title_leakage_issue = self._validate_title_leakage(chunk)
         if title_leakage_issue is not None:
@@ -394,7 +407,11 @@ class ChunkQualityValidator:
             if not line:
                 continue
 
-            if ACCESS_FOOTNOTE_RE.match(line) or FOOTNOTE_URL_RE.match(line):
+            if (
+                ACCESS_FOOTNOTE_RE.match(line)
+                or FOOTNOTE_URL_RE.match(line)
+                or STANDALONE_URL_LINE_RE.match(line)
+            ):
                 evidence.append(line)
 
         if not evidence:
@@ -405,6 +422,39 @@ class ChunkQualityValidator:
             "severity": "error",
             "message": "Visible chunk text still contains note or footnote residue.",
             "evidence": evidence[:3],
+        }
+
+    def _validate_document_title_residue(
+        self,
+        chunk: Chunk,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Detect standalone document-title residue that leaked into chunk text.
+
+        Parameters
+        ----------
+        chunk : Chunk
+            Chunk under validation.
+
+        Returns
+        -------
+        Optional[Dict[str, Any]]
+            Issue payload when edge lines still look like title residue.
+        """
+        evidence: List[str] = []
+
+        for line in self._get_edge_lines(chunk.text):
+            if self._looks_like_document_title_residue(line):
+                evidence.append(line)
+
+        if not evidence:
+            return None
+
+        return {
+            "code": "document_title_residue_in_text",
+            "severity": "error",
+            "message": "Visible chunk text still contains leaked document-title residue.",
+            "evidence": list(dict.fromkeys(evidence))[:2],
         }
 
     def _validate_title_leakage(self, chunk: Chunk) -> Optional[Dict[str, Any]]:
@@ -571,8 +621,24 @@ class ChunkQualityValidator:
             return None
 
         signals = self._collect_semantic_weakness_signals(chunk)
-        if "starts_with_numbered_item" not in signals and "starts_with_lettered_item" not in signals:
+        if (
+            "starts_with_numbered_item" not in signals
+            and "starts_with_lettered_item" not in signals
+            and "starts_with_dash_continuation" not in signals
+        ):
             return None
+
+        if "starts_with_dash_continuation" in signals:
+            return {
+                "code": "low_semantic_autonomy_chunk",
+                "severity": "error",
+                "message": "Split chunk still behaves like a semantically orphaned fragment.",
+                "evidence": {
+                    "chunk_reason": getattr(chunk, "chunk_reason", ""),
+                    "signals": signals[:4],
+                    "opening_line": self._get_first_non_empty_line(chunk.text),
+                },
+            }
 
         if "too_few_words" not in signals and "missing_terminal_punctuation" not in signals:
             return None
@@ -708,6 +774,9 @@ class ChunkQualityValidator:
         if LETTERED_ITEM_PREFIX_RE.match(first_line):
             signals.append("starts_with_lettered_item")
 
+        if DASH_CONTINUATION_PREFIX_RE.match(first_line):
+            signals.append("starts_with_dash_continuation")
+
         if word_count < 8:
             signals.append("too_few_words")
 
@@ -814,6 +883,32 @@ class ChunkQualityValidator:
 
         return ""
 
+    def _get_edge_lines(self, text: str) -> List[str]:
+        """
+        Return the first and last visible lines for edge-focused validation.
+
+        Parameters
+        ----------
+        text : str
+            Candidate text block.
+
+        Returns
+        -------
+        List[str]
+            Deduplicated edge lines in display order.
+        """
+        first_line = self._get_first_non_empty_line(text)
+        last_line = self._get_last_non_empty_line(text)
+
+        edge_lines: List[str] = []
+        if first_line:
+            edge_lines.append(first_line)
+
+        if last_line and last_line != first_line:
+            edge_lines.append(last_line)
+
+        return edge_lines
+
     def _validate_traceability(self, chunk: Chunk) -> Optional[Dict[str, Any]]:
         """
         Detect missing minimum traceability fields.
@@ -916,6 +1011,30 @@ class ChunkQualityValidator:
             return True
 
         return False
+
+    def _looks_like_document_title_residue(self, line: str) -> bool:
+        """
+        Detect leaked document-title lines conservatively at chunk edges.
+
+        Parameters
+        ----------
+        line : str
+            Candidate edge line.
+
+        Returns
+        -------
+        bool
+            True when the line behaves like standalone title residue.
+        """
+        stripped_line = line.strip()
+        if not stripped_line or stripped_line[-1] in ".!?;:":
+            return False
+
+        word_count = len(re.findall(r"\b[A-Za-zÀ-ÿ0-9]+\b", stripped_line))
+        if word_count == 0 or word_count > 16:
+            return False
+
+        return DOCUMENT_TITLE_RESIDUE_RE.match(stripped_line) is not None
 
     def _fold_editorial_text(self, text: str) -> str:
         """
