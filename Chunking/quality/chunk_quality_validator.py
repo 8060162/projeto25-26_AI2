@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import re
-import unicodedata
 from typing import Any, Callable, Dict, List, Optional, Sequence
 
 from Chunking.chunking.models import Chunk
 from Chunking.config.settings import PipelineSettings
 from Chunking.utils.text import (
+    fold_editorial_text,
     has_suspicious_truncated_ending,
     join_hyphenated_linebreaks,
     repair_broken_enclitic_hyphenation,
@@ -1050,11 +1050,4 @@ class ChunkQualityValidator:
         str
             Lowercased alphanumeric-only signature.
         """
-        normalized = unicodedata.normalize("NFKD", text)
-        without_marks = "".join(
-            character
-            for character in normalized
-            if not unicodedata.combining(character)
-        )
-        lowered = without_marks.lower()
-        return re.sub(r"[^a-z0-9]+", "", lowered)
+        return fold_editorial_text(text, preserve_word_boundaries=False)
