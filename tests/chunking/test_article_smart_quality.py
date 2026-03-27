@@ -188,6 +188,42 @@ class ArticleSmartQualityRegressionTests(unittest.TestCase):
         self.assertNotIn("Acessível", chunks[0].text)
         self.assertNotIn("https://", chunks[0].text)
 
+    def test_unnumbered_access_footnote_is_removed_from_final_chunk_text(self) -> None:
+        """Ensure editorial access notes are removed even without footnote numbers."""
+        article = StructuralNode(
+            node_type="ARTICLE",
+            label="ART_10A",
+            title="Disposições finais",
+            text=(
+                "Disposições finais\n"
+                "O presente regulamento entra em vigor no próximo ano letivo.\n"
+                "Acessível em https://domus.ipp.pt/."
+            ),
+            page_start=1,
+            page_end=1,
+            metadata={
+                "article_number": "10-A",
+                "article_title": "Disposições finais",
+                "document_part": "regulation_body",
+            },
+        )
+        root = StructuralNode(
+            node_type="DOCUMENT",
+            label="DOCUMENT",
+            children=[article],
+        )
+        strategy = ArticleSmartChunkingStrategy(PipelineSettings())
+
+        chunks = strategy.build_chunks(build_document_metadata(), root)
+
+        self.assertEqual(len(chunks), 1)
+        self.assertEqual(
+            chunks[0].text,
+            "O presente regulamento entra em vigor no próximo ano letivo.",
+        )
+        self.assertNotIn("Acessível", chunks[0].text)
+        self.assertNotIn("https://", chunks[0].text)
+
     def test_residual_article_title_does_not_leak_into_chunk_text(self) -> None:
         """Ensure merged article titles are removed from visible chunk text."""
         chunks = build_article_smart_chunks(
@@ -281,6 +317,64 @@ class ArticleSmartQualityRegressionTests(unittest.TestCase):
         self.assertIn("2.", chunks[1].text)
         self.assertTrue(chunks[-1].text.startswith("Nas situações previstas no presente artigo:"))
         self.assertIn("3.", chunks[-1].text)
+
+    def test_partial_trailing_overlap_is_not_exported_as_orphan_prefix(self) -> None:
+        """Ensure overlap does not prepend truncated continuation fragments."""
+        settings = PipelineSettings(
+            target_chunk_chars=260,
+            min_chunk_chars=120,
+            hard_max_chunk_chars=360,
+            overlap_chars=80,
+        )
+        strategy = ArticleSmartChunkingStrategy(settings)
+        parts = [
+            (
+                "O presente regulamento fixa as normas gerais relativas a matrículas e "
+                "inscrições nos cursos ministrados pelas Escolas do Instituto Politécnico "
+                "do Porto. O processo de matrícula/inscrição num determinado curso é da "
+                "responsabilidade da Escola onde o curso é ministrado."
+            ),
+            (
+                "O órgão legal e estatutariamente competente da Escola poderá fixar em "
+                "regulamento específico normas adicionais em matérias complementares."
+            ),
+        ]
+
+        overlapped_parts = strategy._apply_split_overlap(parts, "\n\n".join(parts))
+
+        self.assertEqual(len(overlapped_parts), 2)
+        self.assertFalse(overlapped_parts[1].startswith("determinado curso"))
+        self.assertTrue(
+            overlapped_parts[1].startswith(
+                "O órgão legal e estatutariamente competente da Escola"
+            )
+        )
+
+    def test_unsafe_overlap_is_skipped_when_it_only_repeats_item_tail(self) -> None:
+        """Ensure split overlap does not create em-dash-only orphan continuations."""
+        settings = PipelineSettings(
+            target_chunk_chars=320,
+            min_chunk_chars=140,
+            hard_max_chunk_chars=420,
+            overlap_chars=80,
+        )
+        strategy = ArticleSmartChunkingStrategy(settings)
+        parts = [
+            (
+                "3 — Inscrição em exame — É o ato pelo qual o estudante formaliza a sua "
+                "intenção de realizar um exame."
+            ),
+            (
+                "4 — Regime de precedências — Regime que estabelece que a inscrição numa ou "
+                "mais unidades curriculares depende de aprovação anterior."
+            ),
+        ]
+
+        overlapped_parts = strategy._apply_split_overlap(parts, "\n\n".join(parts))
+
+        self.assertEqual(len(overlapped_parts), 2)
+        self.assertFalse(overlapped_parts[1].startswith("— É o ato"))
+        self.assertTrue(overlapped_parts[1].startswith("4 — Regime de precedências"))
 
     def test_article_smart_output_keeps_full_non_truncated_article_body(self) -> None:
         """Ensure final chunks keep the complete article body in citation cases."""
