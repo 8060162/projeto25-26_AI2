@@ -490,6 +490,67 @@ class ArticleSmartQualityRegressionTests(unittest.TestCase):
         self.assertTrue(all(chunk.char_count <= 1024 for chunk in chunks))
         self.assertTrue(all(chunk.chunk_reason != "preamble_group" for chunk in chunks))
 
+    def test_single_line_clause_like_preamble_stays_within_1024_chars(self) -> None:
+        """Ensure clause-like preambles do not exceed the hard ceiling."""
+        preamble_text = "\n".join(
+            [
+                "Considerando:",
+                (
+                    "A Portaria n.o 181-D/2015, de 19 de junho, regula os regimes "
+                    "de reingresso e de mudanca com detalhe suficiente para manter "
+                    "contexto juridico e ainda exigir divisao controlada nesta fase;"
+                ),
+                (
+                    "O Decreto-Lei n.o 62/2018, de 6 de agosto, altera e republica "
+                    "o estatuto aplicavel em termos extensos para que o primeiro "
+                    "bloco de clausulas continue claramente acima do tamanho alvo;"
+                ),
+                (
+                    "O Regulamento n.o 181/2017, de 5 de maio, fixa regras "
+                    "institucionais complementares com densidade textual suficiente "
+                    "para manter o preambulo longo e semanticamente autonomo;"
+                ),
+                (
+                    "O Regulamento n.o 450/2020, de 12 de junho, acrescenta "
+                    "criterios e procedimentos complementares num bloco final que "
+                    "continua a ser relevante para retrieval e grounding;"
+                ),
+                (
+                    "O Regulamento n.o 512/2021, de 30 de setembro, introduz "
+                    "novos requisitos operacionais e garantias procedimentais com "
+                    "densidade suficiente para manter este preambulo acima do "
+                    "tamanho maximo aceitavel num unico chunk;"
+                ),
+                (
+                    "A aplicacao articulada destes regimes exige ainda uma "
+                    "explicacao acumulada sobre prazos, condicoes e excecoes, "
+                    "preservando contexto semantico mas impondo divisao controlada;"
+                ),
+                "2. E revogado o Despacho IPP/P-042/2022, de 27 de julho.",
+            ]
+        )
+        preamble = StructuralNode(
+            node_type="PREAMBLE",
+            label="PREAMBLE",
+            text=preamble_text,
+            page_start=1,
+            page_end=1,
+        )
+        root = StructuralNode(
+            node_type="DOCUMENT",
+            label="DOCUMENT",
+            children=[preamble],
+        )
+        strategy = ArticleSmartChunkingStrategy(PipelineSettings())
+
+        chunks = strategy.build_chunks(build_document_metadata(), root)
+
+        self.assertGreater(len(chunks), 1)
+        self.assertTrue(all(chunk.char_count <= 1024 for chunk in chunks))
+        self.assertTrue(
+            all(chunk.chunk_reason == "preamble_legal_signal_split" for chunk in chunks)
+        )
+
     def test_formula_garbage_tail_is_removed_from_final_chunk_text(self) -> None:
         """Ensure OCR-like formula residue does not survive at the end of chunks."""
         article = StructuralNode(
