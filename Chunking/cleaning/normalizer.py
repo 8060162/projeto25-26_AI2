@@ -119,6 +119,22 @@ MULTISPACE_RE = re.compile(r"\s+")
 # comparison strings.
 NON_ALNUM_EDITORIAL_RE = re.compile(r"[^a-z0-9]+")
 
+# Detect characters that frequently appear in mojibake-like inline corruption.
+INLINE_GARBLED_MARKER_RE = re.compile(r"[©Þ§£Ý¤¦¬]")
+
+# Recover the valid lowercase continuation from a short mixed token such as:
+# "(60$(realizadas" -> "realizadas"
+INLINE_GARBLED_TAIL_RE = re.compile(
+    r"^(?P<prefix>[^a-zà-ÿ]{1,12})(?P<tail>[a-zà-ÿ]{4,}.*)$",
+    re.IGNORECASE,
+)
+
+# Recover the valid head from a mixed token such as:
+# "março.,QVWL..." -> "março."
+INLINE_GARBLED_HEAD_RE = re.compile(
+    r"^(?P<head>.*?[A-Za-zÀ-ÿ]{3,}[,.;:])(?P<suffix>[^a-zà-ÿ].+)$"
+)
+
 # Structural headers that should usually remain on their own line.
 ARTICLE_HEADER_RE = re.compile(
     r"^\s*(?:ARTIGO|ART\.?)\s+\d+(?:\.\d+)?\s*(?:\.?\s*[ºo°])?\b",
@@ -563,6 +579,12 @@ class TextNormalizer:
         if COVER_NOISE_RE.match(line) and len(line) <= 160:
             return None, "cover_line"
 
+        # Remove only the inline garbled fragments that clearly behave like
+        # extraction residue inside an otherwise meaningful line.
+        line = self._strip_inline_garbled_residue(line)
+        if not line:
+            return None, "inline_garbled_residue"
+
         # Remove clearly unusable symbolic garbage lines.
         if MOSTLY_SYMBOLIC_RE.match(line):
             return None, "mostly_symbolic_line"
@@ -874,6 +896,175 @@ class TextNormalizer:
             )
 
         return False
+
+    def _strip_inline_garbled_residue(self, line: str) -> str:
+        """
+        Remove only the clearly corrupted inline fragments from one line.
+
+        Why this helper exists
+        ----------------------
+        Some problematic PDFs do not emit a whole garbled line. Instead they
+        inject a few corrupted tokens inside an otherwise valid sentence, which
+        then survive into normalized text and later chunk outputs.
+
+        The cleanup remains conservative:
+        - keep normal legal prose untouched
+        - drop only tokens that strongly look corrupted
+        - recover a lowercase prose tail only when a short token clearly mixes
+          a garbled prefix with a readable continuation
+        """
+        if not line or len(line) < 16:
+            return line
+
+        cleaned_tokens: List[str] = []
+
+        for token in line.split():
+            cleaned_token = self._clean_inline_garbled_token(token)
+            if cleaned_token:
+                cleaned_tokens.append(cleaned_token)
+
+        cleaned_line = " ".join(cleaned_tokens).strip()
+        cleaned_line = re.sub(r",\.", ".", cleaned_line)
+        cleaned_line = re.sub(r"([.?!])[,;:]+", r"\1", cleaned_line)
+
+        return cleaned_line.strip()
+
+    def _clean_inline_garbled_token(self, token: str) -> str:
+        """
+        Remove or recover a single token when it clearly looks corrupted.
+
+        The token-level behavior is intentionally narrow so the normalizer does
+        not delete ordinary legal text or valid uppercase headings.
+        """
+        if not token:
+            return ""
+
+        recovered_tail = self._recover_inline_garbled_tail(token)
+        if recovered_tail:
+            return recovered_tail
+
+        recovered_head = self._recover_inline_garbled_head(token)
+        if recovered_head:
+            return recovered_head
+
+        if self._looks_like_inline_garbled_token(token):
+            return ""
+
+        return token
+
+    def _recover_inline_garbled_tail(self, token: str) -> Optional[str]:
+        """
+        Recover a readable lowercase continuation from a mixed corrupted token.
+
+        This is only allowed when the corrupted prefix is short and the visible
+        tail represents a meaningful proportion of the token.
+        """
+        stripped_token = token.lstrip("([<{\"'")
+        tail_match = INLINE_GARBLED_TAIL_RE.match(stripped_token)
+        if tail_match is None:
+            return None
+
+        prefix = tail_match.group("prefix")
+        tail = tail_match.group("tail")
+
+        if len(tail) < 5:
+            return None
+
+        if len(tail) / max(len(stripped_token), 1) < 0.40:
+            return None
+
+        prefix_is_symbolic_garbage = (
+            len(prefix) >= 3
+            and any(character.isdigit() for character in prefix)
+            and any(not character.isalnum() for character in prefix)
+        )
+
+        if not prefix_is_symbolic_garbage and not self._looks_like_inline_garbled_token(prefix):
+            return None
+
+        return tail
+
+    def _recover_inline_garbled_head(self, token: str) -> Optional[str]:
+        """
+        Recover the readable leading head when corruption is appended inline.
+
+        This targets mixed tokens where a normal legal word is immediately
+        followed by a long corrupted suffix with no separating whitespace.
+        """
+        head_match = INLINE_GARBLED_HEAD_RE.match(token)
+        if head_match is None:
+            return None
+
+        head = head_match.group("head")
+        suffix = head_match.group("suffix")
+
+        if len(head) < 5:
+            return None
+
+        if len(suffix) < 10:
+            return None
+
+        if not self._looks_like_inline_garbled_token(suffix):
+            return None
+
+        return head
+
+    def _looks_like_inline_garbled_token(self, token: str) -> bool:
+        """
+        Decide whether a token strongly behaves like mojibake or OCR residue.
+
+        The rule intentionally avoids broad uppercase-token removal by
+        requiring one of the following:
+        - explicit mojibake-like marker characters
+        - hidden C1 control bytes
+        - an unusually long uppercase-heavy compact token with very weak vowel
+          structure, which is a common corruption pattern in the failing PDFs
+        """
+        if not token:
+            return False
+
+        stripped_token = token.strip("()[]{}<>,.;:!?\"'«»")
+        if len(stripped_token) < 6:
+            return False
+
+        if INLINE_GARBLED_MARKER_RE.search(stripped_token):
+            return True
+
+        if any(0x80 <= ord(character) <= 0x9F for character in stripped_token):
+            return True
+
+        alpha_chars = [character for character in stripped_token if character.isalpha()]
+        if len(alpha_chars) < 10:
+            return False
+
+        uppercase_ratio = (
+            sum(1 for character in alpha_chars if character.isupper()) / len(alpha_chars)
+        )
+        lowercase_ratio = (
+            sum(1 for character in alpha_chars if character.islower()) / len(alpha_chars)
+        )
+        vowel_ratio = (
+            sum(
+                1
+                for character in alpha_chars
+                if character.lower() in "aeiouáàâãéèêíìîóòôõúùû"
+            )
+            / len(alpha_chars)
+        )
+
+        return (
+            (
+                len(stripped_token) >= 24
+                and uppercase_ratio >= 0.72
+                and lowercase_ratio <= 0.18
+                and vowel_ratio <= 0.28
+            )
+            or (
+                len(stripped_token) >= 10
+                and uppercase_ratio >= 0.95
+                and vowel_ratio <= 0.18
+            )
+        )
 
     def _remove_split_editorial_blocks(
         self,
