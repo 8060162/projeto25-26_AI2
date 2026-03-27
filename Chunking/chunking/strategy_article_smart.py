@@ -201,7 +201,19 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
             if not preamble_text:
                 continue
 
-            preamble_groups = self._paragraph_grouping(preamble_text)
+            preamble_chunk_reason = "preamble_group"
+            if len(preamble_text) <= self.settings.target_chunk_chars:
+                preamble_groups = [preamble_text]
+            else:
+                preamble_groups, split_mode = self._split_oversized_text(
+                    preamble_text
+                )
+                preamble_groups = self._apply_split_overlap(
+                    preamble_groups,
+                    preamble_text,
+                )
+                preamble_chunk_reason = f"preamble_{split_mode}"
+
             if not preamble_groups:
                 preamble_groups = [preamble_text]
 
@@ -215,7 +227,7 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
                     source_node=preamble,
                     source_node_type_override="PREAMBLE",
                     source_node_label_override=preamble.label,
-                    chunk_reason="preamble_group",
+                    chunk_reason=preamble_chunk_reason,
                     metadata={
                         **self._base_document_metadata(document_metadata),
                         "document_part": preamble.metadata.get("document_part"),
@@ -829,22 +841,50 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
         line_blocks = self._split_line_based_legal_blocks(text)
         if len(line_blocks) >= 2:
             regrouped_line_blocks = self._group_text_parts(line_blocks)
-            if len(regrouped_line_blocks) >= 2:
+            if self._is_usable_split_result(regrouped_line_blocks):
                 return regrouped_line_blocks
 
         clause_blocks = self._split_clause_like_lines(text)
         if len(clause_blocks) >= 2:
             regrouped_clause_blocks = self._group_text_parts(clause_blocks)
-            if len(regrouped_clause_blocks) >= 2:
+            if self._is_usable_split_result(regrouped_clause_blocks):
                 return regrouped_clause_blocks
 
         inline_blocks = self._split_inline_legal_blocks(text)
         if len(inline_blocks) >= 2:
             regrouped_inline_blocks = self._group_text_parts(inline_blocks)
-            if len(regrouped_inline_blocks) >= 2:
+            if self._is_usable_split_result(regrouped_inline_blocks):
                 return regrouped_inline_blocks
 
         return [text.strip()]
+
+    def _is_usable_split_result(self, parts: Sequence[str]) -> bool:
+        """
+        Decide whether a candidate split result is safe to export.
+
+        Parameters
+        ----------
+        parts : Sequence[str]
+            Candidate split parts after regrouping.
+
+        Returns
+        -------
+        bool
+            True when the result yields multiple non-empty parts and each part
+            remains within the hard chunk ceiling.
+        """
+        normalized_parts = [
+            normalize_block_whitespace(part).strip()
+            for part in parts
+            if normalize_block_whitespace(part).strip()
+        ]
+        if len(normalized_parts) < 2:
+            return False
+
+        return all(
+            len(part) <= self.settings.hard_max_chunk_chars
+            for part in normalized_parts
+        )
 
     def _split_line_based_legal_blocks(self, text: str) -> List[str]:
         """
@@ -1102,10 +1142,12 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
             candidate = "\n\n".join(current_parts + [cleaned_part]).strip()
             current_text = "\n\n".join(current_parts).strip()
 
-            should_flush = (
-                bool(current_parts)
-                and len(candidate) > split_target_chars
-                and len(current_text) >= self.settings.min_chunk_chars
+            should_flush = bool(current_parts) and (
+                len(candidate) > self.settings.hard_max_chunk_chars
+                or (
+                    len(candidate) > split_target_chars
+                    and len(current_text) >= self.settings.min_chunk_chars
+                )
             )
 
             if should_flush:
