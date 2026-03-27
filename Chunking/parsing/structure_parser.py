@@ -992,7 +992,7 @@ class StructureParser:
             return False
 
         word_count = len(line.split())
-        if word_count > 12:
+        if word_count > 14:
             return False
 
         lowered = line.lower()
@@ -1027,10 +1027,10 @@ class StructureParser:
         if UPPERCASE_HEAVY_RE.match(line):
             return True
 
-        if collected_count == 0 and word_count <= 8 and line[:1].isupper():
+        if collected_count == 0 and word_count <= 12 and line[:1].isupper():
             return True
 
-        if collected_count == 1 and word_count <= 6 and line[:1].isupper():
+        if collected_count == 1 and word_count <= 8 and line[:1].isupper():
             return True
 
         return False
@@ -1071,35 +1071,44 @@ class StructureParser:
         if self._looks_like_garbled_line(line):
             return None
 
-        match = INLINE_TITLE_BODY_SPLIT_RE.match(line.strip())
-        if not match:
-            return None
+        stripped_line = line.strip()
+        match = INLINE_TITLE_BODY_SPLIT_RE.match(stripped_line)
+        if match:
+            title = (match.group("title") or "").strip()
+            body = (match.group("body") or "").strip()
 
-        title = (match.group("title") or "").strip()
-        body = (match.group("body") or "").strip()
+            if (
+                title
+                and body
+                and len(title) >= 4
+                and len(title.split()) <= 8
+                and not title.endswith((",", ";", ":"))
+                and not BODY_START_RE.match(title)
+                and UPPERCASE_HEAVY_RE.match(title)
+                and len(body.split()) >= 3
+            ):
+                return title, body
 
-        if not title or not body:
-            return None
+        for match in HEADER_SUFFIX_BODY_START_RE.finditer(stripped_line):
+            body_start = match.start("body")
+            if body_start <= 0:
+                continue
 
-        if len(title) < 4:
-            return None
+            title = stripped_line[:body_start].strip()
+            body = stripped_line[body_start:].strip()
 
-        if len(title.split()) > 8:
-            return None
+            if not title or not body:
+                continue
 
-        if title.endswith(",") or title.endswith(";") or title.endswith(":"):
-            return None
+            if not self._is_probable_title_line(title):
+                continue
 
-        if BODY_START_RE.match(title):
-            return None
+            if len(body.split()) < 3:
+                continue
 
-        if not UPPERCASE_HEAVY_RE.match(title):
-            return None
+            return title, body
 
-        if len(body.split()) < 3:
-            return None
-
-        return title, body
+        return None
 
     def _split_header_suffix_title_and_body(
         self,
