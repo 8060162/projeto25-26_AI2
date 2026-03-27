@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import re
-import unicodedata
 from collections import Counter
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
 from Chunking.chunking.models import ExtractedDocument, ExtractedPage, PageText
 from Chunking.utils.text import (
+    fold_editorial_text,
     normalize_block_whitespace,
     normalize_line_endings,
     repair_broken_hyphenation,
@@ -114,10 +114,6 @@ INDEX_HEADING_RE = re.compile(
 
 # Normalize inner whitespace for comparison and reporting.
 MULTISPACE_RE = re.compile(r"\s+")
-
-# Remove non-alphanumeric separators when building conservative editorial
-# comparison strings.
-NON_ALNUM_EDITORIAL_RE = re.compile(r"[^a-z0-9]+")
 
 # Detect characters that frequently appear in mojibake-like inline corruption.
 INLINE_GARBLED_MARKER_RE = re.compile(r"[©Þ§£Ý¤¦¬]")
@@ -1179,14 +1175,7 @@ class TextNormalizer:
         str
             Lowercased accent-folded comparison string.
         """
-        normalized_text = unicodedata.normalize("NFKD", text)
-        without_marks = "".join(
-            character
-            for character in normalized_text
-            if not unicodedata.combining(character)
-        )
-        lowered_text = without_marks.lower()
-        collapsed_text = NON_ALNUM_EDITORIAL_RE.sub(" ", lowered_text)
+        collapsed_text = fold_editorial_text(text, preserve_word_boundaries=True)
         return MULTISPACE_RE.sub(" ", collapsed_text).strip()
 
     # ------------------------------------------------------------------
