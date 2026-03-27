@@ -438,6 +438,100 @@ class ArticleSmartQualityRegressionTests(unittest.TestCase):
         self.assertEqual(settings.hard_max_chunk_chars, 1024)
         self.assertTrue(all(chunk.char_count <= 1024 for chunk in chunks))
 
+    def test_preamble_tail_does_not_keep_signature_or_truncated_title_residue(self) -> None:
+        """Ensure preamble chunks drop trailing signature and cut title fragments."""
+        chunks = build_article_smart_chunks(
+            (
+                "Considerando que o projeto de regulamento foi objeto de consulta publica.\n"
+                "Determino: a) A aprovacao do Regulamento de Propinas do P.PORTO, "
+                "anexo ao presente despacho e que\n"
+                "c) A revogacao do Despacho P.PORTO/P-042/2023.\n"
+                "Paulo Pereira\n"
+                "Regulamento de\n"
+                "Artigo 1 - Objeto\n"
+                "O regulamento aplica-se a todos os cursos."
+            )
+        )
+
+        self.assertEqual(len(chunks), 2)
+        self.assertNotIn("Paulo Pereira", chunks[0].text)
+        self.assertNotIn("Regulamento de", chunks[0].text)
+        self.assertFalse(chunks[0].text.endswith("e que"))
+        self.assertEqual(chunks[1].text, "O regulamento aplica-se a todos os cursos.")
+
+    def test_default_settings_split_long_preamble_within_1024_chars(self) -> None:
+        """Ensure oversized preamble text is split under the hard size ceiling."""
+        preamble = StructuralNode(
+            node_type="PREAMBLE",
+            label="PREAMBLE",
+            text="\n".join(
+                [
+                    (
+                        f"Considerando {number}, que o presente regulamento estabelece "
+                        "um conjunto de normas e procedimentos com detalhe suficiente "
+                        "para exigir divisao controlada e preservar contexto juridico."
+                    )
+                    for number in range(1, 12)
+                ]
+            ),
+            page_start=1,
+            page_end=1,
+        )
+        root = StructuralNode(
+            node_type="DOCUMENT",
+            label="DOCUMENT",
+            children=[preamble],
+        )
+        strategy = ArticleSmartChunkingStrategy(PipelineSettings())
+
+        chunks = strategy.build_chunks(build_document_metadata(), root)
+
+        self.assertGreater(len(chunks), 1)
+        self.assertTrue(all(chunk.char_count <= 1024 for chunk in chunks))
+        self.assertTrue(all(chunk.chunk_reason != "preamble_group" for chunk in chunks))
+
+    def test_formula_garbage_tail_is_removed_from_final_chunk_text(self) -> None:
+        """Ensure OCR-like formula residue does not survive at the end of chunks."""
+        article = StructuralNode(
+            node_type="ARTICLE",
+            label="ART_20",
+            title="Creditacao",
+            text=(
+                "1. Quando aplicavel, as unidades curriculares creditadas conservam "
+                "as classificacoes obtidas.\n\n"
+                "2. Quando se trate de unidades curriculares realizadas em "
+                "estabelecimentos de ensino superior estrangeiros, aplicar-se-a a "
+                "seguinte formula de calculo:\n"
+                "_\n\n10 1\n_\n_\nIPP\nCIESe\nCSESe lmp\nC\nCSESe lMp\n"
+                "CSESe lmp\nSection\nparagraph\nsymbol\nnoise"
+            ),
+            page_start=1,
+            page_end=1,
+            metadata={
+                "article_number": "20",
+                "article_title": "Creditacao",
+                "document_part": "regulation_body",
+            },
+        )
+        root = StructuralNode(
+            node_type="DOCUMENT",
+            label="DOCUMENT",
+            children=[article],
+        )
+        strategy = ArticleSmartChunkingStrategy(PipelineSettings())
+
+        chunks = strategy.build_chunks(build_document_metadata(), root)
+
+        self.assertEqual(len(chunks), 1)
+        self.assertIn(
+            "2. Quando se trate de unidades curriculares realizadas em",
+            chunks[0].text,
+        )
+        self.assertNotIn("CSESe lmp", chunks[0].text)
+        self.assertNotIn("CSESe lMp", chunks[0].text)
+        self.assertNotIn("Section", chunks[0].text)
+        self.assertNotIn("symbol", chunks[0].text)
+
     def test_garbled_fragment_line_is_removed_from_final_chunk_text(self) -> None:
         """Ensure strongly garbled residue does not survive chunk cleanup."""
         article = StructuralNode(
