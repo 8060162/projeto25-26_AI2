@@ -139,6 +139,56 @@ class PipelineChunkQualitySummaryTests(unittest.TestCase):
             summary["next_phase_decision"]["failed_chunk_ids"],
             ["c_bad"],
         )
+        self.assertEqual(summary["invalid_chunk_count"], 1)
+        self.assertEqual(summary["next_phase_decision"]["invalid_chunk_count"], 1)
+
+    def test_summary_distinguishes_invalid_chunk_count_from_issue_count(self) -> None:
+        """Ensure summary keeps chunk rejection counts aligned with validator reality."""
+        settings = PipelineSettings()
+        chunks = [
+            Chunk(
+                chunk_id="c_multi_issue",
+                doc_id="doc_multi_issue",
+                strategy="article_smart",
+                text=(
+                    "Disposicoes finais do regulamento aplicavel.\n"
+                    "https://domus.ipp.pt/"
+                ),
+                text_for_embedding=(
+                    "Preamble\n\nDisposicoes finais do regulamento aplicavel.\n"
+                    "https://domus.ipp.pt/"
+                ),
+                page_start=1,
+                page_end=1,
+                source_node_type="PREAMBLE",
+                source_node_label="PREAMBLE",
+                hierarchy_path=["DOCUMENT:DOCUMENT", "PREAMBLE:PREAMBLE"],
+                chunk_reason="preamble_group",
+                metadata={
+                    "document_part": "dispatch_or_intro",
+                    "source_span_type": "preamble",
+                },
+            )
+        ]
+
+        summary = _build_chunk_quality_summary(
+            document_metadata=build_document_metadata(),
+            extraction_quality={},
+            normalized=build_normalized_document(),
+            structure_root=build_structure_root(),
+            chunks=chunks,
+            strategy_name="article_smart",
+            extraction_mode_used="native",
+            settings=settings,
+        )
+
+        self.assertFalse(summary["acceptable_for_next_phase"])
+        self.assertEqual(summary["valid_chunk_count"], 0)
+        self.assertEqual(summary["invalid_chunk_count"], 1)
+        self.assertEqual(summary["validator_summary"]["invalid_chunk_count"], 1)
+        self.assertEqual(summary["next_phase_decision"]["invalid_chunk_count"], 1)
+        self.assertGreater(summary["blocking_failure_count"], summary["invalid_chunk_count"])
+        self.assertIn("1 invalid chunk(s)", summary["next_phase_decision"]["reason"])
 
 
 if __name__ == "__main__":
