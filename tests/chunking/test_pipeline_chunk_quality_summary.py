@@ -76,8 +76,15 @@ class PipelineChunkQualitySummaryTests(unittest.TestCase):
         )
 
         self.assertTrue(summary["acceptable_for_next_phase"])
+        self.assertFalse(summary["has_blocking_failures"])
         self.assertEqual(summary["blocking_failure_count"], 0)
         self.assertEqual(summary["blocking_failure_types"], [])
+        self.assertEqual(summary["failed_chunk_ids"], [])
+        self.assertEqual(summary["acceptance_basis"], "validator_blocking_failures")
+        self.assertIn(
+            "acceptable for downstream embedding consumption",
+            summary["acceptance_reason"],
+        )
         self.assertEqual(summary["next_phase_decision"]["decision"], "accept")
         self.assertEqual(summary["validator_summary"]["blocking_failure_types"], [])
         self.assertFalse(summary["validator_summary"]["has_blocking_failures"])
@@ -120,11 +127,18 @@ class PipelineChunkQualitySummaryTests(unittest.TestCase):
         )
 
         self.assertFalse(summary["acceptable_for_next_phase"])
+        self.assertTrue(summary["has_blocking_failures"])
         self.assertEqual(summary["next_phase_decision"]["decision"], "reject")
         self.assertGreater(summary["blocking_failure_count"], 0)
         self.assertIn(
             "note_or_footnote_in_text",
             summary["blocking_failure_types"],
+        )
+        self.assertEqual(summary["failed_chunk_ids"], ["c_bad"])
+        self.assertEqual(summary["acceptance_basis"], "validator_blocking_failures")
+        self.assertEqual(
+            summary["acceptance_reason"],
+            summary["next_phase_decision"]["reason"],
         )
         self.assertIn(
             "note_or_footnote_in_text",
@@ -183,11 +197,13 @@ class PipelineChunkQualitySummaryTests(unittest.TestCase):
         )
 
         self.assertFalse(summary["acceptable_for_next_phase"])
+        self.assertTrue(summary["has_blocking_failures"])
         self.assertEqual(summary["valid_chunk_count"], 0)
         self.assertEqual(summary["invalid_chunk_count"], 1)
         self.assertEqual(summary["validator_summary"]["invalid_chunk_count"], 1)
         self.assertEqual(summary["next_phase_decision"]["invalid_chunk_count"], 1)
         self.assertGreater(summary["blocking_failure_count"], summary["invalid_chunk_count"])
+        self.assertEqual(summary["failed_chunk_ids"], ["c_multi_issue"])
         self.assertIn("1 invalid chunk(s)", summary["next_phase_decision"]["reason"])
 
 
