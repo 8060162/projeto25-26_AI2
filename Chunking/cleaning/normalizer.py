@@ -80,6 +80,17 @@ INSTITUTIONAL_BANNER_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Longer institutional cover/title lines that usually belong to title pages.
+INSTITUTIONAL_COVER_TITLE_RE = re.compile(
+    r"^\s*(?:"
+    r"Escola\s+Superior\b.*|"
+    r"Instituto\s+Polit[ée]cnico\b.*|"
+    r"Polit[ée]cnico\s+do\s+Porto\b.*|"
+    r"P\.PORTO\b.*"
+    r")$",
+    re.IGNORECASE,
+)
+
 # Very short layout residues sometimes leaked by extraction.
 #
 # Examples:
@@ -206,6 +217,27 @@ SIGNATURE_RESIDUE_RE = re.compile(
 # Detect date/location publication closing lines tied to sign-off metadata.
 PUBLICATION_SIGNOFF_RE = re.compile(
     r"^\s*.+?,\s+\d{1,2}\s+de\s+[A-Za-zÀ-ÿ]+\s+de\s+\d{4}\s*$",
+    re.IGNORECASE,
+)
+
+# Detect short person-name lines commonly leaked from sign-off blocks.
+PERSON_NAME_LINE_RE = re.compile(
+    r"^\s*[A-ZÁÀÂÃÉÈÊÍÌÎÓÒÔÕÚÙÛÇ][a-záàâãéèêíìîóòôõúùûç]+"
+    r"(?:\s+[A-ZÁÀÂÃÉÈÊÍÌÎÓÒÔÕÚÙÛÇ][a-záàâãéèêíìîóòôõúùûç]+){1,4}\s*$"
+)
+
+# Detect single surname-like fragments that sometimes survive after sign-off.
+PERSON_NAME_FRAGMENT_RE = re.compile(
+    r"^\s*[A-ZÁÀÂÃÉÈÊÍÌÎÓÒÔÕÚÙÛÇ][a-záàâãéèêíìîóòôõúùûç]{3,}\.?\s*$"
+)
+
+# Detect short regulation-title fragments leaked between preamble and body.
+REGULATION_TITLE_FRAGMENT_RE = re.compile(
+    r"^\s*(?:"
+    r"Regulamento\b.*|"
+    r"Despacho\b.*|"
+    r"Estatutos?\b.*"
+    r")$",
     re.IGNORECASE,
 )
 
@@ -432,6 +464,28 @@ class TextNormalizer:
             )
             dropped_counter.update(block_drop_report)
 
+            cleaned_lines, page_guardrail_report = self._apply_local_page_guardrails(
+                cleaned_lines=cleaned_lines,
+                raw_lines=raw_lines,
+                page_number=page_number,
+                total_pages=total_pages,
+                upstream_quality_score=upstream_quality_score,
+                upstream_flags=upstream_flags,
+            )
+            dropped_counter.update(page_guardrail_report)
+
+            cleaned_lines, early_residue_report = self._trim_early_document_residue(
+                lines=cleaned_lines,
+                page_number=page_number,
+                total_pages=total_pages,
+            )
+            dropped_counter.update(early_residue_report)
+
+            cleaned_lines, garbled_tail_report = self._trim_trailing_garbled_blocks(
+                cleaned_lines
+            )
+            dropped_counter.update(garbled_tail_report)
+
             # Reflow obvious broken prose lines while preserving structural markers.
             cleaned_lines = self._reflow_lines(cleaned_lines)
 
@@ -574,6 +628,14 @@ class TextNormalizer:
         # Remove obvious decorative cover lines.
         if COVER_NOISE_RE.match(line) and len(line) <= 160:
             return None, "cover_line"
+
+        # Remove longer institutional cover/title lines on early pages.
+        if self._looks_like_institutional_cover_title_line(
+            line=line,
+            page_number=page_number,
+            total_pages=total_pages,
+        ):
+            return None, "institutional_cover_title_line"
 
         # Remove only the inline garbled fragments that clearly behave like
         # extraction residue inside an otherwise meaningful line.
@@ -890,6 +952,84 @@ class TextNormalizer:
                 or "diretor" in folded_line
                 or "diretora" in folded_line
             )
+
+        return False
+
+    def _looks_like_institutional_cover_title_line(
+        self,
+        line: str,
+        page_number: int,
+        total_pages: int,
+    ) -> bool:
+        """
+        Detect early-page institutional cover titles with no legal body value.
+
+        These lines are common on title pages and should not survive into the
+        parser input when they appear as standalone cover furniture.
+        """
+        if not self._is_early_document_page(page_number, total_pages):
+            return False
+
+        if not line or len(line) > 180:
+            return False
+
+        if self._is_structural_line(line):
+            return False
+
+        if not INSTITUTIONAL_COVER_TITLE_RE.match(line):
+            return False
+
+        return 4 <= len(line.split()) <= 24
+
+    def _looks_like_early_document_name_residue_line(
+        self,
+        line: str,
+        page_number: int,
+        total_pages: int,
+    ) -> bool:
+        """
+        Detect early-page sign-off names that should not reach parsing.
+
+        The helper remains narrow and is only used when trimming edge residue
+        blocks rather than as a general deletion rule across the whole page.
+        """
+        if not self._is_early_document_page(page_number, total_pages):
+            return False
+
+        if not line or len(line) > 80:
+            return False
+
+        if PERSON_NAME_LINE_RE.match(line):
+            return True
+
+        return bool(PERSON_NAME_FRAGMENT_RE.match(line))
+
+    def _looks_like_early_document_title_fragment_line(
+        self,
+        line: str,
+        page_number: int,
+        total_pages: int,
+    ) -> bool:
+        """
+        Detect short title fragments that carry no standalone legal meaning.
+
+        This helper intentionally targets only narrow title-fragment patterns
+        so the normalizer does not become responsible for structural parsing.
+        """
+        if not self._is_early_document_page(page_number, total_pages):
+            return False
+
+        if not line or len(line) > 160:
+            return False
+
+        if self._is_structural_line(line):
+            return False
+
+        if PROSE_START_RE.match(line):
+            return False
+
+        if REGULATION_TITLE_FRAGMENT_RE.match(line) and len(line.split()) <= 12:
+            return True
 
         return False
 
@@ -1537,6 +1677,493 @@ class TextNormalizer:
             return False
 
         return True
+
+    def _apply_local_page_guardrails(
+        self,
+        cleaned_lines: List[str],
+        raw_lines: Sequence[str],
+        page_number: int,
+        total_pages: int,
+        upstream_quality_score: Optional[float],
+        upstream_flags: Sequence[str],
+    ) -> Tuple[List[str], Counter[str]]:
+        """
+        Quarantine locally unreliable pages that only retain weak residue.
+
+        Why this helper exists
+        ----------------------
+        Some PDFs contain isolated pages that are clearly degraded but do not
+        justify OCR for the whole document. When those pages retain only weak
+        title/index residue, letting them reach the parser still contaminates
+        front matter and early structure.
+
+        Safety behavior
+        ---------------
+        The guardrail activates only when both conditions hold:
+        - upstream extraction signals already mark the page as unreliable
+        - the surviving page content contains only weak structural/title-like
+          residue and no body-like prose
+
+        Returns
+        -------
+        Tuple[List[str], Counter[str]]
+            Kept lines plus a page-level dropped-lines report.
+        """
+        if not cleaned_lines:
+            return cleaned_lines, Counter()
+
+        if not self._is_locally_unreliable_page(
+            upstream_quality_score=upstream_quality_score,
+            upstream_flags=upstream_flags,
+        ):
+            return cleaned_lines, Counter()
+
+        if not self._should_quarantine_locally_unreliable_page(
+            cleaned_lines=cleaned_lines,
+            raw_lines=raw_lines,
+            page_number=page_number,
+            total_pages=total_pages,
+        ):
+            return cleaned_lines, Counter()
+
+        dropped_counter: Counter[str] = Counter()
+        dropped_counter["locally_unreliable_page_line"] += len(cleaned_lines)
+        return [], dropped_counter
+
+    def _is_locally_unreliable_page(
+        self,
+        upstream_quality_score: Optional[float],
+        upstream_flags: Sequence[str],
+    ) -> bool:
+        """
+        Decide whether upstream extraction marked a page as locally unreliable.
+
+        Parameters
+        ----------
+        upstream_quality_score : Optional[float]
+            Page score produced during extraction.
+
+        upstream_flags : Sequence[str]
+            Extraction-stage corruption flags.
+
+        Returns
+        -------
+        bool
+            True when downstream cleanup should treat the page defensively.
+        """
+        degrading_flags = {
+            "empty_text",
+            "replacement_like_characters",
+            "high_suspicious_symbol_density",
+            "high_symbol_ratio",
+            "low_alpha_ratio",
+        }
+
+        if set(upstream_flags).intersection(degrading_flags):
+            return True
+
+        if upstream_quality_score is None:
+            return False
+
+        return upstream_quality_score < 10.0
+
+    def _should_quarantine_locally_unreliable_page(
+        self,
+        cleaned_lines: Sequence[str],
+        raw_lines: Sequence[str],
+        page_number: int,
+        total_pages: int,
+    ) -> bool:
+        """
+        Decide whether a locally unreliable page still contains only weak residue.
+
+        Parameters
+        ----------
+        cleaned_lines : Sequence[str]
+            Lines that survived ordinary normalization.
+
+        raw_lines : Sequence[str]
+            Original extracted lines from the page.
+
+        page_number : int
+            Current 1-based page number.
+
+        total_pages : int
+            Total document page count.
+
+        Returns
+        -------
+        bool
+            True when the remaining page content should be suppressed before
+            structural parsing.
+        """
+        if not cleaned_lines:
+            return False
+
+        if any(self._line_looks_like_body_content(line) for line in cleaned_lines):
+            return False
+
+        if not all(
+            self._looks_like_weak_structural_residue_line(
+                line=line,
+                page_number=page_number,
+                total_pages=total_pages,
+            )
+            for line in cleaned_lines
+        ):
+            return False
+
+        raw_index_like_count = sum(
+            1
+            for raw_line in raw_lines
+            if self._looks_like_index_line(
+                line=normalize_line_endings(raw_line).strip(),
+                page_number=page_number,
+                total_pages=total_pages,
+            )
+        )
+
+        if raw_index_like_count >= 4:
+            return True
+
+        return len(cleaned_lines) <= 3
+
+    def _line_looks_like_body_content(self, line: str) -> bool:
+        """
+        Decide whether one line still carries plausible legal body content.
+
+        Returns
+        -------
+        bool
+            True when the line looks substantive enough to keep the page.
+        """
+        if not line:
+            return False
+
+        if NUMBERED_ITEM_RE.match(line) or LETTERED_ITEM_RE.match(line):
+            return True
+
+        if PROSE_START_RE.match(line):
+            return True
+
+        alpha_count = sum(1 for character in line if character.isalpha())
+        lower_alpha_count = sum(
+            1 for character in line if character.isalpha() and character.islower()
+        )
+        word_count = len(line.split())
+
+        return (
+            alpha_count >= 24
+            and lower_alpha_count >= 8
+            and word_count >= 6
+            and not self._is_structural_line(line)
+        )
+
+    def _looks_like_weak_structural_residue_line(
+        self,
+        line: str,
+        page_number: int,
+        total_pages: int,
+    ) -> bool:
+        """
+        Detect title/index residue that should not survive on toxic pages.
+
+        Returns
+        -------
+        bool
+            True when the line behaves like weak residue rather than body text.
+        """
+        if not line:
+            return False
+
+        if self._looks_like_index_line(
+            line=line,
+            page_number=page_number,
+            total_pages=total_pages,
+        ):
+            return True
+
+        if self._looks_like_uppercase_front_matter_residue(
+            line=line,
+            page_number=page_number,
+            total_pages=total_pages,
+        ):
+            return True
+
+        if INSTITUTIONAL_BANNER_RE.match(line) or COVER_NOISE_RE.match(line):
+            return True
+
+        if INDEX_HEADING_RE.match(line) and len(line.split()) <= 6:
+            return True
+
+        return bool(
+            UPPERCASE_HEAVY_RE.match(line)
+            and len(line.split()) <= 8
+        )
+
+    def _trim_early_document_residue(
+        self,
+        lines: List[str],
+        page_number: int,
+        total_pages: int,
+    ) -> Tuple[List[str], Counter[str]]:
+        """
+        Trim weak early-document residue blocks from page edges.
+
+        Why this helper exists
+        ----------------------
+        After line-level cleanup, some early-page residue still survives as
+        short edge blocks, especially around:
+        - institutional cover lines before the first real preamble prose
+        - sign-off names followed by regulation-title fragments
+
+        The helper only trims page edges and only on early pages, which keeps
+        the rule conservative and parser-friendly.
+        """
+        if not lines:
+            return [], Counter()
+
+        if not self._is_early_document_page(page_number, total_pages):
+            return lines, Counter()
+
+        dropped_counter: Counter[str] = Counter()
+        start_index = 0
+
+        while start_index < len(lines) and self._looks_like_leading_early_document_residue(
+            line=lines[start_index],
+            page_number=page_number,
+            total_pages=total_pages,
+        ):
+            start_index += 1
+
+        if 0 < start_index < len(lines):
+            dropped_counter["early_document_leading_residue_line"] += start_index
+            lines = lines[start_index:]
+        else:
+            start_index = 0
+
+        end_index = len(lines)
+        tail_removed_count = 0
+        strong_tail_signal_count = 0
+
+        while end_index > 0 and self._looks_like_tail_early_document_residue(
+            line=lines[end_index - 1],
+            page_number=page_number,
+            total_pages=total_pages,
+        ):
+            if self._is_strong_tail_early_document_residue(
+                line=lines[end_index - 1],
+                page_number=page_number,
+                total_pages=total_pages,
+            ):
+                strong_tail_signal_count += 1
+
+            end_index -= 1
+            tail_removed_count += 1
+
+        if tail_removed_count > 0 and strong_tail_signal_count > 0:
+            dropped_counter["early_document_tail_residue_line"] += tail_removed_count
+            lines = lines[:end_index]
+
+        return lines, dropped_counter
+
+    def _looks_like_leading_early_document_residue(
+        self,
+        line: str,
+        page_number: int,
+        total_pages: int,
+    ) -> bool:
+        """
+        Detect weak early-document residue safe to trim from page starts.
+        """
+        return (
+            self._looks_like_institutional_cover_title_line(
+                line=line,
+                page_number=page_number,
+                total_pages=total_pages,
+            )
+            or self._looks_like_early_document_title_fragment_line(
+                line=line,
+                page_number=page_number,
+                total_pages=total_pages,
+            )
+            or self._looks_like_uppercase_front_matter_residue(
+                line=line,
+                page_number=page_number,
+                total_pages=total_pages,
+            )
+        )
+
+    def _looks_like_tail_early_document_residue(
+        self,
+        line: str,
+        page_number: int,
+        total_pages: int,
+    ) -> bool:
+        """
+        Detect weak early-document residue safe to trim from page tails.
+        """
+        return (
+            self._looks_like_signature_residue_line(line)
+            or self._looks_like_early_document_name_residue_line(
+                line=line,
+                page_number=page_number,
+                total_pages=total_pages,
+            )
+            or self._looks_like_early_document_title_fragment_line(
+                line=line,
+                page_number=page_number,
+                total_pages=total_pages,
+            )
+            or self._looks_like_uppercase_front_matter_residue(
+                line=line,
+                page_number=page_number,
+                total_pages=total_pages,
+            )
+        )
+
+    def _is_strong_tail_early_document_residue(
+        self,
+        line: str,
+        page_number: int,
+        total_pages: int,
+    ) -> bool:
+        """
+        Decide whether a tail residue line is strong enough to justify trimming.
+        """
+        return (
+            self._looks_like_signature_residue_line(line)
+            or self._looks_like_early_document_name_residue_line(
+                line=line,
+                page_number=page_number,
+                total_pages=total_pages,
+            )
+            or self._looks_like_early_document_title_fragment_line(
+                line=line,
+                page_number=page_number,
+                total_pages=total_pages,
+            )
+            or self._looks_like_institutional_cover_title_line(
+                line=line,
+                page_number=page_number,
+                total_pages=total_pages,
+            )
+        )
+
+    def _trim_trailing_garbled_blocks(
+        self,
+        lines: List[str],
+    ) -> Tuple[List[str], Counter[str]]:
+        """
+        Remove clearly garbled trailing blocks that survive line cleanup.
+
+        Why this helper exists
+        ----------------------
+        Some degraded PDFs append short formula-like OCR residue after an
+        otherwise valid provision. These tails often consist of many tiny lines
+        with symbols, acronyms, or corrupted tokens and provide no retrieval
+        value.
+
+        The helper only trims the trailing edge of a page and requires both:
+        - a sufficiently long weak suffix
+        - strong garbling signals within that suffix
+        """
+        if not lines:
+            return [], Counter()
+
+        start_index = len(lines)
+        while start_index > 0 and self._looks_like_trailing_garbled_line(
+            lines[start_index - 1]
+        ):
+            start_index -= 1
+
+        candidate = lines[start_index:]
+        if len(candidate) < 4:
+            return lines, Counter()
+
+        strong_signal_count = sum(
+            1 for line in candidate if self._is_strong_trailing_garbled_line(line)
+        )
+        short_line_count = sum(1 for line in candidate if len(line.split()) <= 2)
+        previous_line = lines[start_index - 1] if start_index > 0 else ""
+
+        if short_line_count < len(candidate) - 1:
+            return lines, Counter()
+
+        if strong_signal_count < 2:
+            return lines, Counter()
+
+        if not previous_line.endswith(":") and len(candidate) < 6:
+            return lines, Counter()
+
+        dropped_counter: Counter[str] = Counter()
+        dropped_counter["trailing_garbled_block_line"] += len(candidate)
+        return lines[:start_index], dropped_counter
+
+    def _looks_like_trailing_garbled_line(self, line: str) -> bool:
+        """
+        Detect short weak lines that may belong to a trailing garbled block.
+        """
+        if not line or len(line) > 24:
+            return False
+
+        if self._is_structural_line(line):
+            return False
+
+        if self._line_looks_like_body_content(line):
+            return False
+
+        if self._is_strong_trailing_garbled_line(line):
+            return True
+
+        word_count = len(line.split())
+        return word_count <= 1 and not line.endswith(".")
+
+    def _is_strong_trailing_garbled_line(self, line: str) -> bool:
+        """
+        Detect strong garbling signals inside a short trailing residue line.
+        """
+        stripped = line.strip()
+        if not stripped:
+            return False
+
+        if len(stripped) <= 2:
+            return True
+
+        if re.fullmatch(r"[_=+\-*/\\|(){}\[\]]+", stripped):
+            return True
+
+        if re.fullmatch(r"\d+(?:\s+\d+){0,2}", stripped):
+            return True
+
+        alpha_chars = [character for character in stripped if character.isalpha()]
+        if not alpha_chars:
+            return False
+
+        vowel_ratio = (
+            sum(
+                1
+                for character in alpha_chars
+                if character.lower() in "aeiouáàâãéèêíìîóòôõúùû"
+            )
+            / len(alpha_chars)
+        )
+        uppercase_ratio = (
+            sum(1 for character in alpha_chars if character.isupper()) / len(alpha_chars)
+        )
+        lowercase_ratio = (
+            sum(1 for character in alpha_chars if character.islower()) / len(alpha_chars)
+        )
+
+        return (
+            (len(alpha_chars) <= 3 and len(stripped.split()) <= 1)
+            or (uppercase_ratio >= 0.85 and vowel_ratio <= 0.30)
+            or (
+                0.20 <= uppercase_ratio <= 0.80
+                and 0.20 <= lowercase_ratio <= 0.80
+                and vowel_ratio <= 0.28
+            )
+        )
 
     # ------------------------------------------------------------------
     # Prose reflow
