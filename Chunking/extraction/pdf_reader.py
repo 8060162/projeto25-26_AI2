@@ -399,9 +399,16 @@ class PdfReader:
 
         suspicious_symbol_chars = {"*", "^", "_", "`", "~", "\\", "|", "<", ">"}
         suspicious_symbol_count = sum(1 for ch in stripped if ch in suspicious_symbol_chars)
+        symbol_count = sum(
+            1 for ch in stripped
+            if not ch.isalnum() and not ch.isspace()
+        )
 
         if suspicious_symbol_count / max(total_len, 1) > 0.03:
             flags.append("high_suspicious_symbol_density")
+
+        if symbol_count / max(total_len, 1) > 0.35:
+            flags.append("high_symbol_ratio")
 
         alpha_ratio = sum(1 for ch in stripped if ch.isalpha()) / max(total_len, 1)
         if alpha_ratio < 0.25:
