@@ -138,6 +138,58 @@ FRONT_MATTER_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Detect strong preamble openings commonly found in legal dispatch material.
+PREAMBLE_OPENING_RE = re.compile(
+    r"^\s*(?:"
+    r"Considerando(?:\s+que)?|"
+    r"Determino|"
+    r"Nos\s+termos|"
+    r"Ao\s+abrigo|"
+    r"Tendo\s+em\s+conta|"
+    r"Em\s+cumprimento|"
+    r"Sob\s+proposta"
+    r")\b",
+    re.IGNORECASE,
+)
+
+# Detect standalone institutional title lines that usually belong to a cover or
+# title block rather than to genuine preamble prose.
+INSTITUTIONAL_TITLE_LINE_RE = re.compile(
+    r"^\s*(?:"
+    r"Escola\s+Superior\b.*|"
+    r"Instituto\s+Politécnico\b.*|"
+    r"Politécnico\s+do\s+Porto\b.*|"
+    r"P\.PORTO\b.*"
+    r")$",
+    re.IGNORECASE,
+)
+
+# Detect short person-name lines commonly leaked from sign-off blocks.
+PERSON_NAME_LINE_RE = re.compile(
+    r"^\s*[A-ZÁÀÂÃÉÈÊÍÌÎÓÒÔÕÚÙÛÇ][a-záàâãéèêíìîóòôõúùûç]+"
+    r"(?:\s+[A-ZÁÀÂÃÉÈÊÍÌÎÓÒÔÕÚÙÛÇ][a-záàâãéèêíìîóòôõúùûç]+){1,4}\s*$"
+)
+
+# Detect short title fragments often leaked between sign-off blocks and the
+# first real regulation heading.
+REGULATION_TITLE_FRAGMENT_RE = re.compile(
+    r"^\s*(?:"
+    r"Regulamento\b.*|"
+    r"Despacho\b.*|"
+    r"Estatutos?\b.*|"
+    r"Princ[ií]pios\s+gerais\b.*|"
+    r"Disposi[cç][õo]es\s+gerais\b.*"
+    r")$",
+    re.IGNORECASE,
+)
+
+# Detect dangling connector endings that often indicate a preamble line was cut
+# by leaked title/signature residue immediately after it.
+TRUNCATED_PREAMBLE_TAIL_RE = re.compile(
+    r"(?:\s+(?:e\s+que|de\s+|do\s+|da\s+|dos\s+|das\s+|de|do|da|dos|das))\s*$",
+    re.IGNORECASE,
+)
+
 # Detect lines that should almost never survive as meaningful preamble content.
 #
 # These are not necessarily "bad extraction", but they are often administrative
@@ -315,7 +367,7 @@ class StructureParser:
         current_article: Optional[StructuralNode] = None
 
         pre_article_lines: List[Tuple[int, str]] = []
-        first_article_seen = False
+        body_started = False
         index = 0
 
         while index < len(lines):
@@ -326,6 +378,11 @@ class StructureParser:
             # ---------------------------------------------------------
             chapter_match = CHAPTER_HEADER_RE.match(line)
             if chapter_match:
+                if not body_started and pre_article_lines:
+                    self._attach_pre_article_content(root, pre_article_lines)
+                    pre_article_lines = []
+
+                body_started = True
                 chapter_number = chapter_match.group(1).strip()
                 inline_title = (chapter_match.group(2) or "").strip()
 
@@ -367,6 +424,11 @@ class StructureParser:
             # ---------------------------------------------------------
             section_container_match = SECTION_CONTAINER_RE.match(line)
             if section_container_match:
+                if not body_started and pre_article_lines:
+                    self._attach_pre_article_content(root, pre_article_lines)
+                    pre_article_lines = []
+
+                body_started = True
                 container_type = section_container_match.group(1).strip().upper()
                 container_number = section_container_match.group(2).strip()
                 inline_title = (section_container_match.group(3) or "").strip()
@@ -413,6 +475,11 @@ class StructureParser:
             # ---------------------------------------------------------
             annex_match = ANNEX_HEADER_RE.match(line)
             if annex_match:
+                if not body_started and pre_article_lines:
+                    self._attach_pre_article_content(root, pre_article_lines)
+                    pre_article_lines = []
+
+                body_started = True
                 annex_label = annex_match.group(1).strip()
                 inline_title = (annex_match.group(2) or "").strip()
 
@@ -454,10 +521,11 @@ class StructureParser:
             # ---------------------------------------------------------
             article_match = self._match_article_header(line)
             if article_match:
-                if not first_article_seen and pre_article_lines:
+                if not body_started and pre_article_lines:
                     self._attach_pre_article_content(root, pre_article_lines)
+                    pre_article_lines = []
 
-                first_article_seen = True
+                body_started = True
 
                 article_number = article_match.group(1).strip()
                 inline_title = (article_match.group(2) or "").strip()
@@ -551,7 +619,7 @@ class StructureParser:
             # ---------------------------------------------------------
             # Body text routing
             # ---------------------------------------------------------
-            if not first_article_seen:
+            if not body_started:
                 if self._should_keep_pre_article_line(line):
                     pre_article_lines.append((page_number, line))
                 index += 1
@@ -577,7 +645,7 @@ class StructureParser:
             )
             index += 1
 
-        if not first_article_seen and pre_article_lines:
+        if not body_started and pre_article_lines:
             self._attach_pre_article_content(root, pre_article_lines)
 
         self._post_process_nodes(root)
@@ -709,6 +777,8 @@ class StructureParser:
             else:
                 preamble_lines.append((page_number, line))
 
+        preamble_lines = self._trim_preamble_tail_residue(preamble_lines)
+
         if front_lines:
             front_text = self._normalize_node_text(
                 "\n".join(line for _, line in front_lines)
@@ -830,10 +900,150 @@ class StructureParser:
         if FRONT_MATTER_RE.match(line):
             return True
 
+        if self._looks_like_institutional_title_line(line):
+            return True
+
         # Short uppercase-heavy lines are often title-page / cover / index
         # material, but intentionally limit this heuristic so legitimate
         # long structural prose is not reclassified too aggressively.
         if UPPERCASE_HEAVY_RE.match(line) and len(line.split()) <= 8:
+            return True
+
+        return False
+
+    def _looks_like_institutional_title_line(self, line: str) -> bool:
+        """
+        Detect standalone institutional title lines near the document start.
+
+        Why this helper exists
+        ----------------------
+        Some legal PDFs begin with title-page residue such as school or
+        institution names written as standalone heading lines. Those lines are
+        structurally closer to FRONT_MATTER than to genuine preamble prose.
+
+        Parameters
+        ----------
+        line : str
+            Candidate line.
+
+        Returns
+        -------
+        bool
+            True when the line behaves like a standalone institutional heading.
+        """
+        if not line:
+            return False
+
+        stripped = line.strip()
+        if not stripped:
+            return False
+
+        if PREAMBLE_OPENING_RE.match(stripped):
+            return False
+
+        if BODY_START_RE.match(stripped):
+            return False
+
+        if not INSTITUTIONAL_TITLE_LINE_RE.match(stripped):
+            return False
+
+        if len(stripped.split()) > 18:
+            return False
+
+        if any(char.isdigit() for char in stripped):
+            return False
+
+        if "," in stripped or ";" in stripped or ":" in stripped:
+            return False
+
+        return True
+
+    def _trim_preamble_tail_residue(
+        self,
+        preamble_lines: List[Tuple[int, str]],
+    ) -> List[Tuple[int, str]]:
+        """
+        Remove non-normative residue leaked at the end of the preamble region.
+
+        Why this helper exists
+        ----------------------
+        The last pre-body lines sometimes contain sign-off names, roles, or
+        partial regulation titles. Those fragments should not survive inside
+        PREAMBLE because they harm retrieval text and blur the body boundary.
+
+        Parameters
+        ----------
+        preamble_lines : List[Tuple[int, str]]
+            Candidate preamble lines after front-matter classification.
+
+        Returns
+        -------
+        List[Tuple[int, str]]
+            Preamble lines with trailing residue removed conservatively.
+        """
+        if not preamble_lines:
+            return []
+
+        trimmed_lines = list(preamble_lines)
+        removed_tail = False
+
+        while trimmed_lines and self._looks_like_preamble_tail_residue(
+            trimmed_lines[-1][1]
+        ):
+            trimmed_lines.pop()
+            removed_tail = True
+
+        if removed_tail and trimmed_lines:
+            page_number, last_line = trimmed_lines[-1]
+            cleaned_last_line = TRUNCATED_PREAMBLE_TAIL_RE.sub("", last_line).strip()
+
+            if cleaned_last_line:
+                trimmed_lines[-1] = (page_number, cleaned_last_line)
+            else:
+                trimmed_lines.pop()
+
+        return trimmed_lines
+
+    def _looks_like_preamble_tail_residue(self, line: str) -> bool:
+        """
+        Detect trailing preamble lines that behave like sign-off or title noise.
+
+        Parameters
+        ----------
+        line : str
+            Candidate trailing line.
+
+        Returns
+        -------
+        bool
+            True when the line is more likely editorial residue than prose.
+        """
+        if not line:
+            return False
+
+        stripped = line.strip()
+        if not stripped:
+            return False
+
+        if PREAMBLE_OPENING_RE.match(stripped):
+            return False
+
+        if BODY_START_RE.match(stripped):
+            return False
+
+        if self._looks_like_front_matter_line(stripped):
+            return True
+
+        if PERSON_NAME_LINE_RE.match(stripped):
+            return True
+
+        if NON_NORMATIVE_PRE_ARTICLE_RE.match(stripped):
+            return True
+
+        if REGULATION_TITLE_FRAGMENT_RE.match(stripped):
+            return True
+
+        if len(stripped.split()) <= 5 and stripped.endswith(":"):
             return True
 
         return False
