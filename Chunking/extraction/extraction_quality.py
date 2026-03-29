@@ -261,6 +261,7 @@ class ExtractionQualityAnalyzer:
                 "quality_score": -1_000_000.0 if upstream_quality_score is None else upstream_quality_score,
                 "is_empty": True,
                 "looks_garbled": True,
+                "is_locally_unreliable": True,
                 "garbled_reasons": ["empty_text"],
                 "upstream_flags": list(upstream_flags),
             }
@@ -351,6 +352,11 @@ class ExtractionQualityAnalyzer:
             garbled_reasons.append("no_legal_markers_on_low_quality_page")
 
         looks_garbled = len(garbled_reasons) > 0
+        is_locally_unreliable = self._is_locally_unreliable_page(
+            quality_score=quality_score,
+            garbled_reasons=garbled_reasons,
+            upstream_flags=upstream_flags,
+        )
 
         return {
             "page_number": page_number,
@@ -368,6 +374,7 @@ class ExtractionQualityAnalyzer:
             "quality_score": quality_score,
             "is_empty": False,
             "looks_garbled": looks_garbled,
+            "is_locally_unreliable": is_locally_unreliable,
             "garbled_reasons": garbled_reasons,
             "upstream_flags": list(upstream_flags),
         }
@@ -519,6 +526,66 @@ class ExtractionQualityAnalyzer:
             None,
             [],
         )
+
+    def _is_locally_unreliable_page(
+        self,
+        quality_score: float,
+        garbled_reasons: Sequence[str],
+        upstream_flags: Sequence[str],
+    ) -> bool:
+        """
+        Decide whether one page should be treated defensively downstream.
+
+        Why this helper exists
+        ----------------------
+        Some documents remain globally acceptable while still containing a few
+        locally toxic pages. The downstream normalizer/parser can use this
+        boolean to avoid treating those pages too optimistically.
+
+        Parameters
+        ----------
+        quality_score : float
+            Blended page quality score.
+
+        garbled_reasons : Sequence[str]
+            Local analyzer reasons describing why the page looks degraded.
+
+        upstream_flags : Sequence[str]
+            Extraction-stage corruption flags already attached to the page.
+
+        Returns
+        -------
+        bool
+            True when the page looks degraded enough to justify defensive
+            downstream handling.
+        """
+        degrading_flags = {
+            "empty_text",
+            "replacement_like_characters",
+            "high_suspicious_symbol_density",
+            "high_symbol_ratio",
+            "low_alpha_ratio",
+        }
+
+        reason_set = set(garbled_reasons)
+        upstream_flag_set = set(upstream_flags)
+
+        if quality_score < 10.0 and (
+            reason_set.intersection(
+                {
+                    "low_alpha_ratio",
+                    "high_symbol_ratio",
+                    "replacement_like_characters_detected",
+                }
+            )
+            or upstream_flag_set.intersection(degrading_flags)
+        ):
+            return True
+
+        if quality_score < 0.0:
+            return True
+
+        return False
 
     def _count_legal_markers(self, text: str) -> int:
         """
