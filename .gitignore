@@ -14,3 +14,4 @@ AGENTS.md
 /.venv
 config/appsettings.json
 /tests/chunking/__pycache__
+/tests/chunking/__pycache__
