@@ -642,11 +642,15 @@ def _build_chunk_quality_summary(
             "avg_chars": (sum(char_counts) / len(char_counts)) if char_counts else 0,
         },
         "overall_status": validation_report["overall_status"],
+        "has_blocking_failures": blocking_overview["has_blocking_failures"],
         "valid_chunk_count": blocking_overview["valid_chunk_count"],
         "invalid_chunk_count": blocking_overview["invalid_chunk_count"],
         "acceptable_for_next_phase": next_phase_decision["is_acceptable"],
         "blocking_failure_count": blocking_overview["blocking_failure_count"],
         "blocking_failure_types": blocking_overview["blocking_failure_types"],
+        "failed_chunk_ids": blocking_overview["failed_chunk_ids"],
+        "acceptance_basis": "validator_blocking_failures",
+        "acceptance_reason": next_phase_decision["reason"],
         "next_phase_decision": next_phase_decision,
         "validator_summary": _build_validator_summary(validation_report),
         "chunk_neighbor_links_complete": all(
@@ -713,10 +717,13 @@ def _build_next_phase_decision(
         Deterministic acceptance decision for downstream consumption.
     """
     blocking_overview = _build_blocking_failure_overview(validation_report)
-    is_acceptable = blocking_overview["overall_status"] == "pass"
+    is_acceptable = not blocking_overview["has_blocking_failures"]
 
     if is_acceptable:
-        decision_reason = "Validator reported no blocking chunk-quality failures."
+        decision_reason = (
+            "Validator reported no blocking chunk-quality failures, so the chunk "
+            "sequence is acceptable for downstream embedding consumption."
+        )
     else:
         blocking_failure_types = blocking_overview["blocking_failure_types"]
         failure_label = ", ".join(blocking_failure_types[:3])
