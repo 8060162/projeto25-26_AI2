@@ -6,13 +6,20 @@ from typing import Any, Dict, Iterator, List, Optional, Sequence, Tuple
 from Chunking.chunking.models import Chunk, DocumentMetadata, StructuralNode
 from Chunking.chunking.strategy_base import BaseChunkingStrategy
 from Chunking.config.patterns import (
+    COVER_NOISE_RE,
+    FRONT_MATTER_RE,
     LEADING_PAGE_MARKER_RE,
     LOOSE_PAGE_COUNTER_LINE_RE,
     PROSE_START_RE,
+    SIGNATURE_LINE_RE,
     SUSPICIOUS_GARBLED_LINE_RE,
     UPPERCASE_HEAVY_RE,
 )
-from Chunking.utils.text import normalize_block_whitespace, split_paragraphs
+from Chunking.utils.text import (
+    fold_editorial_text,
+    normalize_block_whitespace,
+    split_paragraphs,
+)
 
 
 # ============================================================================
@@ -85,6 +92,22 @@ INLINE_HEADING_WITH_PROSE_RE = re.compile(
     r"^(?P<heading>[A-ZÁÀÂÃÉÈÊÍÌÎÓÒÔÕÚÙÛÇ0-9 /().,\-–—ºª]{5,80})\s+"
     r"(?P<body>(?:O|A|Os|As|No|Na|Nos|Nas|Em|Para|Por|Quando|Sempre|Caso|Se|"
     r"Nos\s+termos|Deve|Devem|Pode|Podem|É|São)\b.*)$"
+)
+
+PERSON_NAME_LINE_RE = re.compile(
+    r"^\s*[A-ZÁÀÂÃÉÈÊÍÌÎÓÒÔÕÚÙÛÇ][a-záàâãéèêíìîóòôõúùûç]+"
+    r"(?:\s+[A-ZÁÀÂÃÉÈÊÍÌÎÓÒÔÕÚÙÛÇ][a-záàâãéèêíìîóòôõúùûç]+){0,3}"
+    r"\.?\s*$"
+)
+
+TITLE_FRAGMENT_LINE_RE = re.compile(
+    r"^\s*(?:Regulamento|Despacho|Anexo)\b(?:\s+.*)?$",
+    re.IGNORECASE,
+)
+
+TRUNCATED_TAIL_CONNECTOR_RE = re.compile(
+    r"(?:\b(?:e|ou|que|de|do|da|dos|das|para|por)\s*)+$",
+    re.IGNORECASE,
 )
 
 
@@ -1343,6 +1366,9 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
 
             kept_lines.append(line)
 
+        kept_lines = self._trim_trailing_garbled_chunk_block(kept_lines)
+        kept_lines = self._trim_trailing_chunk_residue_lines(kept_lines)
+
         cleaned = "\n".join(kept_lines)
         cleaned = normalize_block_whitespace(cleaned).strip()
 
@@ -1360,6 +1386,152 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
         cleaned = self._remove_inline_heading_residue(cleaned)
 
         return cleaned.strip()
+
+    def _trim_trailing_chunk_residue_lines(self, lines: List[str]) -> List[str]:
+        """
+        Remove short trailing sign-off or title residue from visible chunk text.
+
+        Parameters
+        ----------
+        lines : List[str]
+            Already filtered visible lines.
+
+        Returns
+        -------
+        List[str]
+            Lines with conservative tail cleanup applied.
+        """
+        if not lines:
+            return []
+
+        end_index = len(lines)
+        tail_removed_count = 0
+        strong_tail_signal_count = 0
+
+        while end_index > 0 and self._looks_like_chunk_tail_residue_line(
+            lines[end_index - 1]
+        ):
+            if self._is_strong_chunk_tail_residue_line(lines[end_index - 1]):
+                strong_tail_signal_count += 1
+
+            end_index -= 1
+            tail_removed_count += 1
+
+        if tail_removed_count == 0 or strong_tail_signal_count == 0:
+            return lines
+
+        trimmed_lines = list(lines[:end_index])
+        if not trimmed_lines:
+            return []
+
+        trimmed_last_line = self._trim_truncated_tail_connector(trimmed_lines[-1])
+        if trimmed_last_line:
+            trimmed_lines[-1] = trimmed_last_line
+        else:
+            trimmed_lines.pop()
+
+        return trimmed_lines
+
+    def _looks_like_chunk_tail_residue_line(self, line: str) -> bool:
+        """
+        Detect weak trailing lines that behave like sign-off or title residue.
+
+        Parameters
+        ----------
+        line : str
+            Candidate trailing visible line.
+
+        Returns
+        -------
+        bool
+            True when the line behaves more like residue than body prose.
+        """
+        if not line:
+            return False
+
+        stripped = normalize_block_whitespace(line).strip()
+        if not stripped:
+            return False
+
+        if self._is_strong_chunk_tail_residue_line(stripped):
+            return True
+
+        if PROSE_START_RE.match(stripped) and len(stripped.split()) >= 4:
+            return False
+
+        return (
+            len(stripped.split()) <= 6
+            and UPPERCASE_HEAVY_RE.match(stripped) is not None
+            and stripped[-1] not in {".", ",", ";", ":"}
+        )
+
+    def _is_strong_chunk_tail_residue_line(self, line: str) -> bool:
+        """
+        Detect strong tail-residue signals safe to trim at chunk end.
+
+        Parameters
+        ----------
+        line : str
+            Candidate trailing visible line.
+
+        Returns
+        -------
+        bool
+            True when the line strongly behaves like sign-off or title residue.
+        """
+        if not line:
+            return False
+
+        stripped = normalize_block_whitespace(line).strip()
+        if not stripped:
+            return False
+
+        if SIGNATURE_LINE_RE.match(stripped):
+            return True
+
+        if COVER_NOISE_RE.match(stripped):
+            return True
+
+        if FRONT_MATTER_RE.match(stripped) and len(stripped.split()) <= 10:
+            return True
+
+        if PERSON_NAME_LINE_RE.match(stripped):
+            return True
+
+        if TITLE_FRAGMENT_LINE_RE.match(stripped) and len(stripped.split()) <= 8:
+            return True
+
+        folded_line = fold_editorial_text(stripped)
+        if folded_line in {"regulamento", "regulamento de", "regulamento do"}:
+            return True
+
+        return False
+
+    def _trim_truncated_tail_connector(self, line: str) -> str:
+        """
+        Remove a dangling connector left behind after tail-residue trimming.
+
+        Parameters
+        ----------
+        line : str
+            Last remaining visible line.
+
+        Returns
+        -------
+        str
+            Line with a weak truncated connector removed conservatively.
+        """
+        if not line:
+            return ""
+
+        stripped = normalize_block_whitespace(line).strip()
+        if not stripped:
+            return ""
+
+        if stripped.endswith((".", ";", ":", "?", "!")):
+            return stripped
+
+        return TRUNCATED_TAIL_CONNECTOR_RE.sub("", stripped).strip()
 
     def _is_standalone_article_header_line(self, line: str) -> bool:
         """
@@ -1465,6 +1637,143 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
             return True
 
         return False
+
+    def _trim_trailing_garbled_chunk_block(self, lines: List[str]) -> List[str]:
+        """
+        Remove a trailing multi-line garbled block from visible chunk text.
+
+        Parameters
+        ----------
+        lines : List[str]
+            Already filtered visible lines.
+
+        Returns
+        -------
+        List[str]
+            Lines with a weak trailing garbled block removed when safe.
+        """
+        if not lines:
+            return []
+
+        start_index = len(lines)
+        while start_index > 0 and self._looks_like_trailing_garbled_chunk_line(
+            lines[start_index - 1]
+        ):
+            start_index -= 1
+
+        candidate = lines[start_index:]
+        if len(candidate) < 4:
+            return lines
+
+        strong_signal_count = sum(
+            1
+            for line in candidate
+            if self._is_strong_trailing_garbled_chunk_line(line)
+        )
+        short_line_count = sum(1 for line in candidate if len(line.split()) <= 2)
+        previous_line = lines[start_index - 1] if start_index > 0 else ""
+
+        if short_line_count < len(candidate) - 1:
+            return lines
+
+        if strong_signal_count < 2:
+            return lines
+
+        if not previous_line.endswith(":") and len(candidate) < 6:
+            return lines
+
+        return lines[:start_index]
+
+    def _looks_like_trailing_garbled_chunk_line(self, line: str) -> bool:
+        """
+        Detect short weak lines that may belong to a garbled trailing block.
+
+        Parameters
+        ----------
+        line : str
+            Candidate trailing visible line.
+
+        Returns
+        -------
+        bool
+            True when the line behaves like weak garbled residue.
+        """
+        if not line:
+            return False
+
+        stripped = normalize_block_whitespace(line).strip()
+        if not stripped or len(stripped) > 24:
+            return False
+
+        if self._is_standalone_article_header_line(stripped):
+            return False
+
+        if PROSE_START_RE.match(stripped) and len(stripped.split()) >= 3:
+            return False
+
+        if self._is_strong_trailing_garbled_chunk_line(stripped):
+            return True
+
+        return len(stripped.split()) <= 1 and not stripped.endswith(".")
+
+    def _is_strong_trailing_garbled_chunk_line(self, line: str) -> bool:
+        """
+        Detect strong garbling signals inside a short trailing residue line.
+
+        Parameters
+        ----------
+        line : str
+            Candidate trailing visible line.
+
+        Returns
+        -------
+        bool
+            True when the line has strong OCR-like corruption signals.
+        """
+        if not line:
+            return False
+
+        stripped = normalize_block_whitespace(line).strip()
+        if not stripped:
+            return False
+
+        if len(stripped) <= 2:
+            return True
+
+        if re.fullmatch(r"[_=+\-*/\\|(){}\[\]]+", stripped):
+            return True
+
+        if re.fullmatch(r"\d+(?:\s+\d+){0,2}", stripped):
+            return True
+
+        alpha_chars = [character for character in stripped if character.isalpha()]
+        if not alpha_chars:
+            return False
+
+        vowel_ratio = (
+            sum(
+                1
+                for character in alpha_chars
+                if character.lower() in "aeiouáàâãéèêíìîóòôõúùû"
+            )
+            / len(alpha_chars)
+        )
+        uppercase_ratio = (
+            sum(1 for character in alpha_chars if character.isupper()) / len(alpha_chars)
+        )
+        lowercase_ratio = (
+            sum(1 for character in alpha_chars if character.islower()) / len(alpha_chars)
+        )
+
+        return (
+            (len(alpha_chars) <= 3 and len(stripped.split()) <= 1)
+            or (uppercase_ratio >= 0.85 and vowel_ratio <= 0.30)
+            or (
+                0.20 <= uppercase_ratio <= 0.80
+                and 0.20 <= lowercase_ratio <= 0.80
+                and vowel_ratio <= 0.28
+            )
+        )
 
     def _remove_residual_title_prefix(
         self,
