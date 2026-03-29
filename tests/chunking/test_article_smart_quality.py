@@ -4,7 +4,13 @@ from __future__ import annotations
 
 import unittest
 
-from Chunking.chunking.models import DocumentMetadata, PageText, StructuralNode
+from Chunking.chunking.models import (
+    DocumentMetadata,
+    ExtractedDocument,
+    ExtractedPage,
+    PageText,
+    StructuralNode,
+)
 from Chunking.chunking.strategy_article_smart import ArticleSmartChunkingStrategy
 from Chunking.cleaning.normalizer import TextNormalizer
 from Chunking.config.settings import PipelineSettings
@@ -29,6 +35,24 @@ def build_article_smart_chunks(
     effective_settings = settings or PipelineSettings()
     normalized = TextNormalizer().normalize(
         [PageText(page_number=1, text=raw_text)]
+    )
+    structure_root = StructureParser().parse(normalized)
+    strategy = ArticleSmartChunkingStrategy(effective_settings)
+    return strategy.build_chunks(build_document_metadata(), structure_root)
+
+
+def build_article_smart_chunks_from_extracted_pages(
+    pages: list[ExtractedPage],
+    settings: PipelineSettings | None = None,
+):
+    """Run article_smart while preserving extracted-page quality signals."""
+    effective_settings = settings or PipelineSettings()
+    normalized = TextNormalizer().normalize(
+        ExtractedDocument(
+            source_path="quality_regression.pdf",
+            page_count=len(pages),
+            pages=pages,
+        )
     )
     structure_root = StructureParser().parse(normalized)
     strategy = ArticleSmartChunkingStrategy(effective_settings)
@@ -455,9 +479,163 @@ class ArticleSmartQualityRegressionTests(unittest.TestCase):
 
         self.assertEqual(len(chunks), 2)
         self.assertNotIn("Paulo Pereira", chunks[0].text)
-        self.assertNotIn("Regulamento de", chunks[0].text)
+        self.assertFalse(
+            any(line.strip() == "Regulamento de" for line in chunks[0].text.splitlines())
+        )
         self.assertFalse(chunks[0].text.endswith("e que"))
         self.assertEqual(chunks[1].text, "O regulamento aplica-se a todos os cursos.")
+
+    def test_front_matter_node_is_not_exported_as_visible_chunk(self) -> None:
+        """Ensure front matter stays structural metadata and never becomes chunk text."""
+        root = StructuralNode(
+            node_type="DOCUMENT",
+            label="DOCUMENT",
+            children=[
+                StructuralNode(
+                    node_type="FRONT_MATTER",
+                    label="FRONT_MATTER",
+                    text=(
+                        "Escola Superior de Tecnologia e Gestao do Instituto Politecnico do Porto."
+                    ),
+                    page_start=1,
+                    page_end=1,
+                ),
+                StructuralNode(
+                    node_type="PREAMBLE",
+                    label="PREAMBLE",
+                    text="Considerando a necessidade de atualizar o regulamento.",
+                    page_start=1,
+                    page_end=1,
+                ),
+                StructuralNode(
+                    node_type="ARTICLE",
+                    label="ART_1",
+                    title="Objeto",
+                    text="O presente regulamento define o objeto.",
+                    page_start=2,
+                    page_end=2,
+                    metadata={
+                        "article_number": "1",
+                        "article_title": "Objeto",
+                        "document_part": "regulation_body",
+                    },
+                ),
+            ],
+        )
+        strategy = ArticleSmartChunkingStrategy(PipelineSettings())
+
+        chunks = strategy.build_chunks(build_document_metadata(), root)
+
+        self.assertEqual(len(chunks), 2)
+        self.assertEqual(
+            [chunk.source_node_type for chunk in chunks],
+            ["PREAMBLE", "ARTICLE"],
+        )
+        self.assertTrue(
+            all(
+                "Escola Superior de Tecnologia e Gestao"
+                not in chunk.text_for_embedding
+                for chunk in chunks
+            )
+        )
+
+    def test_preamble_split_does_not_start_following_chunk_with_dangling_fragment(self) -> None:
+        """Ensure legal-signal preamble splits do not emit weak lowercase continuations."""
+        preamble = StructuralNode(
+            node_type="PREAMBLE",
+            label="PREAMBLE",
+            text="\n".join(
+                [
+                    "Considerando:",
+                    (
+                        "O regulamento estabelece o regime aplicavel aos pedidos e "
+                        "procedimentos seguintes, mantendo contexto suficiente para "
+                        "forcar divisao controlada nesta fase."
+                    ),
+                    (
+                        "1. Reingresso em ciclos de estudo com regras, prazos e "
+                        "condicoes detalhadas para justificar divisao semantica."
+                    ),
+                    (
+                        "2. Mudanca de par instituicao/curso com regras, prazos e "
+                        "condicoes detalhadas para justificar divisao semantica."
+                    ),
+                    (
+                        "3. Concurso especial com regras, prazos e condicoes "
+                        "detalhadas para justificar divisao semantica."
+                    ),
+                ]
+            ),
+            page_start=1,
+            page_end=1,
+        )
+        root = StructuralNode(
+            node_type="DOCUMENT",
+            label="DOCUMENT",
+            children=[preamble],
+        )
+        settings = PipelineSettings(
+            target_chunk_chars=170,
+            min_chunk_chars=80,
+            hard_max_chunk_chars=220,
+            overlap_chars=60,
+        )
+        strategy = ArticleSmartChunkingStrategy(settings)
+
+        chunks = strategy.build_chunks(build_document_metadata(), root)
+
+        self.assertGreater(len(chunks), 1)
+        self.assertTrue(all(chunk.char_count <= settings.hard_max_chunk_chars for chunk in chunks))
+        self.assertFalse(any(chunk.text.startswith("em ciclos de estudo") for chunk in chunks))
+        self.assertFalse(any(chunk.text.startswith("de par instituicao/curso") for chunk in chunks))
+        self.assertFalse(any(chunk.text.startswith("especial com regras") for chunk in chunks))
+
+    def test_locally_degraded_index_page_does_not_pollute_first_exported_chunk(self) -> None:
+        """Ensure toxic TOC pages do not leak into the first article_smart chunks."""
+        chunks = build_article_smart_chunks_from_extracted_pages(
+            [
+                ExtractedPage(
+                    page_number=1,
+                    text="Considerando a necessidade de fixar regras comuns.",
+                    selected_mode="dict",
+                    quality_score=120.0,
+                    corruption_flags=[],
+                ),
+                ExtractedPage(
+                    page_number=2,
+                    text=(
+                        "REGULAMENTO P.PORTO/P-002/2025\n"
+                        "PROPINAS DO INSTITUTO POLITECNICO DO PORTO\n"
+                        "1|14\n"
+                        "CAPITULO I ........................................ 3\n"
+                        "DISPOSICOES GERAIS ................................ 3\n"
+                        "ARTIGO 1 ........................................ 3\n"
+                        "OBJETO ........................................ 3\n"
+                        "CAPITULO II ........................................ 7"
+                    ),
+                    selected_mode="text",
+                    quality_score=-4.0,
+                    corruption_flags=["low_alpha_ratio", "high_symbol_ratio"],
+                ),
+                ExtractedPage(
+                    page_number=3,
+                    text=(
+                        "Artigo 1 - Objeto\n"
+                        "O presente regulamento define o objeto."
+                    ),
+                    selected_mode="dict",
+                    quality_score=118.0,
+                    corruption_flags=[],
+                ),
+            ]
+        )
+
+        self.assertEqual(len(chunks), 2)
+        self.assertEqual(chunks[0].text, "Considerando a necessidade de fixar regras comuns.")
+        self.assertEqual(chunks[0].source_node_type, "PREAMBLE")
+        self.assertNotIn("CAPITULO I", chunks[0].text_for_embedding)
+        self.assertNotIn("1|14", chunks[0].text_for_embedding)
+        self.assertEqual(chunks[1].text, "O presente regulamento define o objeto.")
 
     def test_default_settings_split_long_preamble_within_1024_chars(self) -> None:
         """Ensure oversized preamble text is split under the hard size ceiling."""
