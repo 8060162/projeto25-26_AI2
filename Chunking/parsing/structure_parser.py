@@ -5,6 +5,7 @@ from typing import List, Optional, Sequence, Tuple, Union
 
 from Chunking.chunking.models import StructuralNode
 from Chunking.cleaning.normalizer import NormalizedDocument, NormalizedPage
+from Chunking.utils.text import has_suspicious_truncated_ending
 
 
 # ============================================================================
@@ -170,6 +171,11 @@ PERSON_NAME_LINE_RE = re.compile(
     r"(?:\s+[A-ZÁÀÂÃÉÈÊÍÌÎÓÒÔÕÚÙÛÇ][a-záàâãéèêíìîóòôõúùûç]+){1,4}\s*$"
 )
 
+# Detect single surname-like fragments commonly leaked from sign-off blocks.
+PERSON_NAME_FRAGMENT_RE = re.compile(
+    r"^\s*[A-ZÁÀÂÃÉÈÊÍÌÎÓÒÔÕÚÙÛÇ][a-záàâãéèêíìîóòôõúùûç]{3,}\.?\s*$"
+)
+
 # Detect short title fragments often leaked between sign-off blocks and the
 # first real regulation heading.
 REGULATION_TITLE_FRAGMENT_RE = re.compile(
@@ -187,6 +193,21 @@ REGULATION_TITLE_FRAGMENT_RE = re.compile(
 # by leaked title/signature residue immediately after it.
 TRUNCATED_PREAMBLE_TAIL_RE = re.compile(
     r"(?:\s+(?:e\s+que|de\s+|do\s+|da\s+|dos\s+|das\s+|de|do|da|dos|das))\s*$",
+    re.IGNORECASE,
+)
+
+# Detect lowercase-leading institutional fragments that usually represent the
+# tail of a title-page or sign-off line, not genuine preamble prose.
+LEADING_INSTITUTIONAL_FRAGMENT_RE = re.compile(
+    r"^\s*(?:de|do|da|dos|das|e)\b.*"
+    r"(?:Instituto|Escola|Politécnico|P\.PORTO|ESTG)\b.*[.;:]?\s*$",
+    re.IGNORECASE,
+)
+
+# Detect truncated administrative reference tails left after removing broken
+# approval-list residue from PREAMBLE.
+TRUNCATED_ADMIN_REFERENCE_RE = re.compile(
+    r"\b(?:Estatutos?|Regime\s+Jur[ií]dico|C[oó]digo)\b\s*$",
     re.IGNORECASE,
 )
 
@@ -577,21 +598,47 @@ class StructureParser:
                     )
 
                 # -----------------------------------------------------
-                # Recovery heuristic:
-                # sometimes extraction/normalization merges:
+                # Recovery heuristics:
+                # sometimes extraction/normalization either:
                 #
-                #   <article title line>
-                #   <first body line>
+                # 1) merges:
+                #      <article title line>
+                #      <first body line>
                 #
-                # into:
+                #    into:
                 #
-                #   "<TITLE> O presente regulamento ..."
+                #      "<TITLE> O presente regulamento ..."
                 #
-                # If the article still has no title, inspect the first unread
-                # line and try to split it into:
-                # - article title
-                # - first body line
+                # 2) splits a short title between the header suffix and the
+                #    next line:
+                #
+                #      "Artigo 19 - Entrada"
+                #      "em vigor O presente regulamento ..."
+                #
+                # Both cases should be recovered before body routing starts.
                 # -----------------------------------------------------
+                if current_article.title and next_index < len(lines):
+                    continued_title = self._split_following_title_continuation_and_body(
+                        current_article.title,
+                        lines[next_index][1],
+                    )
+
+                    if continued_title is not None:
+                        recovered_title, recovered_body = continued_title
+
+                        current_article.title = recovered_title
+                        current_article.metadata["article_title"] = recovered_title
+
+                        if recovered_body:
+                            self._append_text_to_node(
+                                node=current_article,
+                                line=recovered_body,
+                                page_number=lines[next_index][0],
+                            )
+
+                        index = next_index + 1
+                        continue
+
                 if not current_article.title and next_index < len(lines):
                     inline_title_result = self._split_inline_title_and_body(
                         lines[next_index][1]
@@ -777,7 +824,7 @@ class StructureParser:
             else:
                 preamble_lines.append((page_number, line))
 
-        preamble_lines = self._trim_preamble_tail_residue(preamble_lines)
+        preamble_lines = self._trim_preamble_edge_residue(preamble_lines)
 
         if front_lines:
             front_text = self._normalize_node_text(
@@ -958,6 +1005,86 @@ class StructureParser:
 
         return True
 
+    def _trim_preamble_edge_residue(
+        self,
+        preamble_lines: List[Tuple[int, str]],
+    ) -> List[Tuple[int, str]]:
+        """
+        Remove leading and trailing preamble residue conservatively.
+
+        Why this helper exists
+        ----------------------
+        Real dispatch-style PDFs frequently leak:
+        - title-page tail fragments at the start of PREAMBLE
+        - sign-off residue or broken approval lists at the end of PREAMBLE
+
+        Those fragments are structural contamination and should be trimmed
+        before chunking.
+        """
+        trimmed_lines = self._trim_preamble_leading_residue(preamble_lines)
+        return self._trim_preamble_tail_residue(trimmed_lines)
+
+    def _trim_preamble_leading_residue(
+        self,
+        preamble_lines: List[Tuple[int, str]],
+    ) -> List[Tuple[int, str]]:
+        """
+        Remove obvious leading title/sign-off fragments from PREAMBLE.
+
+        Parameters
+        ----------
+        preamble_lines : List[Tuple[int, str]]
+            Candidate preamble lines after front-matter classification.
+
+        Returns
+        -------
+        List[Tuple[int, str]]
+            Preamble lines with leading residue removed conservatively.
+        """
+        if not preamble_lines:
+            return []
+
+        trimmed_lines = list(preamble_lines)
+
+        while trimmed_lines and self._looks_like_preamble_leading_residue(
+            trimmed_lines[0][1]
+        ):
+            trimmed_lines.pop(0)
+
+        return trimmed_lines
+
+    def _looks_like_preamble_leading_residue(self, line: str) -> bool:
+        """
+        Detect leading preamble lines that behave like leaked title fragments.
+
+        Parameters
+        ----------
+        line : str
+            Candidate leading line.
+
+        Returns
+        -------
+        bool
+            True when the line is more likely residue than prose.
+        """
+        if not line:
+            return False
+
+        stripped = line.strip()
+        if not stripped:
+            return False
+
+        if PREAMBLE_OPENING_RE.match(stripped):
+            return False
+
+        if BODY_START_RE.match(stripped):
+            return False
+
+        if LEADING_INSTITUTIONAL_FRAGMENT_RE.match(stripped):
+            return True
+
+        return False
+
     def _trim_preamble_tail_residue(
         self,
         preamble_lines: List[Tuple[int, str]],
@@ -986,12 +1113,16 @@ class StructureParser:
 
         trimmed_lines = list(preamble_lines)
         removed_tail = False
-
         while trimmed_lines and self._looks_like_preamble_tail_residue(
             trimmed_lines[-1][1]
         ):
             trimmed_lines.pop()
             removed_tail = True
+
+        trimmed_lines, removed_item_block = self._trim_broken_preamble_item_block(
+            trimmed_lines
+        )
+        removed_tail = removed_tail or removed_item_block
 
         if removed_tail and trimmed_lines:
             page_number, last_line = trimmed_lines[-1]
@@ -1001,6 +1132,14 @@ class StructureParser:
                 trimmed_lines[-1] = (page_number, cleaned_last_line)
             else:
                 trimmed_lines.pop()
+
+        if (
+            removed_tail
+            and trimmed_lines
+            and not trimmed_lines[-1][1].rstrip().endswith((".", ";", ":", "!", "?"))
+            and TRUNCATED_ADMIN_REFERENCE_RE.search(trimmed_lines[-1][1])
+        ):
+            trimmed_lines.pop()
 
         return trimmed_lines
 
@@ -1037,6 +1176,9 @@ class StructureParser:
         if PERSON_NAME_LINE_RE.match(stripped):
             return True
 
+        if PERSON_NAME_FRAGMENT_RE.match(stripped):
+            return True
+
         if NON_NORMATIVE_PRE_ARTICLE_RE.match(stripped):
             return True
 
@@ -1045,6 +1187,109 @@ class StructureParser:
 
         if len(stripped.split()) <= 5 and stripped.endswith(":"):
             return True
+
+        return False
+
+    def _trim_broken_preamble_item_block(
+        self,
+        preamble_lines: List[Tuple[int, str]],
+    ) -> Tuple[List[Tuple[int, str]], bool]:
+        """
+        Remove trailing broken numbered/lettered item blocks from PREAMBLE.
+
+        Why this helper exists
+        ----------------------
+        Dispatch material may leak approval-list fragments into PREAMBLE right
+        before the first article. When those item blocks are incomplete or
+        clearly detached from the preceding prose, they should be removed as
+        structural residue.
+        """
+        if not preamble_lines:
+            return preamble_lines, False
+
+        item_start = len(preamble_lines)
+        while item_start > 0 and self._looks_like_list_item_line(
+            preamble_lines[item_start - 1][1]
+        ):
+            item_start -= 1
+
+        if item_start == len(preamble_lines):
+            return preamble_lines, False
+
+        trailing_item_lines = [line for _, line in preamble_lines[item_start:]]
+        previous_line = (
+            preamble_lines[item_start - 1][1]
+            if item_start > 0
+            else ""
+        )
+
+        if not self._looks_like_broken_preamble_item_block(
+            trailing_item_lines,
+            previous_line,
+        ):
+            return preamble_lines, False
+
+        return preamble_lines[:item_start], True
+
+    def _looks_like_list_item_line(self, line: str) -> bool:
+        """
+        Detect numbered or lettered legal-item lines.
+
+        Parameters
+        ----------
+        line : str
+            Candidate line.
+
+        Returns
+        -------
+        bool
+            True when the line starts with a legal-item prefix.
+        """
+        if not line:
+            return False
+
+        return bool(NUMBERED_BLOCK_RE.match(line) or LETTERED_BLOCK_RE.match(line))
+
+    def _looks_like_broken_preamble_item_block(
+        self,
+        trailing_item_lines: Sequence[str],
+        previous_line: str,
+    ) -> bool:
+        """
+        Decide whether a trailing item block behaves like broken residue.
+
+        Parameters
+        ----------
+        trailing_item_lines : Sequence[str]
+            Consecutive list-item lines at the end of PREAMBLE.
+
+        previous_line : str
+            The line immediately before the item block, when it exists.
+
+        Returns
+        -------
+        bool
+            True when the item block should be treated as residue.
+        """
+        if not trailing_item_lines:
+            return False
+
+        if previous_line and has_suspicious_truncated_ending(previous_line):
+            return True
+
+        if any(has_suspicious_truncated_ending(line) for line in trailing_item_lines):
+            return True
+
+        letter_labels: List[str] = []
+        for line in trailing_item_lines:
+            match = LETTERED_BLOCK_RE.match(line)
+            if match:
+                letter_labels.append(match.group("label").lower())
+
+        if len(letter_labels) >= 2:
+            for current_label, next_label in zip(letter_labels, letter_labels[1:]):
+                if ord(next_label) - ord(current_label) != 1:
+                    return True
 
         return False
 
@@ -1299,6 +1544,8 @@ class StructureParser:
             ):
                 return title, body
 
+        best_candidate: Optional[Tuple[str, str]] = None
+
         for match in HEADER_SUFFIX_BODY_START_RE.finditer(stripped_line):
             body_start = match.start("body")
             if body_start <= 0:
@@ -1316,9 +1563,106 @@ class StructureParser:
             if len(body.split()) < 3:
                 continue
 
-            return title, body
+            if self._has_preferred_inline_body_start(body):
+                return title, body
+
+            best_candidate = (title, body)
+
+        return best_candidate
+
+    def _split_following_title_continuation_and_body(
+        self,
+        current_title: str,
+        line: str,
+    ) -> Optional[Tuple[str, str]]:
+        """
+        Recover title/body boundaries when the next line continues the title.
+
+        Example
+        -------
+        "Entrada" + "em vigor O presente regulamento..."
+        -> ("Entrada em vigor", "O presente regulamento...")
+
+        Parameters
+        ----------
+        current_title : str
+            Title already recovered from the article header.
+
+        line : str
+            Candidate line immediately following the article header.
+
+        Returns
+        -------
+        Optional[Tuple[str, str]]
+            (extended_title, body) when the pattern looks trustworthy.
+        """
+        if not current_title or not line:
+            return None
+
+        stripped_line = line.strip()
+        if not stripped_line or self._looks_like_garbled_line(stripped_line):
+            return None
+
+        for match in HEADER_SUFFIX_BODY_START_RE.finditer(stripped_line):
+            body_start = match.start("body")
+            if body_start <= 0:
+                continue
+
+            title_continuation = stripped_line[:body_start].strip()
+            body = stripped_line[body_start:].strip()
+
+            if not title_continuation or not body:
+                continue
+
+            if not title_continuation[0].islower():
+                continue
+
+            if len(title_continuation.split()) > 4:
+                continue
+
+            candidate_title = f"{current_title} {title_continuation}".strip()
+            if not self._is_probable_title_line(candidate_title):
+                continue
+
+            if len(body.split()) < 3:
+                continue
+
+            return candidate_title, body
 
         return None
+
+    def _has_preferred_inline_body_start(self, body: str) -> bool:
+        """
+        Detect whether one split candidate starts at a strong body boundary.
+
+        Why this helper exists
+        ----------------------
+        Inline title/body recovery may surface several syntactically valid
+        split points. The best split usually starts where the body opens with:
+        - a numbered or lettered legal block
+        - an uppercase prose opener such as "O presente ..."
+
+        Parameters
+        ----------
+        body : str
+            Candidate body portion after one potential split point.
+
+        Returns
+        -------
+        bool
+            True when the body start behaves like a strong boundary.
+        """
+        if not body:
+            return False
+
+        if NUMBERED_BLOCK_RE.match(body) or LETTERED_BLOCK_RE.match(body):
+            return True
+
+        stripped_body = body.lstrip()
+        if not stripped_body:
+            return False
+
+        return stripped_body[0].isupper()
 
     def _split_header_suffix_title_and_body(
         self,
@@ -1349,6 +1693,8 @@ class StructureParser:
         if not stripped_suffix:
             return None
 
+        best_candidate: Optional[Tuple[str, str]] = None
+
         for match in HEADER_SUFFIX_BODY_START_RE.finditer(stripped_suffix):
             body_start = match.start("body")
             if body_start <= 0:
@@ -1366,9 +1712,12 @@ class StructureParser:
             if len(body.split()) < 3:
                 continue
 
-            return title, body
+            if self._has_preferred_inline_body_start(body):
+                return title, body
 
-        return None
+            best_candidate = (title, body)
+
+        return best_candidate
 
     def _match_article_header(self, line: str) -> Optional[re.Match[str]]:
         """
