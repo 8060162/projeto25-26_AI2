@@ -245,6 +245,82 @@ class StructureParserQualityRegressionTests(unittest.TestCase):
             "O presente regulamento aplica-se a todos os cursos.",
         )
 
+    def test_preamble_leading_tail_fragment_is_trimmed_before_opening(self) -> None:
+        """Ensure leaked title tails do not remain at the start of PREAMBLE."""
+        root = build_structure_from_lines(
+            (
+                "de Tecnologia e Gestao do Instituto Politecnico do Porto.\n"
+                "Considerando a necessidade de atualizar o regulamento.\n"
+                "Artigo 1 - Objeto\n"
+                "O presente regulamento define o objeto."
+            )
+        )
+
+        preamble_nodes = collect_nodes_by_type(root, "PREAMBLE")
+
+        self.assertEqual(len(preamble_nodes), 1)
+        self.assertEqual(
+            preamble_nodes[0].text,
+            "Considerando a necessidade de atualizar o regulamento.",
+        )
+
+    def test_broken_dispatch_item_block_is_trimmed_from_preamble_tail(self) -> None:
+        """Ensure broken approval-list tails do not remain in PREAMBLE."""
+        root = build_structure_from_lines(
+            (
+                "Considerando que o projeto foi submetido a consulta publica.\n"
+                "Determino, no uso das competencias previstas nos Estatutos do\n"
+                "a) A aprovacao do regulamento anexo ao presente despacho e que\n"
+                "c) A revogacao do despacho anterior.\n"
+                "Artigo 1 - Objeto\n"
+                "O presente regulamento aplica-se a todos os cursos."
+            )
+        )
+
+        preamble_nodes = collect_nodes_by_type(root, "PREAMBLE")
+
+        self.assertEqual(len(preamble_nodes), 1)
+        self.assertEqual(
+            preamble_nodes[0].text,
+            "Considerando que o projeto foi submetido a consulta publica.",
+        )
+
+    def test_header_title_can_continue_on_next_line_before_body(self) -> None:
+        """Ensure split short titles are merged before body routing starts."""
+        root = build_structure_from_lines(
+            (
+                "Artigo 19 - Entrada\n"
+                "em vigor O presente regulamento entra em vigor no dia seguinte."
+            )
+        )
+
+        articles = collect_articles(root)
+
+        self.assertEqual(len(articles), 1)
+        self.assertEqual(articles[0].title, "Entrada em vigor")
+        self.assertEqual(
+            articles[0].text,
+            "O presente regulamento entra em vigor no dia seguinte.",
+        )
+
+    def test_inline_title_body_split_prefers_full_short_title(self) -> None:
+        """Ensure inline splitting does not stop at a lowercase title tail."""
+        root = build_structure_from_lines(
+            (
+                "Artigo 19.o\n"
+                "Entrada em vigor O presente regulamento entra em vigor no dia seguinte."
+            )
+        )
+
+        articles = collect_articles(root)
+
+        self.assertEqual(len(articles), 1)
+        self.assertEqual(articles[0].title, "Entrada em vigor")
+        self.assertEqual(
+            articles[0].text,
+            "O presente regulamento entra em vigor no dia seguinte.",
+        )
+
     def test_chapter_body_starts_before_first_article_without_polluting_preamble(self) -> None:
         """Ensure preamble closes at the first normative chapter boundary."""
         root = build_structure_from_lines(
