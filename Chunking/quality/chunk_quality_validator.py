@@ -4,10 +4,20 @@ import re
 from typing import Any, Callable, Dict, List, Optional, Sequence
 
 from Chunking.chunking.models import Chunk
+from Chunking.config.patterns import (
+    LETTERED_ITEM_PREFIX_RE,
+    LEADING_PAGE_MARKER_RE,
+    LOOSE_PAGE_COUNTER_LINE_RE,
+    NUMBERED_ITEM_PREFIX_RE,
+    SUSPICIOUS_GARBLED_LINE_RE,
+)
 from Chunking.config.settings import PipelineSettings
 from Chunking.utils.text import (
+    BROKEN_ENCLITIC_HYPHEN_RE,
+    BROKEN_INLINE_HYPHENATION_RE,
     fold_editorial_text,
     has_suspicious_truncated_ending,
+    HYPHENATED_LINEBREAK_RE,
     join_hyphenated_linebreaks,
     repair_broken_enclitic_hyphenation,
     repair_broken_inline_hyphenation,
@@ -31,26 +41,11 @@ DR_EDITORIAL_LINE_RE = re.compile(
     r"^\s*(N\.?\s*º|PARTE\s+[A-Z]|Di[aá]rio\s+da\s+Rep[úu]blica)\b",
     re.IGNORECASE,
 )
-PAGE_COUNTER_LINE_RE = re.compile(r"^\s*\d+\s*\|\s*\d+\s*[\-–—.]?\s*$")
-LEADING_PAGE_MARKER_RE = re.compile(r"^\s*Pág\.\s*\d+\s*", re.IGNORECASE)
+PAGE_COUNTER_LINE_RE = LOOSE_PAGE_COUNTER_LINE_RE
 ARTIFICIAL_STRUCTURE_TOKEN_RE = re.compile(
     r"\b(?:CAP|ART|SEC|SUBSEC|TIT|ANX)_[A-Z0-9_]+\b",
     re.IGNORECASE,
 )
-BROKEN_INLINE_HYPHENATION_RE = re.compile(
-    r"\b([A-Za-zÀ-ÿ]{2,})-[ \t]+([a-zà-ÿ]{3,})\b"
-)
-BROKEN_ENCLITIC_HYPHEN_RE = re.compile(
-    r"\b([A-Za-zÀ-ÿ]{3,})(?:\s+-\s*|-\s+)"
-    r"(se|lo|la|los|las|lhe|lhes|me|te|nos|vos)\b",
-    re.IGNORECASE,
-)
-HYPHENATED_LINEBREAK_RE = re.compile(r"([A-Za-zÀ-ÿ])-\n([A-Za-zÀ-ÿ])")
-NUMBERED_ITEM_PREFIX_RE = re.compile(
-    r"^\s*(?:n\.?\s*[ºo]\s*)?\d+(?:\.\d+)*(?:\.\s+|\)\s+|\s+[—–\-]\s+)",
-    re.IGNORECASE,
-)
-LETTERED_ITEM_PREFIX_RE = re.compile(r"^\s*[a-z]\)\s+", re.IGNORECASE)
 DASH_CONTINUATION_PREFIX_RE = re.compile(r"^\s*[—–-]\s+")
 ACCESS_FOOTNOTE_RE = re.compile(
     r"^\s*\(?\d+\)?\s+"
@@ -59,15 +54,20 @@ ACCESS_FOOTNOTE_RE = re.compile(
 )
 FOOTNOTE_URL_RE = re.compile(r"^\s*\(?\d+\)?\s+.*(?:https?://|www\.)", re.IGNORECASE)
 STANDALONE_URL_LINE_RE = re.compile(r"^\s*(?:https?://|www\.)\S+\s*$", re.IGNORECASE)
-SUSPICIOUS_GARBLED_LINE_RE = re.compile(
-    r"^[^A-Za-zÀ-ÿ]{0,3}(?:[\*\+\-/=<>\\\[\]\{\}_`~]{2,}|[0-9\W]{12,})$"
-)
 TITLE_SEPARATOR_RE = re.compile(r"\s*\|\s*")
 DOCUMENT_TITLE_RESIDUE_RE = re.compile(
     r"^\s*"
     r"(?:Regulamento|Despacho|Delibera(?:ç|c)ão|Edital|Anexo)"
     r"(?:\s+(?:de\b.*|n\.?\s*[ºo].*|P\.?\s*PORTO.*|[A-Z0-9].*))?"
     r"\s*$",
+    re.IGNORECASE,
+)
+QUOTED_DEFINITION_PREFIX_RE = re.compile(
+    r'^\s*[«"“][^»"\n]{2,}[»"”]\s*(?:[,:\-]\s*|\s+)',
+)
+DANGLING_LEGAL_REFERENCE_RE = re.compile(
+    r"\b(?:do|da|de|no|na)\s+"
+    r"(?:decreto-lei|regulamento|despacho|portaria|estatuto|c[oó]digo|artigo)\s*$",
     re.IGNORECASE,
 )
 
@@ -81,6 +81,13 @@ TRACEABILITY_METADATA_KEYS = (
     "source_node_id",
     "parent_node_id",
 )
+
+BLOCKING_INTEGRITY_WARNING_CODES = {
+    "possible_unrecovered_title_body_boundary",
+    "possible_orphaned_numbered_continuation",
+    "possible_interrupted_definition_capture",
+    "possible_broken_lettered_enumeration",
+}
 
 
 class ChunkQualityValidator:
@@ -158,9 +165,21 @@ class ChunkQualityValidator:
         if title_leakage_issue is not None:
             issues.append(title_leakage_issue)
 
+        structural_integrity_issue = self._validate_structural_integrity(chunk)
+        if structural_integrity_issue is not None:
+            issues.append(structural_integrity_issue)
+
+        grouped_unit_issue = self._validate_broken_grouped_legal_unit(chunk)
+        if grouped_unit_issue is not None:
+            issues.append(grouped_unit_issue)
+
         garbled_text_issue = self._validate_garbled_text(chunk)
         if garbled_text_issue is not None:
             issues.append(garbled_text_issue)
+
+        dominant_garbage_issue = self._validate_dominant_garbage(chunk)
+        if dominant_garbage_issue is not None:
+            issues.append(dominant_garbage_issue)
 
         truncated_ending_issue = self._validate_truncated_or_abrupt_ending(chunk)
         if truncated_ending_issue is not None:
@@ -533,6 +552,148 @@ class ChunkQualityValidator:
             "evidence": evidence[:3],
         }
 
+    def _validate_structural_integrity(
+        self,
+        chunk: Chunk,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Detect chunks exported from articles with strong incompleteness signals.
+
+        Parameters
+        ----------
+        chunk : Chunk
+            Chunk under validation.
+
+        Returns
+        -------
+        Optional[Dict[str, Any]]
+            Issue payload when parser metadata already declares strong
+            structural incompleteness risk for the source article.
+        """
+        metadata = getattr(chunk, "metadata", {}) or {}
+        truncation_signals = [
+            str(signal).strip()
+            for signal in metadata.get("truncation_signals", [])
+            if str(signal).strip()
+        ]
+        integrity_warnings = [
+            str(signal).strip()
+            for signal in metadata.get("integrity_warnings", [])
+            if str(signal).strip()
+        ]
+        is_structurally_incomplete = bool(metadata.get("is_structurally_incomplete", False))
+        blocking_integrity_warnings = [
+            warning
+            for warning in integrity_warnings
+            if warning in BLOCKING_INTEGRITY_WARNING_CODES
+        ]
+
+        if (
+            not is_structurally_incomplete
+            and not truncation_signals
+            and not blocking_integrity_warnings
+        ):
+            return None
+
+        if not truncation_signals and not blocking_integrity_warnings:
+            return None
+
+        return {
+            "code": "structurally_incomplete_source_article",
+            "severity": "error",
+            "message": "Chunk originates from an article with explicit structural incompleteness signals.",
+            "evidence": {
+                "article_number": metadata.get("article_number"),
+                "article_title": metadata.get("article_title"),
+                "truncation_signals": truncation_signals[:4],
+                "integrity_warnings": blocking_integrity_warnings[:4],
+            },
+        }
+
+    def _validate_dominant_garbage(
+        self,
+        chunk: Chunk,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Detect chunks whose visible text is dominated by non-semantic residue.
+
+        Parameters
+        ----------
+        chunk : Chunk
+            Chunk under validation.
+
+        Returns
+        -------
+        Optional[Dict[str, Any]]
+            Issue payload when symbolic or garbled residue dominates the chunk.
+        """
+        metrics = self._collect_garbage_dominance_metrics(chunk.text)
+        suspicious_lines = metrics["suspicious_lines"]
+        suspicious_line_ratio = metrics["suspicious_line_ratio"]
+        alpha_ratio = metrics["alpha_ratio"]
+        symbol_ratio = metrics["symbol_ratio"]
+
+        has_strong_line_dominance = (
+            len(suspicious_lines) >= 2 and suspicious_line_ratio >= 0.4
+        )
+        has_symbolic_text_dominance = (
+            metrics["non_whitespace_char_count"] >= 40
+            and alpha_ratio < 0.45
+            and symbol_ratio > 0.3
+        )
+
+        if not has_strong_line_dominance and not has_symbolic_text_dominance:
+            return None
+
+        return {
+            "code": "dominant_non_semantic_content",
+            "severity": "error",
+            "message": "Visible chunk text is dominated by symbolic or non-semantic residue.",
+            "evidence": {
+                "suspicious_line_ratio": round(suspicious_line_ratio, 3),
+                "alpha_ratio": round(alpha_ratio, 3),
+                "symbol_ratio": round(symbol_ratio, 3),
+                "suspicious_lines": suspicious_lines[:3],
+            },
+        }
+
+    def _validate_broken_grouped_legal_unit(
+        self,
+        chunk: Chunk,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Detect grouped legal exports that contain semantically damaged items.
+
+        Parameters
+        ----------
+        chunk : Chunk
+            Chunk under validation.
+
+        Returns
+        -------
+        Optional[Dict[str, Any]]
+            Issue payload when a grouped chunk contains incomplete definition
+            capture or malformed grouped legal items.
+        """
+        if not self._is_grouped_chunk(chunk):
+            return None
+
+        evidence = self._collect_grouped_legal_unit_damage_evidence(chunk)
+        if not evidence:
+            return None
+
+        metadata = getattr(chunk, "metadata", {}) or {}
+        return {
+            "code": "broken_grouped_legal_unit",
+            "severity": "error",
+            "message": "Grouped chunk contains incomplete or semantically damaged legal items.",
+            "evidence": {
+                "chunk_reason": getattr(chunk, "chunk_reason", ""),
+                "source_span_type": metadata.get("source_span_type", ""),
+                "signals": evidence[:3],
+            },
+        }
+
     def _validate_truncated_or_abrupt_ending(
         self,
         chunk: Chunk,
@@ -581,7 +742,10 @@ class ChunkQualityValidator:
             return None
 
         visible_length = len((chunk.text or "").strip())
-        short_threshold = min(self.settings.min_chunk_chars, 180)
+        short_threshold = min(
+            self.settings.min_chunk_chars,
+            self.settings.validator_problematic_split_chunk_max_chars,
+        )
         if visible_length >= short_threshold:
             return None
 
@@ -777,11 +941,138 @@ class ChunkQualityValidator:
         if DASH_CONTINUATION_PREFIX_RE.match(first_line):
             signals.append("starts_with_dash_continuation")
 
-        if word_count < 8:
+        if word_count < self.settings.validator_low_autonomy_min_word_count:
             signals.append("too_few_words")
 
         if text[-1] not in ".!?;:":
             signals.append("missing_terminal_punctuation")
+
+        return signals
+
+    def _collect_garbage_dominance_metrics(self, text: str) -> Dict[str, Any]:
+        """
+        Summarize whether chunk text is dominated by symbolic residue.
+
+        Parameters
+        ----------
+        text : str
+            Visible chunk text.
+
+        Returns
+        -------
+        Dict[str, Any]
+            Compact metrics used by the validator to explain dominance
+            decisions without duplicating upstream cleanup behavior.
+        """
+        non_empty_lines = [line.strip() for line in (text or "").splitlines() if line.strip()]
+        suspicious_lines = [
+            line for line in non_empty_lines if SUSPICIOUS_GARBLED_LINE_RE.match(line)
+        ]
+
+        compact_text = "".join(non_empty_lines)
+        non_whitespace_char_count = len(compact_text)
+        if non_whitespace_char_count == 0:
+            return {
+                "suspicious_lines": [],
+                "suspicious_line_ratio": 0.0,
+                "alpha_ratio": 0.0,
+                "symbol_ratio": 0.0,
+                "non_whitespace_char_count": 0,
+            }
+
+        alpha_ratio = sum(1 for char in compact_text if char.isalpha()) / non_whitespace_char_count
+        symbol_ratio = (
+            sum(1 for char in compact_text if not char.isalnum() and not char.isspace())
+            / non_whitespace_char_count
+        )
+        suspicious_line_ratio = len(suspicious_lines) / max(len(non_empty_lines), 1)
+
+        return {
+            "suspicious_lines": suspicious_lines,
+            "suspicious_line_ratio": suspicious_line_ratio,
+            "alpha_ratio": alpha_ratio,
+            "symbol_ratio": symbol_ratio,
+            "non_whitespace_char_count": non_whitespace_char_count,
+        }
+
+    def _collect_grouped_legal_unit_damage_evidence(self, chunk: Chunk) -> List[Dict[str, Any]]:
+        """
+        Collect deterministic evidence for damaged grouped legal items.
+
+        Parameters
+        ----------
+        chunk : Chunk
+            Chunk under validation.
+
+        Returns
+        -------
+        List[Dict[str, Any]]
+            Evidence entries describing grouped items that look incomplete.
+        """
+        paragraphs = self._get_non_empty_paragraphs(chunk.text)
+        if len(paragraphs) < 2:
+            return []
+
+        evidence: List[Dict[str, Any]] = []
+        for index, paragraph in enumerate(paragraphs):
+            opener_type = self._get_grouped_legal_item_opener(paragraph)
+            if not opener_type:
+                continue
+
+            next_paragraph = paragraphs[index + 1] if index + 1 < len(paragraphs) else ""
+            signals = self._collect_grouped_legal_item_damage_signals(
+                paragraph=paragraph,
+                next_paragraph=next_paragraph,
+            )
+            if not signals:
+                continue
+
+            evidence.append(
+                {
+                    "opening_line": self._get_first_non_empty_line(paragraph),
+                    "opener_type": opener_type,
+                    "signals": signals,
+                }
+            )
+
+        return evidence
+
+    def _collect_grouped_legal_item_damage_signals(
+        self,
+        paragraph: str,
+        next_paragraph: str,
+    ) -> List[str]:
+        """
+        Collect damage signals for one grouped legal item paragraph.
+
+        Parameters
+        ----------
+        paragraph : str
+            Candidate grouped item paragraph.
+
+        next_paragraph : str
+            Following paragraph, when available.
+
+        Returns
+        -------
+        List[str]
+            Short signal labels explaining why the item looks damaged.
+        """
+        text = paragraph.strip()
+        if not text:
+            return []
+
+        word_count = len(re.findall(r"\b[A-Za-zÀ-ÿ0-9]+\b", text))
+        signals: List[str] = []
+
+        if not text.endswith((".", ";", ":", "!", "?")):
+            if next_paragraph and self._get_grouped_legal_item_opener(next_paragraph):
+                signals.append("item_break_before_completion")
+            if word_count < 12:
+                signals.append("suspiciously_short_item")
+
+        if DANGLING_LEGAL_REFERENCE_RE.search(text):
+            signals.append("dangling_legal_reference")
 
         return signals
 
@@ -805,6 +1096,33 @@ class ChunkQualityValidator:
 
         chunk_reason = getattr(chunk, "chunk_reason", "") or ""
         return "split" in chunk_reason
+
+    def _is_grouped_chunk(self, chunk: Chunk) -> bool:
+        """
+        Decide whether the chunk aggregates multiple legal units.
+
+        Parameters
+        ----------
+        chunk : Chunk
+            Chunk under validation.
+
+        Returns
+        -------
+        bool
+            True when grouped-export metadata indicates multiple source units.
+        """
+        metadata = getattr(chunk, "metadata", {}) or {}
+        source_span_type = str(metadata.get("source_span_type", "") or "")
+        chunk_reason = getattr(chunk, "chunk_reason", "") or ""
+
+        if "_group" in source_span_type or chunk_reason.startswith("grouped_"):
+            return True
+
+        grouped_labels = [
+            metadata.get("section_labels", []),
+            metadata.get("lettered_labels", []),
+        ]
+        return any(len(labels) > 1 for labels in grouped_labels if isinstance(labels, list))
 
     def _get_article_title(self, chunk: Chunk) -> str:
         """
@@ -908,6 +1226,56 @@ class ChunkQualityValidator:
             edge_lines.append(last_line)
 
         return edge_lines
+
+    def _get_non_empty_paragraphs(self, text: str) -> List[str]:
+        """
+        Return visible paragraphs split on blank-line boundaries.
+
+        Parameters
+        ----------
+        text : str
+            Candidate text block.
+
+        Returns
+        -------
+        List[str]
+            Non-empty visible paragraphs in order.
+        """
+        return [
+            paragraph.strip()
+            for paragraph in re.split(r"\n\s*\n", text or "")
+            if paragraph.strip()
+        ]
+
+    def _get_grouped_legal_item_opener(self, paragraph: str) -> str:
+        """
+        Classify the opening pattern of one grouped legal item paragraph.
+
+        Parameters
+        ----------
+        paragraph : str
+            Candidate grouped paragraph.
+
+        Returns
+        -------
+        str
+            Short opener label when the paragraph begins like a grouped legal
+            item, otherwise an empty string.
+        """
+        opening_line = self._get_first_non_empty_line(paragraph)
+        if not opening_line:
+            return ""
+
+        if QUOTED_DEFINITION_PREFIX_RE.match(opening_line):
+            return "quoted_definition"
+
+        if NUMBERED_ITEM_PREFIX_RE.match(opening_line):
+            return "numbered_item"
+
+        if LETTERED_ITEM_PREFIX_RE.match(opening_line):
+            return "lettered_item"
+
+        return ""
 
     def _validate_traceability(self, chunk: Chunk) -> Optional[Dict[str, Any]]:
         """
