@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from Chunking.chunking.models import (
     Chunk,
@@ -36,7 +36,7 @@ def run_pipeline() -> None:
     1. Read all supported PDF files from the input folder
     2. Extract structured PDF content using native extraction
     3. Analyze extraction quality
-    4. Trigger OCR fallback when native extraction looks too corrupted
+    4. Assemble a page-level hybrid document when OCR comparison is justified
     5. Normalize extracted content conservatively
     6. Parse the normalized document into a structural tree
     7. Export:
@@ -101,7 +101,7 @@ def run_pipeline() -> None:
     # ------------------------------------------------------------------
     native_reader = PdfReader()
     ocr_reader = OcrFallbackReader()
-    extraction_quality_analyzer = ExtractionQualityAnalyzer()
+    extraction_quality_analyzer = ExtractionQualityAnalyzer(settings)
     normalizer = TextNormalizer()
     parser_engine = StructureParser()
     json_exporter = JsonExporter()
@@ -160,18 +160,41 @@ def run_pipeline() -> None:
         active_extracted_document = native_extracted_document
         active_extraction_quality = native_extraction_quality
         extraction_mode_used = "native"
+        ocr_comparison_trigger = _build_ocr_comparison_trigger(
+            native_extraction_quality=native_extraction_quality,
+            enable_hybrid_page_selection=settings.enable_hybrid_page_selection,
+        )
+        extraction_decision = _build_native_only_extraction_decision(
+            native_extracted_document=native_extracted_document,
+            native_extraction_quality=native_extraction_quality,
+            ocr_comparison_trigger=ocr_comparison_trigger,
+        )
 
         # --------------------------------------------------------------
-        # 3) OCR fallback when native extraction looks corrupted
+        # 3) OCR-assisted hybrid page assembly when native extraction looks
+        #    corrupted
         #
         # OCR is slower and structurally poorer than native PDF extraction,
-        # so we only use it when the analyzer considers native text
-        # suspicious enough to justify fallback.
+        # so we only compare against it when the analyzer considers native
+        # text suspicious enough to justify fallback. Once OCR is available,
+        # the active document is assembled page by page instead of switching
+        # the entire file to OCR blindly.
         # --------------------------------------------------------------
-        if native_extraction_quality.get("document_likely_corrupted", False):
+        if settings.enable_ocr_fallback and bool(
+            ocr_comparison_trigger.get("should_run_ocr_comparison", False)
+        ):
+            trigger_pages = list(
+                ocr_comparison_trigger.get("pages_requiring_ocr_comparison", [])
+            )
+            trigger_reason = (
+                "document corruption"
+                if ocr_comparison_trigger.get("document_likely_corrupted", False)
+                else "local page comparison"
+            )
             print(
-                "[WARN] Native extraction appears corrupted. "
-                f"Triggering OCR fallback for: {pdf_path.name}"
+                "[WARN] Triggering OCR comparison for "
+                f"{pdf_path.name} due to {trigger_reason}. "
+                f"Candidate pages: {trigger_pages or 'all'}"
             )
 
             ocr_extracted_document = ocr_reader.extract_document(pdf_path)
@@ -179,19 +202,32 @@ def run_pipeline() -> None:
                 ocr_extracted_document
             )
 
-            # ----------------------------------------------------------
-            # Decision policy:
-            # if native extraction is flagged as corrupted, OCR becomes the
-            # active input. This is intentionally decisive because once native
-            # text is badly corrupted, parsing the native content is usually
-            # much more harmful than using OCR.
-            #
-            # A more sophisticated "compare both and choose best" policy can
-            # be added later if needed.
-            # ----------------------------------------------------------
-            active_extracted_document = ocr_extracted_document
-            active_extraction_quality = ocr_extraction_quality
-            extraction_mode_used = "ocr"
+            if settings.enable_hybrid_page_selection:
+                (
+                    active_extracted_document,
+                    extraction_mode_used,
+                    extraction_decision,
+                ) = _build_hybrid_extraction_result(
+                    source_path=str(pdf_path),
+                    native_extracted_document=native_extracted_document,
+                    native_extraction_quality=native_extraction_quality,
+                    ocr_extracted_document=ocr_extracted_document,
+                    ocr_extraction_quality=ocr_extraction_quality,
+                    extraction_quality_analyzer=extraction_quality_analyzer,
+                    ocr_comparison_trigger=ocr_comparison_trigger,
+                )
+            else:
+                active_extracted_document = ocr_extracted_document
+                extraction_mode_used = "ocr"
+                extraction_decision = _build_ocr_only_extraction_decision(
+                    ocr_extracted_document=ocr_extracted_document,
+                    native_extraction_quality=native_extraction_quality,
+                    ocr_extraction_quality=ocr_extraction_quality,
+                    ocr_comparison_trigger=ocr_comparison_trigger,
+                )
+            active_extraction_quality = extraction_quality_analyzer.analyze_document(
+                active_extracted_document
+            )
 
         print(f"[INFO] Extraction mode used: {extraction_mode_used}")
 
@@ -235,6 +271,7 @@ def run_pipeline() -> None:
                 normalized=normalized,
                 extraction_quality=active_extraction_quality,
                 extraction_mode_used=extraction_mode_used,
+                extraction_decision=extraction_decision,
             )
 
         if settings.export_json:
@@ -260,6 +297,7 @@ def run_pipeline() -> None:
                             normalized=normalized,
                             structure_root=structure_root,
                             extraction_mode_used=extraction_mode_used,
+                            extraction_decision=extraction_decision,
                         )
                     ),
                     encoding="utf-8",
@@ -300,6 +338,7 @@ def run_pipeline() -> None:
                                     chunks=chunks,
                                     strategy_name=strategy.name,
                                     extraction_mode_used=extraction_mode_used,
+                                    extraction_decision=extraction_decision,
                                     settings=settings,
                                 )
                             ),
@@ -405,6 +444,7 @@ def _write_structure_stage_outputs(
     normalized: NormalizedDocument,
     extraction_quality: Dict[str, object],
     extraction_mode_used: str,
+    extraction_decision: Dict[str, object],
 ) -> None:
     """
     Write structure-stage intermediate artifacts.
@@ -436,7 +476,10 @@ def _write_structure_stage_outputs(
         Extraction quality report for the active extraction mode.
 
     extraction_mode_used : str
-        "native" or "ocr".
+        "native", "ocr", or "hybrid".
+
+    extraction_decision : Dict[str, object]
+        Hybrid-selection diagnostics for the active extraction result.
     """
     (structure_output_dir / "01_normalized_text.txt").write_text(
         normalized.full_text,
@@ -452,6 +495,11 @@ def _write_structure_stage_outputs(
         _dict_to_pretty_json(
             {
                 "extraction_mode_used": extraction_mode_used,
+                "extraction_summary": _build_extraction_summary(
+                    extraction_mode_used=extraction_mode_used,
+                    extraction_decision=extraction_decision,
+                ),
+                "extraction_decision": extraction_decision,
                 "quality": extraction_quality,
             }
         ),
@@ -490,6 +538,7 @@ def _build_structure_quality_summary(
     normalized: NormalizedDocument,
     structure_root: StructuralNode,
     extraction_mode_used: str,
+    extraction_decision: Optional[Dict[str, object]] = None,
 ) -> Dict[str, object]:
     """
     Build a lightweight structure-stage quality summary.
@@ -519,17 +568,36 @@ def _build_structure_quality_summary(
         Parsed structure tree.
 
     extraction_mode_used : str
-        Active extraction mode ("native" or "ocr").
+        Active extraction mode ("native", "ocr", or "hybrid").
+
+    extraction_decision : Dict[str, object]
+        Hybrid-selection diagnostics for the active extraction result.
 
     Returns
     -------
     Dict[str, object]
         Structure-stage summary dictionary suitable for JSON export.
     """
+    effective_extraction_decision = extraction_decision or _build_fallback_extraction_decision(
+        extraction_mode_used=extraction_mode_used,
+        page_count=len(normalized.pages),
+    )
+    structural_integrity_summary = _build_structural_integrity_summary(structure_root)
+    diagnostic_summary = _build_structure_stage_diagnostic_summary(
+        extraction_mode_used=extraction_mode_used,
+        extraction_decision=effective_extraction_decision,
+        structural_integrity_summary=structural_integrity_summary,
+    )
+
     return {
         "document_id": document_metadata.doc_id,
         "document_title": document_metadata.title,
         "extraction_mode_used": extraction_mode_used,
+        "extraction_summary": _build_extraction_summary(
+            extraction_mode_used=extraction_mode_used,
+            extraction_decision=effective_extraction_decision,
+        ),
+        "extraction_decision": effective_extraction_decision,
         "extraction_quality": extraction_quality,
         "normalized_page_count": len(normalized.pages),
         "non_empty_normalized_pages": sum(
@@ -537,6 +605,11 @@ def _build_structure_quality_summary(
         ),
         "dropped_lines_report": normalized.dropped_lines_report,
         "normalized_page_reports": normalized.page_reports,
+        "structural_integrity_summary": structural_integrity_summary,
+        "has_structural_integrity_warnings": structural_integrity_summary[
+            "has_structural_integrity_warnings"
+        ],
+        "diagnostic_summary": diagnostic_summary,
         "structure_counts": {
             "front_matter": _count_node_type(structure_root, "FRONT_MATTER"),
             "preamble": _count_node_type(structure_root, "PREAMBLE"),
@@ -559,6 +632,7 @@ def _build_chunk_quality_summary(
     strategy_name: str,
     extraction_mode_used: str,
     settings: PipelineSettings,
+    extraction_decision: Optional[Dict[str, object]] = None,
 ) -> Dict[str, object]:
     """
     Build a lightweight chunk-stage quality summary for one document run.
@@ -589,7 +663,10 @@ def _build_chunk_quality_summary(
         Strategy used for this run.
 
     extraction_mode_used : str
-        "native" or "ocr".
+        "native", "ocr", or "hybrid".
+
+    extraction_decision : Dict[str, object]
+        Hybrid-selection diagnostics for the active extraction result.
 
     settings : PipelineSettings
         Shared runtime configuration used by the chunk validator.
@@ -599,6 +676,10 @@ def _build_chunk_quality_summary(
     Dict[str, object]
         Chunk-stage summary dictionary suitable for JSON export.
     """
+    effective_extraction_decision = extraction_decision or _build_fallback_extraction_decision(
+        extraction_mode_used=extraction_mode_used,
+        page_count=len(normalized.pages),
+    )
     chunk_count = len(chunks)
     char_counts = [getattr(chunk, "char_count", len(chunk.text)) for chunk in chunks]
     chunk_reasons = CounterLike()
@@ -609,6 +690,15 @@ def _build_chunk_quality_summary(
         strategy_name=strategy_name,
         validation_report=validation_report,
     )
+    structural_integrity_summary = _build_structural_integrity_summary(structure_root)
+    validator_summary = _build_validator_summary(validation_report)
+    diagnostic_summary = _build_chunk_stage_diagnostic_summary(
+        extraction_mode_used=extraction_mode_used,
+        extraction_decision=effective_extraction_decision,
+        structural_integrity_summary=structural_integrity_summary,
+        validator_summary=validator_summary,
+        next_phase_decision=next_phase_decision,
+    )
 
     for chunk in chunks:
         chunk_reasons.increment(getattr(chunk, "chunk_reason", "") or "unspecified")
@@ -618,12 +708,21 @@ def _build_chunk_quality_summary(
         "document_title": document_metadata.title,
         "strategy": strategy_name,
         "extraction_mode_used": extraction_mode_used,
+        "extraction_summary": _build_extraction_summary(
+            extraction_mode_used=extraction_mode_used,
+            extraction_decision=effective_extraction_decision,
+        ),
+        "extraction_decision": effective_extraction_decision,
         "extraction_quality": extraction_quality,
         "normalized_page_count": len(normalized.pages),
         "non_empty_normalized_pages": sum(
             1 for page in normalized.pages if page.text.strip()
         ),
         "dropped_lines_report": normalized.dropped_lines_report,
+        "structural_integrity_summary": structural_integrity_summary,
+        "has_structural_integrity_warnings": structural_integrity_summary[
+            "has_structural_integrity_warnings"
+        ],
         "structure_counts": {
             "front_matter": _count_node_type(structure_root, "FRONT_MATTER"),
             "preamble": _count_node_type(structure_root, "PREAMBLE"),
@@ -648,11 +747,14 @@ def _build_chunk_quality_summary(
         "acceptable_for_next_phase": next_phase_decision["is_acceptable"],
         "blocking_failure_count": blocking_overview["blocking_failure_count"],
         "blocking_failure_types": blocking_overview["blocking_failure_types"],
+        "blocking_failures": blocking_overview["blocking_failures"],
         "failed_chunk_ids": blocking_overview["failed_chunk_ids"],
         "acceptance_basis": "validator_blocking_failures",
         "acceptance_reason": next_phase_decision["reason"],
+        "final_decision": next_phase_decision["decision"],
         "next_phase_decision": next_phase_decision,
-        "validator_summary": _build_validator_summary(validation_report),
+        "validator_summary": validator_summary,
+        "diagnostic_summary": diagnostic_summary,
         "chunk_neighbor_links_complete": all(
             (index == 0 or getattr(chunks[index], "prev_chunk_id", None) is not None)
             and (
@@ -690,10 +792,987 @@ def _build_validator_summary(validation_report: Dict[str, object]) -> Dict[str, 
         "has_blocking_failures": blocking_overview["has_blocking_failures"],
         "blocking_failure_count": blocking_overview["blocking_failure_count"],
         "blocking_failure_types": blocking_overview["blocking_failure_types"],
+        "blocking_failures": blocking_overview["blocking_failures"],
         "failure_type_counts": issue_type_counts,
         "failure_examples": issue_examples,
+        "failure_messages": _build_failure_message_map(validation_report),
         "failed_chunk_ids": blocking_overview["failed_chunk_ids"],
     }
+
+
+def _build_failure_message_map(
+    validation_report: Dict[str, object],
+) -> Dict[str, List[str]]:
+    """
+    Collect stable validator messages for each blocking failure code.
+
+    Parameters
+    ----------
+    validation_report : Dict[str, object]
+        Aggregate validator output for one chunk sequence.
+
+    Returns
+    -------
+    Dict[str, List[str]]
+        Failure messages grouped by issue code and limited for compact export.
+    """
+    failure_messages: Dict[str, List[str]] = {}
+
+    for chunk_report in validation_report.get("chunk_reports", []):
+        for issue in chunk_report.get("issues", []):
+            issue_code = str(issue.get("code", "")).strip()
+            issue_message = str(issue.get("message", "")).strip()
+            if not issue_code or not issue_message:
+                continue
+
+            messages = failure_messages.setdefault(issue_code, [])
+            if issue_message not in messages and len(messages) < 3:
+                messages.append(issue_message)
+
+    return failure_messages
+
+
+def _build_fallback_extraction_decision(
+    extraction_mode_used: str,
+    page_count: int,
+) -> Dict[str, object]:
+    """
+    Build a minimal extraction decision payload for backward-compatible callers.
+
+    Parameters
+    ----------
+    extraction_mode_used : str
+        Active document-level extraction mode.
+
+    page_count : int
+        Number of normalized pages available to downstream stages.
+
+    Returns
+    -------
+    Dict[str, object]
+        Stable extraction decision payload that matches the exported schema.
+    """
+    is_ocr = extraction_mode_used == "ocr"
+    return {
+        "comparison_performed": False,
+        "document_composition": _classify_document_composition(extraction_mode_used),
+        "page_count": page_count,
+        "compared_page_count": 0,
+        "native_page_count": 0 if is_ocr else page_count,
+        "ocr_page_count": page_count if is_ocr else 0,
+        "page_decisions": [],
+    }
+
+
+def _build_extraction_summary(
+    extraction_mode_used: str,
+    extraction_decision: Dict[str, object],
+) -> Dict[str, object]:
+    """
+    Build a compact extraction summary suitable for exported diagnostics.
+
+    Parameters
+    ----------
+    extraction_mode_used : str
+        Active document-level extraction mode.
+
+    extraction_decision : Dict[str, object]
+        Detailed extraction decision payload.
+
+    Returns
+    -------
+    Dict[str, object]
+        Compact extraction summary with document composition and page choices.
+    """
+    page_count = int(extraction_decision.get("page_count", 0))
+    page_decisions = list(extraction_decision.get("page_decisions", []))
+    page_source_selection = _build_page_source_selection(
+        extraction_mode_used=extraction_mode_used,
+        extraction_decision=extraction_decision,
+    )
+
+    return {
+        "document_mode": extraction_mode_used,
+        "document_composition": extraction_decision.get(
+            "document_composition",
+            _classify_document_composition(extraction_mode_used),
+        ),
+        "comparison_performed": bool(
+            extraction_decision.get("comparison_performed", False)
+        ),
+        "page_count": page_count,
+        "compared_page_count": int(extraction_decision.get("compared_page_count", 0)),
+        "native_page_count": int(extraction_decision.get("native_page_count", 0)),
+        "ocr_page_count": int(extraction_decision.get("ocr_page_count", 0)),
+        "page_modes_selected": page_source_selection,
+        "selected_page_modes_present": bool(page_source_selection)
+        and len(page_source_selection) == page_count,
+        "hybrid_pages_selected": any(
+            page_selection.get("selected_source") == "ocr"
+            for page_selection in page_source_selection
+        )
+        and any(
+            page_selection.get("selected_source") == "native"
+            for page_selection in page_source_selection
+        ),
+        "page_selection_reason_codes": {
+            str(page_decision.get("page_number")): list(page_decision.get("reason_codes", []))
+            for page_decision in page_decisions
+        },
+        "ocr_comparison_trigger": _build_ocr_comparison_trigger_summary(
+            extraction_decision
+        ),
+    }
+
+
+def _build_ocr_comparison_trigger_summary(
+    extraction_decision: Dict[str, object],
+) -> Dict[str, object]:
+    """
+    Reduce OCR trigger diagnostics to the fields needed for exported summaries.
+
+    Parameters
+    ----------
+    extraction_decision : Dict[str, object]
+        Detailed extraction decision payload.
+
+    Returns
+    -------
+    Dict[str, object]
+        Stable OCR trigger summary for compact diagnostic exports.
+    """
+    trigger = dict(extraction_decision.get("ocr_comparison_trigger", {}))
+
+    return {
+        "document_likely_corrupted": bool(
+            trigger.get("document_likely_corrupted", False)
+        ),
+        "has_local_pages_requiring_ocr_comparison": bool(
+            trigger.get("has_local_pages_requiring_ocr_comparison", False)
+        ),
+        "pages_requiring_ocr_comparison": [
+            int(page_number)
+            for page_number in trigger.get("pages_requiring_ocr_comparison", [])
+        ],
+        "local_page_comparison_supported": bool(
+            trigger.get("local_page_comparison_supported", False)
+        ),
+        "should_run_ocr_comparison": bool(
+            trigger.get("should_run_ocr_comparison", False)
+        ),
+    }
+
+
+def _build_page_source_selection(
+    extraction_mode_used: str,
+    extraction_decision: Dict[str, object],
+) -> List[Dict[str, object]]:
+    """
+    Convert extraction decisions into an explicit page-by-page selection list.
+
+    Parameters
+    ----------
+    extraction_mode_used : str
+        Active document-level extraction mode.
+
+    extraction_decision : Dict[str, object]
+        Detailed extraction decision payload.
+
+    Returns
+    -------
+    List[Dict[str, object]]
+        Per-page extraction source selection details.
+    """
+    page_decisions = list(extraction_decision.get("page_decisions", []))
+    if page_decisions:
+        return [
+            {
+                "page_number": int(page_decision.get("page_number", 0)),
+                "selected_source": str(page_decision.get("selected_source", "native")),
+                "selected_mode": str(
+                    page_decision.get(
+                        "selected_mode",
+                        page_decision.get("selected_source", "native"),
+                    )
+                ),
+            }
+            for page_decision in page_decisions
+        ]
+
+    selected_source = "ocr" if extraction_mode_used == "ocr" else "native"
+    return [
+        {
+            "page_number": page_number,
+            "selected_source": selected_source,
+            "selected_mode": selected_source,
+        }
+        for page_number in range(1, int(extraction_decision.get("page_count", 0)) + 1)
+    ]
+
+
+def _build_structure_stage_diagnostic_summary(
+    extraction_mode_used: str,
+    extraction_decision: Dict[str, object],
+    structural_integrity_summary: Dict[str, object],
+) -> Dict[str, object]:
+    """
+    Build a compact structure-stage diagnostic payload for exported summaries.
+
+    Parameters
+    ----------
+    extraction_mode_used : str
+        Active document-level extraction mode.
+
+    extraction_decision : Dict[str, object]
+        Detailed extraction decision payload.
+
+    structural_integrity_summary : Dict[str, object]
+        Parser integrity summary for the current structure tree.
+
+    Returns
+    -------
+    Dict[str, object]
+        Compact diagnostic payload for structure-stage auditing.
+    """
+    return {
+        "extraction": _build_extraction_diagnostic_summary(
+            extraction_mode_used=extraction_mode_used,
+            extraction_decision=extraction_decision,
+        ),
+        "structure": _build_structure_diagnostic_summary(
+            structural_integrity_summary=structural_integrity_summary
+        ),
+    }
+
+
+def _build_chunk_stage_diagnostic_summary(
+    extraction_mode_used: str,
+    extraction_decision: Dict[str, object],
+    structural_integrity_summary: Dict[str, object],
+    validator_summary: Dict[str, object],
+    next_phase_decision: Dict[str, object],
+) -> Dict[str, object]:
+    """
+    Build a compact chunk-stage diagnostic payload for exported summaries.
+
+    Parameters
+    ----------
+    extraction_mode_used : str
+        Active document-level extraction mode.
+
+    extraction_decision : Dict[str, object]
+        Detailed extraction decision payload.
+
+    structural_integrity_summary : Dict[str, object]
+        Parser integrity summary for the current structure tree.
+
+    validator_summary : Dict[str, object]
+        Reduced validator payload for the current chunk sequence.
+
+    next_phase_decision : Dict[str, object]
+        Final accept/reject decision for downstream consumption.
+
+    Returns
+    -------
+    Dict[str, object]
+        Compact diagnostic payload explaining the final chunk-stage decision.
+    """
+    return {
+        "extraction": _build_extraction_diagnostic_summary(
+            extraction_mode_used=extraction_mode_used,
+            extraction_decision=extraction_decision,
+        ),
+        "structure": _build_structure_diagnostic_summary(
+            structural_integrity_summary=structural_integrity_summary
+        ),
+        "validation": _build_validation_diagnostic_summary(validator_summary),
+        "final_decision": {
+            "decision": next_phase_decision["decision"],
+            "is_acceptable": next_phase_decision["is_acceptable"],
+            "reason": next_phase_decision["reason"],
+            "decision_drivers": _build_decision_drivers(
+                extraction_mode_used=extraction_mode_used,
+                extraction_decision=extraction_decision,
+                structural_integrity_summary=structural_integrity_summary,
+                validator_summary=validator_summary,
+                next_phase_decision=next_phase_decision,
+            ),
+        },
+    }
+
+
+def _build_extraction_diagnostic_summary(
+    extraction_mode_used: str,
+    extraction_decision: Dict[str, object],
+) -> Dict[str, object]:
+    """
+    Highlight the extraction choices that matter for debugging downstream runs.
+
+    Parameters
+    ----------
+    extraction_mode_used : str
+        Active document-level extraction mode.
+
+    extraction_decision : Dict[str, object]
+        Detailed extraction decision payload.
+
+    Returns
+    -------
+    Dict[str, object]
+        Extraction-side highlights focused on comparison and page selection.
+    """
+    page_decisions = list(extraction_decision.get("page_decisions", []))
+    pages_switched_to_ocr: List[int] = []
+    pages_kept_native_after_comparison: List[int] = []
+    pages_kept_native_without_comparison: List[int] = []
+    ocr_comparison_trigger = _build_ocr_comparison_trigger_summary(extraction_decision)
+
+    for page_decision in page_decisions:
+        page_number = int(page_decision.get("page_number", 0))
+        selected_source = str(page_decision.get("selected_source", "native"))
+        compared_with_ocr = _did_page_run_ocr_comparison(
+            page_decision=page_decision,
+            extraction_decision=extraction_decision,
+        )
+
+        if selected_source == "ocr":
+            pages_switched_to_ocr.append(page_number)
+            continue
+
+        if compared_with_ocr:
+            pages_kept_native_after_comparison.append(page_number)
+            continue
+
+        pages_kept_native_without_comparison.append(page_number)
+
+    return {
+        "document_mode": extraction_mode_used,
+        "document_composition": extraction_decision.get(
+            "document_composition",
+            _classify_document_composition(extraction_mode_used),
+        ),
+        "comparison_performed": bool(
+            extraction_decision.get("comparison_performed", False)
+        ),
+        "ocr_comparison_trigger": ocr_comparison_trigger,
+        "pages_switched_to_ocr": pages_switched_to_ocr,
+        "pages_kept_native_after_comparison": pages_kept_native_after_comparison,
+        "pages_kept_native_without_comparison": (
+            pages_kept_native_without_comparison
+        ),
+        "page_decision_trace": [
+            {
+                "page_number": int(page_decision.get("page_number", 0)),
+                "compared_with_ocr": _did_page_run_ocr_comparison(
+                    page_decision=page_decision,
+                    extraction_decision=extraction_decision,
+                ),
+                "selected_source": str(page_decision.get("selected_source", "native")),
+                "selected_mode": str(
+                    page_decision.get(
+                        "selected_mode",
+                        page_decision.get("selected_source", "native"),
+                    )
+                ),
+                "decision": str(page_decision.get("decision", "")),
+                "score_gap": page_decision.get("score_gap"),
+                "reason_codes": list(page_decision.get("reason_codes", [])),
+            }
+            for page_decision in page_decisions
+        ],
+    }
+
+
+def _did_page_run_ocr_comparison(
+    page_decision: Dict[str, object],
+    extraction_decision: Dict[str, object],
+) -> bool:
+    """
+    Determine whether one page actually entered OCR-vs-native comparison.
+
+    Parameters
+    ----------
+    page_decision : Dict[str, object]
+        Exported decision payload for one page.
+
+    extraction_decision : Dict[str, object]
+        Document-level extraction decision payload.
+
+    Returns
+    -------
+    bool
+        True when the page was compared against OCR before final selection.
+    """
+    explicit_flag = page_decision.get("compared_with_ocr")
+    if explicit_flag is not None:
+        return bool(explicit_flag)
+
+    if not bool(extraction_decision.get("comparison_performed", False)):
+        return False
+
+    return True
+
+
+def _build_structure_diagnostic_summary(
+    structural_integrity_summary: Dict[str, object],
+) -> Dict[str, object]:
+    """
+    Highlight parser integrity outcomes that affect downstream trust.
+
+    Parameters
+    ----------
+    structural_integrity_summary : Dict[str, object]
+        Parser integrity summary for the current structure tree.
+
+    Returns
+    -------
+    Dict[str, object]
+        Reduced structure-side diagnostics suitable for summary exports.
+    """
+    return {
+        "has_structural_integrity_warnings": bool(
+            structural_integrity_summary.get("has_structural_integrity_warnings", False)
+        ),
+        "structurally_incomplete_article_count": int(
+            structural_integrity_summary.get(
+                "structurally_incomplete_article_count",
+                0,
+            )
+        ),
+        "articles_with_truncation_signals": int(
+            structural_integrity_summary.get("articles_with_truncation_signals", 0)
+        ),
+        "articles_with_integrity_warnings": int(
+            structural_integrity_summary.get("articles_with_integrity_warnings", 0)
+        ),
+        "integrity_warning_counts": dict(
+            structural_integrity_summary.get("integrity_warning_counts", {})
+        ),
+        "truncation_signal_counts": dict(
+            structural_integrity_summary.get("truncation_signal_counts", {})
+        ),
+        "example_articles": list(
+            structural_integrity_summary.get("example_articles", [])
+        )[:3],
+    }
+
+
+def _build_validation_diagnostic_summary(
+    validator_summary: Dict[str, object],
+) -> Dict[str, object]:
+    """
+    Highlight validator outcomes without duplicating validator decision logic.
+
+    Parameters
+    ----------
+    validator_summary : Dict[str, object]
+        Reduced validator payload for the current chunk sequence.
+
+    Returns
+    -------
+    Dict[str, object]
+        Validation highlights focused on blocking failures and examples.
+    """
+    blocking_failures = list(validator_summary.get("blocking_failures", []))
+    failure_messages = dict(validator_summary.get("failure_messages", {}))
+
+    return {
+        "overall_status": str(validator_summary.get("overall_status", "fail")),
+        "has_blocking_failures": bool(
+            validator_summary.get("has_blocking_failures", False)
+        ),
+        "blocking_failure_count": int(
+            validator_summary.get("blocking_failure_count", 0)
+        ),
+        "invalid_chunk_count": int(validator_summary.get("invalid_chunk_count", 0)),
+        "blocking_failures": [
+            {
+                "code": str(failure.get("code", "")),
+                "count": int(failure.get("count", 0)),
+                "example_chunk_ids": list(failure.get("example_chunk_ids", [])),
+                "messages": list(
+                    failure_messages.get(str(failure.get("code", "")), [])
+                ),
+            }
+            for failure in blocking_failures
+        ],
+    }
+
+
+def _build_decision_drivers(
+    extraction_mode_used: str,
+    extraction_decision: Dict[str, object],
+    structural_integrity_summary: Dict[str, object],
+    validator_summary: Dict[str, object],
+    next_phase_decision: Dict[str, object],
+) -> List[str]:
+    """
+    Build short sentences explaining the major factors behind the final decision.
+
+    Parameters
+    ----------
+    extraction_mode_used : str
+        Active document-level extraction mode.
+
+    extraction_decision : Dict[str, object]
+        Detailed extraction decision payload.
+
+    structural_integrity_summary : Dict[str, object]
+        Parser integrity summary for the current structure tree.
+
+    validator_summary : Dict[str, object]
+        Reduced validator payload for the current chunk sequence.
+
+    next_phase_decision : Dict[str, object]
+        Final accept/reject decision for downstream consumption.
+
+    Returns
+    -------
+    List[str]
+        Ordered high-level statements that explain the exported decision.
+    """
+    drivers: List[str] = []
+    compared_page_count = int(extraction_decision.get("compared_page_count", 0))
+    ocr_page_count = int(extraction_decision.get("ocr_page_count", 0))
+
+    if extraction_mode_used == "hybrid":
+        drivers.append(
+            "Hybrid extraction kept native text where it remained stronger and "
+            f"switched {ocr_page_count} page(s) to OCR."
+        )
+    elif extraction_mode_used == "ocr" and compared_page_count > 0:
+        drivers.append(
+            "OCR won after extraction comparison, so all compared pages were "
+            "exported from OCR."
+        )
+    elif compared_page_count > 0:
+        drivers.append(
+            "Extraction comparison ran, but native extraction remained the best "
+            "available document-level result."
+        )
+    else:
+        drivers.append(
+            "No OCR comparison was needed because native extraction stayed within "
+            "the accepted quality profile."
+        )
+
+    if structural_integrity_summary.get("has_structural_integrity_warnings", False):
+        drivers.append(
+            "Parser integrity warnings remained present in "
+            f"{int(structural_integrity_summary.get('structurally_incomplete_article_count', 0))} "
+            "article(s)."
+        )
+
+    if validator_summary.get("has_blocking_failures", False):
+        failure_codes = list(validator_summary.get("blocking_failure_types", []))
+        failure_label = ", ".join(failure_codes[:3])
+        if len(failure_codes) > 3:
+            failure_label = f"{failure_label}, ..."
+        drivers.append(
+            "Validator blocked downstream acceptance due to "
+            f"{failure_label or 'blocking chunk-quality failures'}."
+        )
+    else:
+        drivers.append(
+            "Validator reported no blocking chunk-quality failures for downstream "
+            "embedding consumption."
+        )
+
+    drivers.append(
+        f"Final decision: {str(next_phase_decision.get('decision', 'reject'))}."
+    )
+    return drivers
+
+
+def _build_structural_integrity_summary(
+    structure_root: StructuralNode,
+) -> Dict[str, object]:
+    """
+    Build one compact view of parser integrity warnings across ARTICLE nodes.
+
+    Parameters
+    ----------
+    structure_root : StructuralNode
+        Parsed document tree.
+
+    Returns
+    -------
+    Dict[str, object]
+        Article-level integrity summary for exported diagnostics.
+    """
+    article_nodes = _collect_nodes_by_type(structure_root, "ARTICLE")
+    truncation_signal_counter = CounterLike()
+    integrity_warning_counter = CounterLike()
+    article_examples: List[Dict[str, object]] = []
+    articles_with_truncation_signals = 0
+    articles_with_integrity_warnings = 0
+    structurally_incomplete_article_count = 0
+
+    for article in article_nodes:
+        metadata = article.metadata or {}
+        truncation_signals = [
+            str(signal).strip()
+            for signal in metadata.get("truncation_signals", [])
+            if str(signal).strip()
+        ]
+        integrity_warnings = [
+            str(signal).strip()
+            for signal in metadata.get("integrity_warnings", [])
+            if str(signal).strip()
+        ]
+        is_structurally_incomplete = bool(
+            metadata.get("is_structurally_incomplete", False)
+        )
+
+        if truncation_signals:
+            articles_with_truncation_signals += 1
+            for signal in truncation_signals:
+                truncation_signal_counter.increment(signal)
+
+        if integrity_warnings:
+            articles_with_integrity_warnings += 1
+            for warning in integrity_warnings:
+                integrity_warning_counter.increment(warning)
+
+        if is_structurally_incomplete:
+            structurally_incomplete_article_count += 1
+            if len(article_examples) < 5:
+                article_examples.append(
+                    {
+                        "article_label": article.label,
+                        "article_title": article.title,
+                        "page_start": article.page_start,
+                        "page_end": article.page_end,
+                        "truncation_signals": truncation_signals,
+                        "integrity_warnings": integrity_warnings,
+                    }
+                )
+
+    return {
+        "article_count": len(article_nodes),
+        "structurally_incomplete_article_count": structurally_incomplete_article_count,
+        "articles_with_truncation_signals": articles_with_truncation_signals,
+        "articles_with_integrity_warnings": articles_with_integrity_warnings,
+        "has_structural_integrity_warnings": structurally_incomplete_article_count > 0,
+        "truncation_signal_counts": truncation_signal_counter.to_dict(),
+        "integrity_warning_counts": integrity_warning_counter.to_dict(),
+        "example_articles": article_examples,
+    }
+
+
+def _build_native_only_extraction_decision(
+    native_extracted_document: ExtractedDocument,
+    native_extraction_quality: Dict[str, object],
+    ocr_comparison_trigger: Optional[Dict[str, object]] = None,
+) -> Dict[str, object]:
+    """
+    Build a stable extraction-decision payload when OCR comparison is skipped.
+
+    Parameters
+    ----------
+    native_extracted_document : ExtractedDocument
+        Native extraction result selected without OCR comparison.
+
+    native_extraction_quality : Dict[str, object]
+        Analyzer output for the native extraction.
+
+    ocr_comparison_trigger : Optional[Dict[str, object]]
+        Diagnostic payload describing whether OCR comparison was justified.
+
+    Returns
+    -------
+    Dict[str, object]
+        Explainable extraction decision payload.
+    """
+    page_count = len(native_extracted_document.pages)
+    return {
+        "comparison_performed": False,
+        "document_composition": "all_native",
+        "page_count": page_count,
+        "compared_page_count": 0,
+        "native_page_count": page_count,
+        "ocr_page_count": 0,
+        "native_extraction_quality": native_extraction_quality,
+        "ocr_comparison_trigger": ocr_comparison_trigger or {},
+        "page_decisions": [],
+    }
+
+
+def _build_ocr_comparison_trigger(
+    native_extraction_quality: Dict[str, object],
+    enable_hybrid_page_selection: bool,
+) -> Dict[str, object]:
+    """
+    Summarize whether OCR comparison should run for the native extraction.
+
+    Parameters
+    ----------
+    native_extraction_quality : Dict[str, object]
+        Analyzer output for the native extraction candidate.
+
+    enable_hybrid_page_selection : bool
+        Whether the pipeline can safely compare and select pages individually.
+
+    Returns
+    -------
+    Dict[str, object]
+        Explainable trigger payload used by pipeline orchestration and exports.
+    """
+    pages_requiring_ocr_comparison = [
+        int(page_number)
+        for page_number in native_extraction_quality.get(
+            "pages_requiring_ocr_comparison",
+            [],
+        )
+    ]
+    document_likely_corrupted = bool(
+        native_extraction_quality.get("document_likely_corrupted", False)
+    )
+    has_local_pages_requiring_ocr_comparison = bool(
+        native_extraction_quality.get(
+            "has_local_pages_requiring_ocr_comparison",
+            False,
+        )
+    ) or bool(pages_requiring_ocr_comparison)
+    local_page_comparison_supported = (
+        enable_hybrid_page_selection and has_local_pages_requiring_ocr_comparison
+    )
+
+    return {
+        "document_likely_corrupted": document_likely_corrupted,
+        "has_local_pages_requiring_ocr_comparison": (
+            has_local_pages_requiring_ocr_comparison
+        ),
+        "pages_requiring_ocr_comparison": pages_requiring_ocr_comparison,
+        "local_page_comparison_supported": local_page_comparison_supported,
+        "should_run_ocr_comparison": (
+            document_likely_corrupted or local_page_comparison_supported
+        ),
+    }
+
+
+def _build_hybrid_extraction_result(
+    source_path: str,
+    native_extracted_document: ExtractedDocument,
+    native_extraction_quality: Dict[str, object],
+    ocr_extracted_document: ExtractedDocument,
+    ocr_extraction_quality: Dict[str, object],
+    extraction_quality_analyzer: ExtractionQualityAnalyzer,
+    ocr_comparison_trigger: Optional[Dict[str, object]] = None,
+) -> tuple[ExtractedDocument, str, Dict[str, object]]:
+    """
+    Assemble the best available document page by page from native and OCR.
+
+    Parameters
+    ----------
+    source_path : str
+        Source PDF path used for the assembled document.
+
+    native_extracted_document : ExtractedDocument
+        Native extraction candidate.
+
+    native_extraction_quality : Dict[str, object]
+        Analyzer output for the native candidate.
+
+    ocr_extracted_document : ExtractedDocument
+        OCR extraction candidate.
+
+    ocr_extraction_quality : Dict[str, object]
+        Analyzer output for the OCR candidate.
+
+    extraction_quality_analyzer : ExtractionQualityAnalyzer
+        Shared analyzer reused for page-level comparison.
+
+    ocr_comparison_trigger : Optional[Dict[str, object]]
+        Diagnostic payload describing why OCR comparison was run.
+
+    Returns
+    -------
+    tuple[ExtractedDocument, str, Dict[str, object]]
+        Assembled document, document-level extraction mode, and decision
+        diagnostics describing which source won per page.
+    """
+    native_pages = native_extracted_document.pages
+    ocr_pages = ocr_extracted_document.pages
+
+    if len(native_pages) != len(ocr_pages):
+        raise ValueError(
+            "Native and OCR extraction produced different page counts. "
+            "Hybrid page assembly requires one OCR candidate per native page."
+        )
+
+    selected_pages = []
+    page_decisions: List[Dict[str, Any]] = []
+    comparison_trigger = ocr_comparison_trigger or {}
+    compare_all_pages = bool(
+        comparison_trigger.get("document_likely_corrupted", False)
+    )
+    pages_requiring_ocr_comparison = {
+        int(page_number)
+        for page_number in comparison_trigger.get("pages_requiring_ocr_comparison", [])
+    }
+    compared_page_count = 0
+
+    for native_page, ocr_page in zip(native_pages, ocr_pages):
+        page_requires_comparison = compare_all_pages or (
+            native_page.page_number in pages_requiring_ocr_comparison
+        )
+
+        if page_requires_comparison:
+            comparison = extraction_quality_analyzer.compare_page_versions(
+                native_page=native_page,
+                ocr_page=ocr_page,
+            )
+            selected_page = (
+                ocr_page if comparison["preferred_source"] == "ocr" else native_page
+            )
+            selected_pages.append(selected_page)
+            page_decisions.append(
+                {
+                    "page_number": comparison["page_number"],
+                    "compared_with_ocr": True,
+                    "selected_source": comparison["preferred_source"],
+                    "selected_mode": comparison["preferred_mode"],
+                    "decision": comparison["decision"],
+                    "score_gap": comparison["score_gap"],
+                    "reason_codes": comparison["reason_codes"],
+                }
+            )
+            compared_page_count += 1
+            continue
+
+        selected_pages.append(native_page)
+        page_decisions.append(
+            {
+                "page_number": native_page.page_number,
+                "compared_with_ocr": False,
+                "selected_source": "native",
+                "selected_mode": native_page.selected_mode,
+                "decision": "keep_native_without_ocr_comparison",
+                "score_gap": None,
+                "reason_codes": ["page_not_flagged_for_ocr_comparison"],
+            }
+        )
+
+    active_extracted_document = ExtractedDocument(
+        source_path=source_path,
+        page_count=len(selected_pages),
+        pages=selected_pages,
+    )
+    extraction_mode_used = _classify_document_extraction_mode(active_extracted_document)
+
+    native_page_count = sum(
+        1 for page in active_extracted_document.pages if page.selected_mode != "ocr"
+    )
+    ocr_page_count = len(active_extracted_document.pages) - native_page_count
+
+    extraction_decision = {
+        "comparison_performed": True,
+        "document_composition": _classify_document_composition(
+            extraction_mode_used=extraction_mode_used
+        ),
+        "page_count": len(active_extracted_document.pages),
+        "compared_page_count": compared_page_count,
+        "native_page_count": native_page_count,
+        "ocr_page_count": ocr_page_count,
+        "native_extraction_quality": native_extraction_quality,
+        "ocr_extraction_quality": ocr_extraction_quality,
+        "ocr_comparison_trigger": comparison_trigger,
+        "page_decisions": page_decisions,
+    }
+
+    return active_extracted_document, extraction_mode_used, extraction_decision
+
+
+def _build_ocr_only_extraction_decision(
+    ocr_extracted_document: ExtractedDocument,
+    native_extraction_quality: Dict[str, object],
+    ocr_extraction_quality: Dict[str, object],
+    ocr_comparison_trigger: Optional[Dict[str, object]] = None,
+) -> Dict[str, object]:
+    """
+    Build a stable extraction-decision payload when hybrid page selection is disabled.
+
+    Parameters
+    ----------
+    ocr_extracted_document : ExtractedDocument
+        OCR extraction result selected as the active document.
+
+    native_extraction_quality : Dict[str, object]
+        Analyzer output for the native extraction.
+
+    ocr_extraction_quality : Dict[str, object]
+        Analyzer output for the OCR extraction.
+
+    ocr_comparison_trigger : Optional[Dict[str, object]]
+        Diagnostic payload describing why OCR comparison was run.
+
+    Returns
+    -------
+    Dict[str, object]
+        Explainable extraction decision payload.
+    """
+    page_count = len(ocr_extracted_document.pages)
+    return {
+        "comparison_performed": False,
+        "document_composition": "all_ocr",
+        "page_count": page_count,
+        "compared_page_count": 0,
+        "native_page_count": 0,
+        "ocr_page_count": page_count,
+        "native_extraction_quality": native_extraction_quality,
+        "ocr_extraction_quality": ocr_extraction_quality,
+        "ocr_comparison_trigger": ocr_comparison_trigger or {},
+        "page_decisions": [],
+    }
+
+
+def _classify_document_extraction_mode(extracted_document: ExtractedDocument) -> str:
+    """
+    Classify the assembled document mode from the selected page sources.
+
+    Parameters
+    ----------
+    extracted_document : ExtractedDocument
+        Active extracted document.
+
+    Returns
+    -------
+    str
+        "native", "ocr", or "hybrid".
+    """
+    if not extracted_document.pages:
+        return "native"
+
+    ocr_page_count = sum(
+        1 for page in extracted_document.pages if page.selected_mode == "ocr"
+    )
+    if ocr_page_count == 0:
+        return "native"
+    if ocr_page_count == len(extracted_document.pages):
+        return "ocr"
+    return "hybrid"
+
+
+def _classify_document_composition(extraction_mode_used: str) -> str:
+    """
+    Convert the active extraction mode into a stable composition label.
+
+    Parameters
+    ----------
+    extraction_mode_used : str
+        Document-level mode selected for downstream processing.
+
+    Returns
+    -------
+    str
+        "all_native", "all_ocr", or "hybrid".
+    """
+    if extraction_mode_used == "ocr":
+        return "all_ocr"
+    if extraction_mode_used == "hybrid":
+        return "hybrid"
+    return "all_native"
 
 
 def _build_next_phase_decision(
@@ -767,6 +1846,7 @@ def _build_blocking_failure_overview(
         Reduced validator facts reused by summary and decision helpers.
     """
     issue_type_counts = dict(validation_report.get("issue_type_counts", {}))
+    issue_examples = dict(validation_report.get("issue_examples", {}))
     invalid_chunk_count = int(validation_report.get("invalid_chunk_count", 0))
 
     return {
@@ -777,6 +1857,14 @@ def _build_blocking_failure_overview(
         "has_blocking_failures": invalid_chunk_count > 0,
         "blocking_failure_count": sum(issue_type_counts.values()),
         "blocking_failure_types": _get_sorted_blocking_failure_types(validation_report),
+        "blocking_failures": [
+            {
+                "code": issue_code,
+                "count": issue_type_counts[issue_code],
+                "example_chunk_ids": list(issue_examples.get(issue_code, [])),
+            }
+            for issue_code in _get_sorted_blocking_failure_types(validation_report)
+        ],
         "failed_chunk_ids": [
             report.get("chunk_id")
             for report in validation_report.get("chunk_reports", [])
@@ -835,6 +1923,34 @@ def _count_node_type(node: StructuralNode, node_type: str) -> int:
         count += _count_node_type(child, node_type)
 
     return count
+
+
+def _collect_nodes_by_type(node: StructuralNode, node_type: str) -> List[StructuralNode]:
+    """
+    Collect all nodes of a given type inside the parsed structure tree.
+
+    Parameters
+    ----------
+    node : StructuralNode
+        Current root node for traversal.
+
+    node_type : str
+        Node type to collect.
+
+    Returns
+    -------
+    List[StructuralNode]
+        Matching nodes in traversal order.
+    """
+    matching_nodes: List[StructuralNode] = []
+
+    if node.node_type == node_type:
+        matching_nodes.append(node)
+
+    for child in node.children:
+        matching_nodes.extend(_collect_nodes_by_type(child, node_type))
+
+    return matching_nodes
 
 
 def _dict_to_pretty_json(data: dict) -> str:
