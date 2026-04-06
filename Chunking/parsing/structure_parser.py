@@ -399,6 +399,11 @@ class StructureParser:
             # ---------------------------------------------------------
             chapter_match = CHAPTER_HEADER_RE.match(line)
             if chapter_match:
+                self._record_article_closure_context(
+                    article=current_article,
+                    boundary_type="CHAPTER",
+                    boundary_line=line,
+                )
                 if not body_started and pre_article_lines:
                     self._attach_pre_article_content(root, pre_article_lines)
                     pre_article_lines = []
@@ -445,6 +450,11 @@ class StructureParser:
             # ---------------------------------------------------------
             section_container_match = SECTION_CONTAINER_RE.match(line)
             if section_container_match:
+                self._record_article_closure_context(
+                    article=current_article,
+                    boundary_type="SECTION_CONTAINER",
+                    boundary_line=line,
+                )
                 if not body_started and pre_article_lines:
                     self._attach_pre_article_content(root, pre_article_lines)
                     pre_article_lines = []
@@ -496,6 +506,11 @@ class StructureParser:
             # ---------------------------------------------------------
             annex_match = ANNEX_HEADER_RE.match(line)
             if annex_match:
+                self._record_article_closure_context(
+                    article=current_article,
+                    boundary_type="ANNEX",
+                    boundary_line=line,
+                )
                 if not body_started and pre_article_lines:
                     self._attach_pre_article_content(root, pre_article_lines)
                     pre_article_lines = []
@@ -542,6 +557,11 @@ class StructureParser:
             # ---------------------------------------------------------
             article_match = self._match_article_header(line)
             if article_match:
+                self._record_article_closure_context(
+                    article=current_article,
+                    boundary_type="ARTICLE",
+                    boundary_line=line,
+                )
                 if not body_started and pre_article_lines:
                     self._attach_pre_article_content(root, pre_article_lines)
                     pre_article_lines = []
@@ -695,6 +715,11 @@ class StructureParser:
         if not body_started and pre_article_lines:
             self._attach_pre_article_content(root, pre_article_lines)
 
+        self._record_article_closure_context(
+            article=current_article,
+            boundary_type="END_OF_DOCUMENT",
+            boundary_line="",
+        )
         self._post_process_nodes(root)
         self._infer_missing_page_ranges(root)
         return root
@@ -1808,6 +1833,39 @@ class StructureParser:
     # Post-processing
     # ------------------------------------------------------------------
 
+    def _record_article_closure_context(
+        self,
+        article: Optional[StructuralNode],
+        boundary_type: str,
+        boundary_line: str,
+    ) -> None:
+        """
+        Store the structural boundary that closed an article, when one exists.
+
+        Why this helper exists
+        ----------------------
+        Article integrity depends not only on the captured text, but also on
+        how the article ended. An abrupt transition to a new structural marker
+        is normal when the article body is complete, but suspicious when the
+        body itself ends like a damaged fragment.
+
+        Parameters
+        ----------
+        article : Optional[StructuralNode]
+            Current article being closed, if any.
+
+        boundary_type : str
+            Structural type that closes the article.
+
+        boundary_line : str
+            Source line that triggered the closure.
+        """
+        if article is None:
+            return
+
+        article.metadata["closing_boundary_type"] = boundary_type
+        article.metadata["closing_boundary_line"] = boundary_line.strip()
+
     def _post_process_nodes(self, node: StructuralNode) -> None:
         """
         Perform recursive post-processing over the structural tree.
@@ -1832,6 +1890,9 @@ class StructureParser:
         node : StructuralNode
             Current node in recursive traversal.
         """
+        if node.node_type == "ARTICLE":
+            self._initialize_article_integrity_metadata(node)
+
         if node.text:
             node.text = self._normalize_node_text(node.text)
 
@@ -1857,12 +1918,429 @@ class StructureParser:
             if not section_children and not has_lettered:
                 node.children.extend(self._extract_lettered_children(node))
 
+            self._annotate_article_integrity(node)
+
         if node.node_type == "SECTION" and node.text:
             has_lettered = any(
                 child.node_type == "LETTERED_ITEM" for child in node.children
             )
             if not has_lettered:
                 node.children.extend(self._extract_lettered_children(node))
+
+    def _initialize_article_integrity_metadata(self, article: StructuralNode) -> None:
+        """
+        Ensure article nodes expose explicit integrity metadata fields.
+
+        Why this helper exists
+        ----------------------
+        Downstream layers should not have to infer whether integrity metadata
+        is missing because the article is complete or because the parser did
+        not provide the signal. Initializing the fields keeps the contract
+        explicit for every ARTICLE node.
+        """
+        article.metadata.setdefault("is_structurally_incomplete", False)
+        article.metadata.setdefault("truncation_signals", [])
+        article.metadata.setdefault("integrity_warnings", [])
+
+    def _annotate_article_integrity(self, article: StructuralNode) -> None:
+        """
+        Evaluate whether one article looks structurally incomplete.
+
+        Why this helper exists
+        ----------------------
+        The parser should distinguish:
+        - article captured successfully
+        - article captured with integrity warnings
+        - article captured with strong incompleteness signals
+
+        This logic remains conservative and uses only explicit structural
+        signals visible to the parser.
+        """
+        truncation_signals = self._collect_article_truncation_signals(article)
+        integrity_warnings = self._collect_article_integrity_warnings(article)
+
+        article.metadata["truncation_signals"] = truncation_signals
+        article.metadata["integrity_warnings"] = integrity_warnings
+        article.metadata["is_structurally_incomplete"] = bool(
+            truncation_signals or integrity_warnings
+        )
+
+    def _collect_article_truncation_signals(
+        self,
+        article: StructuralNode,
+    ) -> List[str]:
+        """
+        Collect strong article-ending signals that suggest truncation.
+
+        Parameters
+        ----------
+        article : StructuralNode
+            Article node under inspection.
+
+        Returns
+        -------
+        List[str]
+            Deterministic signal codes that explain why the article may be
+            structurally incomplete.
+        """
+        signals: List[str] = []
+        article_text = (article.text or "").strip()
+
+        if not article_text:
+            signals.append("missing_article_body")
+            return signals
+
+        if has_suspicious_truncated_ending(article_text):
+            signals.append("suspicious_truncated_ending")
+
+            closing_boundary_type = article.metadata.get("closing_boundary_type", "")
+            if closing_boundary_type and closing_boundary_type != "END_OF_DOCUMENT":
+                signals.append(
+                    f"abrupt_transition_to_{str(closing_boundary_type).lower()}"
+                )
+            elif closing_boundary_type == "END_OF_DOCUMENT":
+                signals.append("truncated_at_document_end")
+
+        return signals
+
+    def _collect_article_integrity_warnings(
+        self,
+        article: StructuralNode,
+    ) -> List[str]:
+        """
+        Collect non-ending article integrity warnings visible in parser output.
+
+        Parameters
+        ----------
+        article : StructuralNode
+            Article node under inspection.
+
+        Returns
+        -------
+        List[str]
+            Warning codes that expose suspicious but non-terminal integrity
+            issues useful for downstream consumers.
+        """
+        warnings: List[str] = []
+
+        if self._has_unrecovered_article_title_boundary(article):
+            warnings.append("possible_unrecovered_title_body_boundary")
+
+        warnings.extend(self._collect_structural_continuity_warnings(article))
+
+        deduplicated_warnings: List[str] = []
+        for warning in warnings:
+            if warning not in deduplicated_warnings:
+                deduplicated_warnings.append(warning)
+
+        return deduplicated_warnings
+
+    def _collect_structural_continuity_warnings(
+        self,
+        article: StructuralNode,
+    ) -> List[str]:
+        """
+        Collect warnings for suspicious continuity between structural units.
+
+        Why this helper exists
+        ----------------------
+        Some damaged captures still produce a formally valid ARTICLE node but
+        silently mix incomplete numbered or lettered structures into it. Those
+        cases should be exposed explicitly so downstream layers can avoid
+        treating the article as structurally trustworthy.
+        """
+        warnings: List[str] = []
+
+        if self._has_orphaned_numbered_continuation(article):
+            warnings.append("possible_orphaned_numbered_continuation")
+
+        if self._has_interrupted_definition_capture(article):
+            warnings.append("possible_interrupted_definition_capture")
+
+        if self._has_broken_lettered_enumeration(article):
+            warnings.append("possible_broken_lettered_enumeration")
+
+        return warnings
+
+    def _has_orphaned_numbered_continuation(self, article: StructuralNode) -> bool:
+        """
+        Detect numbered continuations that imply a missing earlier structural unit.
+
+        Strong examples
+        ---------------
+        - first recovered label is "1.1"
+        - first recovered label is "2"
+
+        Those patterns usually mean the article body starts mid-sequence rather
+        than at a legitimate top-level unit boundary.
+        """
+        article_text = (article.text or "").strip()
+        if not article_text:
+            return False
+
+        matches = self._find_numbered_block_matches(article_text)
+        if not matches:
+            return False
+
+        first_label = self._normalize_numbered_label(matches[0].group("label"))
+
+        try:
+            first_parts = [int(part) for part in first_label.split(".")]
+        except ValueError:
+            return False
+
+        if len(first_parts) > 1:
+            return True
+
+        return bool(first_parts and first_parts[0] > 1)
+
+    def _has_interrupted_definition_capture(self, article: StructuralNode) -> bool:
+        """
+        Detect numbered sections that end like an unfinished subordinate list.
+
+        Why this helper exists
+        ----------------------
+        In legal text, a section ending with a colon usually introduces nested
+        content such as definitions or lettered items. If the parser recovers a
+        following sibling section instead, but no subordinate children for the
+        colon-ending section, that is a strong sign of illegitimate continuity.
+        """
+        section_children = [
+            child for child in article.children if child.node_type == "SECTION"
+        ]
+        if len(section_children) < 2:
+            return False
+
+        for section_index, section in enumerate(section_children[:-1]):
+            section_text = (section.text or "").strip()
+            if not section_text or not section_text.endswith(":"):
+                continue
+
+            has_lettered_children = any(
+                child.node_type == "LETTERED_ITEM" for child in section.children
+            )
+            if has_lettered_children:
+                continue
+
+            if self._has_numbered_subcontinuation_for_section(
+                article,
+                section,
+                section_children[section_index + 1 :],
+            ):
+                continue
+
+            if not has_lettered_children:
+                return True
+
+        return False
+
+    def _has_numbered_subcontinuation_for_section(
+        self,
+        article: StructuralNode,
+        section: StructuralNode,
+        following_sections: Sequence[StructuralNode],
+    ) -> bool:
+        """
+        Detect whether one colon-ended section continues via decimal numbering.
+
+        Why this helper exists
+        ----------------------
+        Legal prose often introduces a subordinate numbered list with a
+        top-level unit ending in ":" followed by items such as "2.1" and
+        "2.2". Those continuations are structurally legitimate and must not be
+        misreported as interrupted definition capture.
+        """
+        section_label = self._normalize_numbered_label(section.label or "")
+        if not section_label or "." in section_label:
+            return False
+
+        expected_prefix = f"{section_label}."
+
+        for following_section in following_sections:
+            following_label = self._normalize_numbered_label(following_section.label or "")
+            if following_label.startswith(expected_prefix):
+                return True
+
+        article_text = (article.text or "").strip()
+        if not article_text:
+            return False
+
+        for match in self._find_numbered_block_matches(article_text):
+            normalized_label = self._normalize_numbered_label(match.group("label"))
+            if normalized_label.startswith(expected_prefix):
+                return True
+
+        return False
+
+    def _has_broken_lettered_enumeration(self, article: StructuralNode) -> bool:
+        """
+        Detect gaps or invalid starts in recovered legal lettered enumerations.
+
+        Why this helper exists
+        ----------------------
+        Broken alinea sequences often indicate that the article body is missing
+        content or that continuation from another structural unit leaked into
+        the current one. The parser should expose that suspicion explicitly.
+        """
+        candidate_parents: List[StructuralNode] = [article]
+        candidate_parents.extend(
+            child for child in article.children if child.node_type == "SECTION"
+        )
+
+        for parent in candidate_parents:
+            lettered_children = [
+                child for child in parent.children if child.node_type == "LETTERED_ITEM"
+            ]
+            labels = [child.label.strip().lower() for child in lettered_children if child.label]
+            if not labels:
+                labels = self._collect_lettered_labels_from_text(parent.text)
+
+            if not labels:
+                continue
+
+            if self._has_non_contiguous_lettered_sequence(labels):
+                return True
+
+        return False
+
+    def _collect_lettered_labels_from_text(self, text: str) -> List[str]:
+        """
+        Recover lettered item labels directly from one text span when needed.
+
+        Why this helper exists
+        ----------------------
+        Article integrity is evaluated immediately after numbered SECTION
+        extraction. At that point, newly created SECTION nodes may not yet have
+        their own LETTERED_ITEM children derived, so the warning logic needs a
+        conservative text-based fallback.
+        """
+        if not text:
+            return []
+
+        labels = [match.group("label").lower() for match in LETTERED_BLOCK_RE.finditer(text)]
+        return labels if len(labels) >= 2 else []
+
+    def _has_non_contiguous_lettered_sequence(self, labels: List[str]) -> bool:
+        """
+        Validate whether recovered lettered labels form a contiguous sequence.
+
+        Accepted examples
+        -----------------
+        - a, b
+        - a, b, c
+
+        Suspicious examples
+        -------------------
+        - b, c
+        - a, c
+        - c, d
+        """
+        if len(labels) < 2:
+            return False
+
+        normalized_labels = [label for label in labels if len(label) == 1 and label.isalpha()]
+        if len(normalized_labels) != len(labels):
+            return True
+
+        if normalized_labels[0] != "a":
+            return True
+
+        previous_codepoint = ord(normalized_labels[0])
+        for label in normalized_labels[1:]:
+            current_codepoint = ord(label)
+            if current_codepoint - previous_codepoint != 1:
+                return True
+            previous_codepoint = current_codepoint
+
+        return False
+
+    def _has_unrecovered_article_title_boundary(self, article: StructuralNode) -> bool:
+        """
+        Detect a strong signal that article title/body delimitation was missed.
+
+        Why this helper exists
+        ----------------------
+        Some damaged extractions still become ARTICLE nodes, but the first body
+        line actually behaves like a title line followed by ordinary prose. The
+        parser should surface that suspicion explicitly instead of pretending
+        the capture is structurally complete.
+        """
+        article_lines = [line.strip() for line in article.text.splitlines() if line.strip()]
+        if not article_lines:
+            return False
+
+        first_line = article_lines[0]
+        article_title = article.title.strip()
+
+        if article_title:
+            if len(article_lines) < 2:
+                return False
+
+            second_line = article_lines[1]
+            if self._fold_structural_text(first_line) != self._fold_structural_text(
+                article_title
+            ):
+                if not self._looks_like_unrecovered_title_line(first_line):
+                    return False
+            elif not self._looks_like_unrecovered_title_line(first_line):
+                return False
+
+            if not BODY_START_RE.match(second_line):
+                return False
+
+            return True
+
+        if len(article_lines) < 2:
+            return False
+
+        second_line = article_lines[1]
+
+        if not self._looks_like_unrecovered_title_line(first_line):
+            return False
+
+        if not BODY_START_RE.match(second_line):
+            return False
+
+        return True
+
+    def _looks_like_unrecovered_title_line(self, line: str) -> bool:
+        """
+        Detect title-like body openings that are strong enough to warn on.
+
+        Why this helper exists
+        ----------------------
+        The parser intentionally keeps title consumption conservative. Some
+        longer uppercase title lines may remain in the article body to avoid
+        swallowing prose too aggressively. When that title-like line is still
+        followed by an obvious body sentence, the parser should expose the
+        boundary suspicion explicitly.
+        """
+        if self._is_probable_title_line(line):
+            return True
+
+        if not line:
+            return False
+
+        stripped = line.strip()
+        if not UPPERCASE_HEAVY_RE.match(stripped):
+            return False
+
+        word_count = len(stripped.split())
+        if word_count < 5 or word_count > 22:
+            return False
+
+        return True
+
+    def _fold_structural_text(self, text: str) -> str:
+        """
+        Fold short structural text into a stable comparison form.
+
+        Why this helper exists
+        ----------------------
+        Title/body boundary checks should tolerate accent and punctuation
+        variation without introducing broad fuzzy matching.
+        """
+        return re.sub(r"\s+", " ", re.sub(r"[^\w\s]", " ", text.casefold())).strip()
 
     def _infer_missing_page_ranges(self, node: StructuralNode) -> None:
         """
