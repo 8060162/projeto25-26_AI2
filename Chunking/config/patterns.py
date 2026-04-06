@@ -33,6 +33,13 @@ import re
 # "10 | 14"
 PAGE_COUNTER_RE = re.compile(r"\b\d+\s*\|\s*\d+\b")
 
+# Strict full-line page-counter pattern.
+#
+# Example matches:
+# "3|14"
+# "10 | 14"
+INLINE_PAGE_COUNTER_LINE_RE = re.compile(r"^\s*\d+\s*\|\s*\d+\s*$")
+
 # Loose full-line page-counter pattern.
 #
 # This is useful for cleanup logic that wants to identify lines consisting
@@ -190,12 +197,33 @@ NUMBERED_BLOCK_RE = re.compile(
     flags=re.IGNORECASE,
 )
 
+# Detect numbered item prefixes at the start of one visible line.
+#
+# Example matches:
+# "1. Texto"
+# "2.1 Conteudo"
+# "n.º 3 - Norma"
+NUMBERED_ITEM_PREFIX_RE = re.compile(
+    r"^\s*(?:n\.?\s*[ºo]\s*)?\d+(?:\.\d+)*(?:\.\s+|\)\s+|\s+[—–\-]\s+|\s+)",
+    flags=re.IGNORECASE,
+)
+
 # Legal-style alíneas:
 # "a)"
 # "b)"
 # "c)"
 LETTER_ITEM_RE = re.compile(
     r"(?m)^([a-z])\)\s+",
+    flags=re.IGNORECASE,
+)
+
+# Detect lettered item prefixes at the start of one visible line.
+#
+# Example matches:
+# "a) Texto"
+# "b) Conteudo"
+LETTERED_ITEM_PREFIX_RE = re.compile(
+    r"^\s*[a-z]\)\s+",
     flags=re.IGNORECASE,
 )
 
