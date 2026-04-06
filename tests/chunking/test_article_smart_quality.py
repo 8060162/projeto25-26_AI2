@@ -668,6 +668,461 @@ class ArticleSmartQualityRegressionTests(unittest.TestCase):
         self.assertTrue(all(chunk.char_count <= 1024 for chunk in chunks))
         self.assertTrue(all(chunk.chunk_reason != "preamble_group" for chunk in chunks))
 
+    def test_weak_split_boundary_is_reattached_when_next_part_starts_with_connector(self) -> None:
+        """Ensure weak split boundaries are repaired before export."""
+        settings = PipelineSettings(
+            target_chunk_chars=210,
+            min_chunk_chars=90,
+            hard_max_chunk_chars=260,
+        )
+        strategy = ArticleSmartChunkingStrategy(settings)
+
+        repaired_parts = strategy._repair_weak_split_boundaries(
+            [
+                (
+                    "O estudante pode requerer a melhoria da classificação mediante "
+                    "pedido apresentado dentro do prazo e nos termos de"
+                ),
+                (
+                    " acordo com o regulamento próprio da unidade orgânica e com "
+                    "os critérios aplicáveis ao ciclo de estudos."
+                ),
+            ]
+        )
+
+        self.assertEqual(len(repaired_parts), 1)
+        self.assertIn("nos termos de acordo com o regulamento próprio", repaired_parts[0])
+
+    def test_split_oversized_text_remerges_weak_connector_boundary(self) -> None:
+        """Ensure final oversized splitting does not export connector-led tails."""
+        settings = PipelineSettings(
+            target_chunk_chars=150,
+            min_chunk_chars=80,
+            hard_max_chunk_chars=280,
+        )
+        strategy = ArticleSmartChunkingStrategy(settings)
+
+        split_parts, split_mode = strategy._split_oversized_text(
+            (
+                "O estudante pode requerer a melhoria da classificação mediante "
+                "pedido apresentado dentro do prazo e nos termos de\n\n"
+                "acordo com o regulamento próprio da unidade orgânica e com "
+                "os critérios aplicáveis ao ciclo de estudos."
+            )
+        )
+
+        self.assertEqual(split_mode, "paragraph_split")
+        self.assertEqual(len(split_parts), 1)
+        self.assertFalse(split_parts[0].endswith("nos termos de"))
+        self.assertFalse(split_parts[0].startswith("acordo com"))
+        self.assertIn("nos termos de acordo com o regulamento próprio", split_parts[0])
+
+    def test_article_fallback_split_does_not_export_connector_led_tail_chunk(self) -> None:
+        """Ensure fallback article splitting does not emit a connector-led tail."""
+        settings = PipelineSettings(
+            target_chunk_chars=130,
+            min_chunk_chars=80,
+            hard_max_chunk_chars=240,
+        )
+
+        chunks = build_article_smart_chunks(
+            (
+                "Artigo 7 - Requerimento\n"
+                "O estudante pode requerer a melhoria da classificacao mediante "
+                "pedido apresentado dentro do prazo e nos termos de\n\n"
+                "acordo com o regulamento proprio da unidade organica e com "
+                "os criterios aplicaveis ao ciclo de estudos."
+            ),
+            settings=settings,
+        )
+
+        self.assertEqual(len(chunks), 1)
+        self.assertEqual(chunks[0].source_node_type, "ARTICLE_PART")
+        self.assertIn(
+            "nos termos de acordo com o regulamento proprio da unidade organica",
+            chunks[0].text,
+        )
+        self.assertFalse(chunks[0].text.startswith("acordo com"))
+        self.assertFalse(chunks[0].text.endswith("nos termos de"))
+
+    def test_preamble_split_does_not_export_connector_led_tail_chunk(self) -> None:
+        """Ensure preamble splitting does not emit a connector-led tail."""
+        preamble = StructuralNode(
+            node_type="PREAMBLE",
+            label="PREAMBLE",
+            text=(
+                "Considerando que o presente regulamento fixa regras de acesso, "
+                "procedimentos e prazos aplicaveis aos pedidos formulados pelos "
+                "estudantes e nos termos de\n\n"
+                "acordo com o regulamento proprio de cada unidade organica."
+            ),
+            page_start=1,
+            page_end=1,
+        )
+        root = StructuralNode(
+            node_type="DOCUMENT",
+            label="DOCUMENT",
+            children=[preamble],
+        )
+        settings = PipelineSettings(
+            target_chunk_chars=130,
+            min_chunk_chars=80,
+            hard_max_chunk_chars=240,
+        )
+        strategy = ArticleSmartChunkingStrategy(settings)
+
+        chunks = strategy.build_chunks(build_document_metadata(), root)
+
+        self.assertEqual(len(chunks), 1)
+        self.assertEqual(chunks[0].source_node_type, "PREAMBLE")
+        self.assertIn(
+            "nos termos de\nacordo com o regulamento proprio de cada unidade organica.",
+            chunks[0].text,
+        )
+        self.assertFalse(chunks[0].text.startswith("acordo com"))
+        self.assertFalse(chunks[0].text.endswith("nos termos de"))
+
+    def test_structurally_incomplete_truncated_article_is_not_exported(self) -> None:
+        """Ensure incomplete truncated articles do not become unsafe visible chunks."""
+        article = StructuralNode(
+            node_type="ARTICLE",
+            label="ART_18",
+            title="Dúvidas e omissões",
+            text=(
+                "As dúvidas e omissões resultantes da aplicação do presente regulamento "
+                "serão resolvidas por aplicação do Regulamento de Exames do Instituto "
+                "Politécnico do Porto (P PORTO) e na ausência de"
+            ),
+            page_start=9,
+            page_end=9,
+            metadata={
+                "article_number": "18",
+                "article_title": "Dúvidas e omissões",
+                "document_part": "regulation_body",
+                "is_structurally_incomplete": True,
+                "truncation_signals": ["suspicious_truncated_ending"],
+                "integrity_warnings": [],
+            },
+        )
+        root = StructuralNode(
+            node_type="DOCUMENT",
+            label="DOCUMENT",
+            children=[article],
+        )
+        strategy = ArticleSmartChunkingStrategy(PipelineSettings())
+
+        chunks = strategy.build_chunks(build_document_metadata(), root)
+
+        self.assertEqual(chunks, [])
+
+    def test_incomplete_section_groups_are_split_into_safe_single_section_exports(self) -> None:
+        """Ensure incomplete multi-section groups are not exported unchanged."""
+        first_section_text = (
+            "1. Credito - ato pelo qual o estudante obtém reconhecimento formal "
+            "do percurso anterior com elementos suficientes para autonomia e "
+            "contexto juridico."
+        )
+        second_section_text = (
+            "2. Inscricao - ato pelo qual o estudante formaliza o pedido de "
+            "acesso ou continuidade no curso com elementos suficientes para "
+            "autonomia e contexto juridico."
+        )
+        article = StructuralNode(
+            node_type="ARTICLE",
+            label="ART_18A",
+            title="Definicoes",
+            text=f"{first_section_text}\n{second_section_text}",
+            page_start=1,
+            page_end=1,
+            metadata={
+                "article_number": "18-A",
+                "article_title": "Definicoes",
+                "document_part": "regulation_body",
+                "is_structurally_incomplete": True,
+            },
+        )
+        article.children = [
+            StructuralNode(
+                node_type="SECTION",
+                label="1",
+                text=first_section_text,
+                page_start=1,
+                page_end=1,
+            ),
+            StructuralNode(
+                node_type="SECTION",
+                label="2",
+                text=second_section_text,
+                page_start=1,
+                page_end=1,
+            ),
+        ]
+        root = StructuralNode(
+            node_type="DOCUMENT",
+            label="DOCUMENT",
+            children=[article],
+        )
+        settings = PipelineSettings(
+            target_chunk_chars=220,
+            min_chunk_chars=80,
+            hard_max_chunk_chars=320,
+        )
+        strategy = ArticleSmartChunkingStrategy(settings)
+
+        chunks = strategy.build_chunks(build_document_metadata(), root)
+
+        self.assertEqual(len(chunks), 2)
+        self.assertEqual(
+            [chunk.source_node_type for chunk in chunks],
+            ["SECTION_GROUP", "SECTION_GROUP"],
+        )
+        self.assertEqual(
+            [chunk.source_node_label for chunk in chunks],
+            ["1", "2"],
+        )
+        self.assertEqual(
+            [chunk.metadata.get("section_labels") for chunk in chunks],
+            [["1"], ["2"]],
+        )
+        self.assertTrue(all(chunk.chunk_reason == "grouped_sections" for chunk in chunks))
+        self.assertTrue(all("," not in chunk.source_node_label for chunk in chunks))
+        self.assertTrue(all("Inscricao -" not in chunk.text for chunk in chunks[:1]))
+
+    def test_weak_section_lead_in_is_reattached_to_subordinate_continuation(self) -> None:
+        """Ensure introductory numbered lead-ins do not survive as standalone groups."""
+        lead_in_text = (
+            "2. O pagamento da propina pode ser efetuado numa das seguintes modalidades:"
+        )
+        continuation_text = (
+            "2.1 Em dez prestacoes mensais, sucessivas e de igual valor, "
+            "nos termos fixados anualmente."
+        )
+        article = StructuralNode(
+            node_type="ARTICLE",
+            label="ART_18AA",
+            title="Pagamento",
+            text=f"{lead_in_text}\n{continuation_text}",
+            page_start=1,
+            page_end=1,
+            metadata={
+                "article_number": "18-AA",
+                "article_title": "Pagamento",
+                "document_part": "regulation_body",
+                "is_structurally_incomplete": True,
+                "integrity_warnings": ["possible_interrupted_definition_capture"],
+            },
+        )
+        article.children = [
+            StructuralNode(
+                node_type="SECTION",
+                label="2",
+                text=lead_in_text,
+                page_start=1,
+                page_end=1,
+            ),
+            StructuralNode(
+                node_type="SECTION",
+                label="2.1",
+                text=continuation_text,
+                page_start=1,
+                page_end=1,
+            ),
+        ]
+        root = StructuralNode(
+            node_type="DOCUMENT",
+            label="DOCUMENT",
+            children=[article],
+        )
+        settings = PipelineSettings(
+            target_chunk_chars=80,
+            min_chunk_chars=40,
+            hard_max_chunk_chars=220,
+        )
+        strategy = ArticleSmartChunkingStrategy(settings)
+
+        chunks = strategy.build_chunks(build_document_metadata(), root)
+
+        self.assertEqual(len(chunks), 1)
+        self.assertEqual(chunks[0].source_node_type, "SECTION_GROUP")
+        self.assertEqual(chunks[0].source_node_label, "2,2.1")
+        self.assertEqual(chunks[0].metadata.get("section_labels"), ["2", "2.1"])
+        self.assertIn("seguintes modalidades:", chunks[0].text)
+        self.assertIn("Em dez prestacoes mensais", chunks[0].text)
+
+    def test_weak_lettered_lead_in_is_reattached_to_following_item(self) -> None:
+        """Ensure introductory lettered lead-ins do not survive as standalone groups."""
+        lead_in_text = (
+            "a) O procedimento pode seguir uma das seguintes modalidades:"
+        )
+        continuation_text = (
+            "b) Modalidade ordinaria, aplicavel aos estudantes regularmente inscritos."
+        )
+        article = StructuralNode(
+            node_type="ARTICLE",
+            label="ART_18AB",
+            title="Modalidades",
+            text=f"{lead_in_text}\n{continuation_text}",
+            page_start=1,
+            page_end=1,
+            metadata={
+                "article_number": "18-AB",
+                "article_title": "Modalidades",
+                "document_part": "regulation_body",
+                "is_structurally_incomplete": True,
+                "integrity_warnings": ["possible_broken_lettered_enumeration"],
+            },
+        )
+        article.children = [
+            StructuralNode(
+                node_type="LETTERED_ITEM",
+                label="a",
+                text=lead_in_text,
+                page_start=1,
+                page_end=1,
+            ),
+            StructuralNode(
+                node_type="LETTERED_ITEM",
+                label="b",
+                text=continuation_text,
+                page_start=1,
+                page_end=1,
+            ),
+        ]
+        root = StructuralNode(
+            node_type="DOCUMENT",
+            label="DOCUMENT",
+            children=[article],
+        )
+        settings = PipelineSettings(
+            target_chunk_chars=70,
+            min_chunk_chars=30,
+            hard_max_chunk_chars=220,
+        )
+        strategy = ArticleSmartChunkingStrategy(settings)
+
+        chunks = strategy.build_chunks(build_document_metadata(), root)
+
+        self.assertEqual(len(chunks), 1)
+        self.assertEqual(chunks[0].source_node_type, "LETTERED_GROUP")
+        self.assertEqual(chunks[0].source_node_label, "a,b")
+        self.assertEqual(chunks[0].metadata.get("lettered_labels"), ["a", "b"])
+        self.assertIn("seguintes modalidades:", chunks[0].text)
+        self.assertIn("Modalidade ordinaria", chunks[0].text)
+
+    def test_orphaned_numbered_continuation_sections_are_not_exported_as_chunks(self) -> None:
+        """Ensure subordinate continuation groups are rejected when parser warns."""
+        first_section_text = (
+            "2.1 O estudante apresenta o requerimento no prazo fixado pelo "
+            "regulamento com contexto suficiente para forcar agrupamento inicial."
+        )
+        second_section_text = (
+            "2.2 Junta os documentos exigidos pelo regulamento com contexto "
+            "suficiente para forcar agrupamento inicial."
+        )
+        article = StructuralNode(
+            node_type="ARTICLE",
+            label="ART_18B",
+            title="Continuacao",
+            text=f"{first_section_text}\n{second_section_text}",
+            page_start=1,
+            page_end=1,
+            metadata={
+                "article_number": "18-B",
+                "article_title": "Continuacao",
+                "document_part": "regulation_body",
+                "is_structurally_incomplete": True,
+                "integrity_warnings": ["possible_orphaned_numbered_continuation"],
+            },
+        )
+        article.children = [
+            StructuralNode(
+                node_type="SECTION",
+                label="2.1",
+                text=first_section_text,
+                page_start=1,
+                page_end=1,
+            ),
+            StructuralNode(
+                node_type="SECTION",
+                label="2.2",
+                text=second_section_text,
+                page_start=1,
+                page_end=1,
+            ),
+        ]
+        root = StructuralNode(
+            node_type="DOCUMENT",
+            label="DOCUMENT",
+            children=[article],
+        )
+        settings = PipelineSettings(
+            target_chunk_chars=180,
+            min_chunk_chars=60,
+            hard_max_chunk_chars=260,
+        )
+        strategy = ArticleSmartChunkingStrategy(settings)
+
+        chunks = strategy.build_chunks(build_document_metadata(), root)
+
+        self.assertEqual(chunks, [])
+
+    def test_broken_lettered_continuation_groups_are_not_exported_as_chunks(self) -> None:
+        """Ensure broken non-initial lettered groups do not survive final export."""
+        first_item_text = (
+            "b) O estudante pode requerer equivalencia em condicoes excecionais "
+            "devidamente fundamentadas e comprovadas documentalmente."
+        )
+        second_item_text = (
+            "c) O pedido depende de parecer favoravel do orgao competente e de "
+            "verificacao administrativa previa."
+        )
+        article = StructuralNode(
+            node_type="ARTICLE",
+            label="ART_18C",
+            title="Alineas",
+            text=f"{first_item_text}\n{second_item_text}",
+            page_start=1,
+            page_end=1,
+            metadata={
+                "article_number": "18-C",
+                "article_title": "Alineas",
+                "document_part": "regulation_body",
+                "is_structurally_incomplete": True,
+                "integrity_warnings": ["possible_broken_lettered_enumeration"],
+            },
+        )
+        article.children = [
+            StructuralNode(
+                node_type="LETTERED_ITEM",
+                label="b",
+                text=first_item_text,
+                page_start=1,
+                page_end=1,
+            ),
+            StructuralNode(
+                node_type="LETTERED_ITEM",
+                label="c",
+                text=second_item_text,
+                page_start=1,
+                page_end=1,
+            ),
+        ]
+        root = StructuralNode(
+            node_type="DOCUMENT",
+            label="DOCUMENT",
+            children=[article],
+        )
+        settings = PipelineSettings(
+            target_chunk_chars=180,
+            min_chunk_chars=60,
+            hard_max_chunk_chars=280,
+        )
+        strategy = ArticleSmartChunkingStrategy(settings)
+
+        chunks = strategy.build_chunks(build_document_metadata(), root)
+
+        self.assertEqual(chunks, [])
+
     def test_single_line_clause_like_preamble_stays_within_1024_chars(self) -> None:
         """Ensure clause-like preambles do not exceed the hard ceiling."""
         preamble_text = "\n".join(
@@ -728,6 +1183,63 @@ class ArticleSmartQualityRegressionTests(unittest.TestCase):
         self.assertTrue(
             all(chunk.chunk_reason == "preamble_legal_signal_split" for chunk in chunks)
         )
+
+    def test_preamble_split_repeats_intro_context_for_semantic_continuity(self) -> None:
+        """Ensure split preamble chunks keep the leading context that frames the clauses."""
+        preamble = StructuralNode(
+            node_type="PREAMBLE",
+            label="PREAMBLE",
+            text="\n".join(
+                [
+                    "Considerando que o presente regulamento depende dos seguintes fundamentos:",
+                    (
+                        "1. A harmonizacao dos procedimentos institucionais exige "
+                        "regras detalhadas, prazos objetivos e criterios uniformes "
+                        "para todas as unidades organicas."
+                    ),
+                    (
+                        "2. A protecao da igualdade de tratamento entre estudantes "
+                        "exige medidas operacionais complementares e controlo "
+                        "administrativo consistente."
+                    ),
+                    (
+                        "3. A articulacao com regulamentos especiais impõe "
+                        "clarificacoes adicionais, validacao documental e "
+                        "publicitacao das decisoes finais."
+                    ),
+                ]
+            ),
+            page_start=1,
+            page_end=1,
+        )
+        root = StructuralNode(
+            node_type="DOCUMENT",
+            label="DOCUMENT",
+            children=[preamble],
+        )
+        settings = PipelineSettings(
+            target_chunk_chars=180,
+            min_chunk_chars=90,
+            hard_max_chunk_chars=230,
+            overlap_chars=70,
+        )
+        strategy = ArticleSmartChunkingStrategy(settings)
+
+        chunks = strategy.build_chunks(build_document_metadata(), root)
+
+        self.assertGreater(len(chunks), 1)
+        self.assertTrue(
+            chunks[1].text.startswith(
+                "que o presente regulamento depende dos seguintes fundamentos:"
+            )
+        )
+        self.assertIn("2.", chunks[1].text)
+        self.assertTrue(
+            chunks[-1].text.startswith(
+                "que o presente regulamento depende dos seguintes fundamentos:"
+            )
+        )
+        self.assertIn("3.", chunks[-1].text)
 
     def test_formula_garbage_tail_is_removed_from_final_chunk_text(self) -> None:
         """Ensure OCR-like formula residue does not survive at the end of chunks."""
