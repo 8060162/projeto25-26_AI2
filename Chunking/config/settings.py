@@ -177,6 +177,79 @@ class PipelineSettings:
     # 0.40 means "40% or more pages look suspicious".
     suspicious_page_ratio_threshold: float = 0.40
 
+    # Document-level replacement-character density above which native
+    # extraction is treated as too corrupted to keep.
+    document_ocr_replacement_ratio_threshold: float = 0.30
+
+    # Document-level empty-page density above which native extraction is
+    # treated as too incomplete to keep.
+    document_ocr_empty_ratio_threshold: float = 0.30
+
+    # Minimum suspicious-page density that can trigger document-level OCR when
+    # the average page quality is already weak.
+    document_ocr_low_quality_suspicious_ratio_threshold: float = 0.25
+
+    # Average page-quality ceiling paired with suspicious-page density for
+    # document-level OCR fallback.
+    document_ocr_low_quality_average_score_threshold: float = 15.0
+
+    # Minimum suspicious-page density that can trigger document-level OCR when
+    # replacement-like corruption also appears repeatedly.
+    document_ocr_replacement_mix_suspicious_ratio_threshold: float = 0.20
+
+    # Replacement-character density paired with suspicious-page density for
+    # document-level OCR fallback.
+    document_ocr_replacement_mix_replacement_ratio_threshold: float = 0.15
+
+    # Minimum legal-marker coverage below which a weak-quality document is
+    # treated as semantically unsafe to keep native.
+    document_ocr_low_legal_marker_coverage_threshold: float = 0.10
+
+    # Average page-quality ceiling paired with weak legal-marker coverage for
+    # document-level OCR fallback.
+    document_ocr_low_legal_marker_average_score_threshold: float = 10.0
+
+    # Enable per-page native-versus-OCR selection after OCR comparison is
+    # triggered for a suspicious document.
+    enable_hybrid_page_selection: bool = True
+
+    # Minimum score and badness gaps required before OCR can win a page by the
+    # standard multi-signal comparison path.
+    hybrid_ocr_page_min_score_gap: float = 8.0
+    hybrid_ocr_page_min_badness_gap: float = 0.75
+    hybrid_ocr_page_min_reason_count: int = 2
+
+    # Strong-signal thresholds used when OCR clearly dominates the native page.
+    hybrid_ocr_strong_signal_min_score_gap: float = 18.0
+    hybrid_ocr_strong_signal_min_badness_gap: float = 1.5
+
+    # Conservative thresholds used when both page candidates are weak and the
+    # pipeline must select the less harmful option.
+    hybrid_ocr_less_harmful_min_score_gap: float = 12.0
+    hybrid_ocr_less_harmful_min_badness_gap: float = 0.50
+
+    # Minimum blended page score below which local degradation can mark a page
+    # as unreliable when supported by strong corruption signals.
+    local_unreliable_page_min_quality_score: float = 10.0
+
+    # Severe blended page score below which a page is always treated as
+    # locally unreliable regardless of individual reason combinations.
+    local_unreliable_page_hard_floor_score: float = 0.0
+
+    # Minimum blended page score that directly triggers native-versus-OCR
+    # comparison for a locally suspicious page.
+    local_ocr_trigger_page_quality_score: float = 12.0
+
+    # Minimum suspicious-symbol density that justifies explicit OCR
+    # comparison for a single page.
+    local_ocr_trigger_suspicious_symbol_ratio: float = 0.025
+
+    # Minimum content-quality thresholds used to trigger page-level OCR
+    # comparison when lexical or prose integrity is locally weak.
+    local_ocr_trigger_min_lexical_completeness: float = 0.55
+    local_ocr_trigger_min_line_readability: float = 0.62
+    local_ocr_trigger_min_prose_likeness: float = 0.50
+
     # ---------------------------------------------------------------------
     # Repeated-line detection behavior
     # ---------------------------------------------------------------------
@@ -312,6 +385,14 @@ class PipelineSettings:
     # Link neighboring chunks using prev_chunk_id / next_chunk_id.
     enable_chunk_neighbor_links: bool = True
 
+    # Visible-length cap below which split chunks are treated as potentially
+    # undersized for standalone retrieval quality.
+    validator_problematic_split_chunk_max_chars: int = 180
+
+    # Minimum word count expected before a split chunk can be treated as
+    # semantically self-sufficient by the validator.
+    validator_low_autonomy_min_word_count: int = 8
+
     # ---------------------------------------------------------------------
     # Noise markers
     # ---------------------------------------------------------------------
@@ -366,7 +447,13 @@ class PipelineSettings:
 
         appsettings = _load_appsettings()
         chunking_settings = _get_nested_value(appsettings, ["chunking"], {})
+        extraction_settings = _get_nested_value(appsettings, ["extraction"], {})
         embedding_settings = _get_nested_value(appsettings, ["embedding"], {})
+        chunking_validation_settings = _get_nested_value(
+            chunking_settings,
+            ["validation"],
+            {},
+        )
         visualization_settings = _get_nested_value(
             embedding_settings,
             ["visualization"],
@@ -463,6 +550,261 @@ class PipelineSettings:
                 False,
             ),
         )
+        self.enable_ocr_fallback = self._resolve_bool_setting(
+            current_value=self.enable_ocr_fallback,
+            default_value=True,
+            configured_value=_get_nested_value(
+                extraction_settings,
+                ["enable_ocr_fallback"],
+                True,
+            ),
+        )
+        self.suspicious_page_ratio_threshold = self._resolve_float_setting(
+            current_value=self.suspicious_page_ratio_threshold,
+            default_value=0.40,
+            configured_value=_get_nested_value(
+                extraction_settings,
+                ["suspicious_page_ratio_threshold"],
+                0.40,
+            ),
+        )
+        self.document_ocr_replacement_ratio_threshold = self._resolve_float_setting(
+            current_value=self.document_ocr_replacement_ratio_threshold,
+            default_value=0.30,
+            configured_value=_get_nested_value(
+                extraction_settings,
+                ["document_ocr_replacement_ratio_threshold"],
+                0.30,
+            ),
+        )
+        self.document_ocr_empty_ratio_threshold = self._resolve_float_setting(
+            current_value=self.document_ocr_empty_ratio_threshold,
+            default_value=0.30,
+            configured_value=_get_nested_value(
+                extraction_settings,
+                ["document_ocr_empty_ratio_threshold"],
+                0.30,
+            ),
+        )
+        self.document_ocr_low_quality_suspicious_ratio_threshold = (
+            self._resolve_float_setting(
+                current_value=self.document_ocr_low_quality_suspicious_ratio_threshold,
+                default_value=0.25,
+                configured_value=_get_nested_value(
+                    extraction_settings,
+                    ["document_ocr_low_quality_suspicious_ratio_threshold"],
+                    0.25,
+                ),
+            )
+        )
+        self.document_ocr_low_quality_average_score_threshold = (
+            self._resolve_float_setting(
+                current_value=self.document_ocr_low_quality_average_score_threshold,
+                default_value=15.0,
+                configured_value=_get_nested_value(
+                    extraction_settings,
+                    ["document_ocr_low_quality_average_score_threshold"],
+                    15.0,
+                ),
+            )
+        )
+        self.document_ocr_replacement_mix_suspicious_ratio_threshold = (
+            self._resolve_float_setting(
+                current_value=self.document_ocr_replacement_mix_suspicious_ratio_threshold,
+                default_value=0.20,
+                configured_value=_get_nested_value(
+                    extraction_settings,
+                    ["document_ocr_replacement_mix_suspicious_ratio_threshold"],
+                    0.20,
+                ),
+            )
+        )
+        self.document_ocr_replacement_mix_replacement_ratio_threshold = (
+            self._resolve_float_setting(
+                current_value=self.document_ocr_replacement_mix_replacement_ratio_threshold,
+                default_value=0.15,
+                configured_value=_get_nested_value(
+                    extraction_settings,
+                    ["document_ocr_replacement_mix_replacement_ratio_threshold"],
+                    0.15,
+                ),
+            )
+        )
+        self.document_ocr_low_legal_marker_coverage_threshold = (
+            self._resolve_float_setting(
+                current_value=self.document_ocr_low_legal_marker_coverage_threshold,
+                default_value=0.10,
+                configured_value=_get_nested_value(
+                    extraction_settings,
+                    ["document_ocr_low_legal_marker_coverage_threshold"],
+                    0.10,
+                ),
+            )
+        )
+        self.document_ocr_low_legal_marker_average_score_threshold = (
+            self._resolve_float_setting(
+                current_value=self.document_ocr_low_legal_marker_average_score_threshold,
+                default_value=10.0,
+                configured_value=_get_nested_value(
+                    extraction_settings,
+                    ["document_ocr_low_legal_marker_average_score_threshold"],
+                    10.0,
+                ),
+            )
+        )
+        self.enable_hybrid_page_selection = self._resolve_bool_setting(
+            current_value=self.enable_hybrid_page_selection,
+            default_value=True,
+            configured_value=_get_nested_value(
+                extraction_settings,
+                ["enable_hybrid_page_selection"],
+                True,
+            ),
+        )
+        self.hybrid_ocr_page_min_score_gap = self._resolve_float_setting(
+            current_value=self.hybrid_ocr_page_min_score_gap,
+            default_value=8.0,
+            configured_value=_get_nested_value(
+                extraction_settings,
+                ["hybrid_ocr_page_min_score_gap"],
+                8.0,
+            ),
+        )
+        self.hybrid_ocr_page_min_badness_gap = self._resolve_float_setting(
+            current_value=self.hybrid_ocr_page_min_badness_gap,
+            default_value=0.75,
+            configured_value=_get_nested_value(
+                extraction_settings,
+                ["hybrid_ocr_page_min_badness_gap"],
+                0.75,
+            ),
+        )
+        self.hybrid_ocr_page_min_reason_count = self._resolve_int_setting(
+            current_value=self.hybrid_ocr_page_min_reason_count,
+            default_value=2,
+            configured_value=_get_nested_value(
+                extraction_settings,
+                ["hybrid_ocr_page_min_reason_count"],
+                2,
+            ),
+        )
+        self.hybrid_ocr_strong_signal_min_score_gap = self._resolve_float_setting(
+            current_value=self.hybrid_ocr_strong_signal_min_score_gap,
+            default_value=18.0,
+            configured_value=_get_nested_value(
+                extraction_settings,
+                ["hybrid_ocr_strong_signal_min_score_gap"],
+                18.0,
+            ),
+        )
+        self.hybrid_ocr_strong_signal_min_badness_gap = self._resolve_float_setting(
+            current_value=self.hybrid_ocr_strong_signal_min_badness_gap,
+            default_value=1.5,
+            configured_value=_get_nested_value(
+                extraction_settings,
+                ["hybrid_ocr_strong_signal_min_badness_gap"],
+                1.5,
+            ),
+        )
+        self.hybrid_ocr_less_harmful_min_score_gap = self._resolve_float_setting(
+            current_value=self.hybrid_ocr_less_harmful_min_score_gap,
+            default_value=12.0,
+            configured_value=_get_nested_value(
+                extraction_settings,
+                ["hybrid_ocr_less_harmful_min_score_gap"],
+                12.0,
+            ),
+        )
+        self.hybrid_ocr_less_harmful_min_badness_gap = self._resolve_float_setting(
+            current_value=self.hybrid_ocr_less_harmful_min_badness_gap,
+            default_value=0.50,
+            configured_value=_get_nested_value(
+                extraction_settings,
+                ["hybrid_ocr_less_harmful_min_badness_gap"],
+                0.50,
+            ),
+        )
+        self.validator_problematic_split_chunk_max_chars = self._resolve_int_setting(
+            current_value=self.validator_problematic_split_chunk_max_chars,
+            default_value=180,
+            configured_value=_get_nested_value(
+                chunking_validation_settings,
+                ["problematic_split_chunk_max_chars"],
+                180,
+            ),
+        )
+        self.validator_low_autonomy_min_word_count = self._resolve_int_setting(
+            current_value=self.validator_low_autonomy_min_word_count,
+            default_value=8,
+            configured_value=_get_nested_value(
+                chunking_validation_settings,
+                ["low_autonomy_min_word_count"],
+                8,
+            ),
+        )
+        self.local_unreliable_page_min_quality_score = self._resolve_float_setting(
+            current_value=self.local_unreliable_page_min_quality_score,
+            default_value=10.0,
+            configured_value=_get_nested_value(
+                extraction_settings,
+                ["local_unreliable_page_min_quality_score"],
+                10.0,
+            ),
+        )
+        self.local_unreliable_page_hard_floor_score = self._resolve_float_setting(
+            current_value=self.local_unreliable_page_hard_floor_score,
+            default_value=0.0,
+            configured_value=_get_nested_value(
+                extraction_settings,
+                ["local_unreliable_page_hard_floor_score"],
+                0.0,
+            ),
+        )
+        self.local_ocr_trigger_page_quality_score = self._resolve_float_setting(
+            current_value=self.local_ocr_trigger_page_quality_score,
+            default_value=12.0,
+            configured_value=_get_nested_value(
+                extraction_settings,
+                ["local_ocr_trigger_page_quality_score"],
+                12.0,
+            ),
+        )
+        self.local_ocr_trigger_suspicious_symbol_ratio = self._resolve_float_setting(
+            current_value=self.local_ocr_trigger_suspicious_symbol_ratio,
+            default_value=0.025,
+            configured_value=_get_nested_value(
+                extraction_settings,
+                ["local_ocr_trigger_suspicious_symbol_ratio"],
+                0.025,
+            ),
+        )
+        self.local_ocr_trigger_min_lexical_completeness = self._resolve_float_setting(
+            current_value=self.local_ocr_trigger_min_lexical_completeness,
+            default_value=0.55,
+            configured_value=_get_nested_value(
+                extraction_settings,
+                ["local_ocr_trigger_min_lexical_completeness"],
+                0.55,
+            ),
+        )
+        self.local_ocr_trigger_min_line_readability = self._resolve_float_setting(
+            current_value=self.local_ocr_trigger_min_line_readability,
+            default_value=0.62,
+            configured_value=_get_nested_value(
+                extraction_settings,
+                ["local_ocr_trigger_min_line_readability"],
+                0.62,
+            ),
+        )
+        self.local_ocr_trigger_min_prose_likeness = self._resolve_float_setting(
+            current_value=self.local_ocr_trigger_min_prose_likeness,
+            default_value=0.50,
+            configured_value=_get_nested_value(
+                extraction_settings,
+                ["local_ocr_trigger_min_prose_likeness"],
+                0.50,
+            ),
+        )
 
     def _resolve_string_setting(
         self,
@@ -515,6 +857,27 @@ class PipelineSettings:
 
         if isinstance(configured_value, int) and not isinstance(configured_value, bool):
             return configured_value
+
+        return default_value
+
+    def _resolve_float_setting(
+        self,
+        current_value: float,
+        default_value: float,
+        configured_value: Any,
+    ) -> float:
+        """
+        Resolve a float setting while preserving explicit constructor values.
+        """
+
+        if current_value != default_value:
+            return current_value
+
+        if isinstance(configured_value, (int, float)) and not isinstance(
+            configured_value,
+            bool,
+        ):
+            return float(configured_value)
 
         return default_value
 
