@@ -264,6 +264,31 @@ class StructureParserQualityRegressionTests(unittest.TestCase):
             "Considerando a necessidade de atualizar o regulamento.",
         )
 
+    def test_document_start_boundaries_remain_separate_from_clean_article(self) -> None:
+        """Ensure document-start zones stay separated without false article flags."""
+        root = build_structure_from_lines(
+            (
+                "POLITECNICO DO PORTO\n"
+                "Considerando a necessidade de atualizar o regulamento.\n"
+                "Artigo 1 - Objeto\n"
+                "O presente regulamento define o objeto."
+            )
+        )
+
+        self.assertEqual(
+            [child.node_type for child in root.children],
+            ["FRONT_MATTER", "PREAMBLE", "ARTICLE"],
+        )
+        self.assertEqual(root.children[0].text, "POLITECNICO DO PORTO")
+        self.assertEqual(
+            root.children[1].text,
+            "Considerando a necessidade de atualizar o regulamento.",
+        )
+        self.assertEqual(root.children[2].title, "Objeto")
+        self.assertFalse(root.children[2].metadata["is_structurally_incomplete"])
+        self.assertEqual(root.children[2].metadata["truncation_signals"], [])
+        self.assertEqual(root.children[2].metadata["integrity_warnings"], [])
+
     def test_broken_dispatch_item_block_is_trimmed_from_preamble_tail(self) -> None:
         """Ensure broken approval-list tails do not remain in PREAMBLE."""
         root = build_structure_from_lines(
@@ -428,6 +453,171 @@ class StructureParserQualityRegressionTests(unittest.TestCase):
         self.assertEqual(
             articles[0].text,
             "O pagamento da propina e efetuado em prestacoes mensais.",
+        )
+        self.assertFalse(articles[0].metadata["is_structurally_incomplete"])
+        self.assertEqual(articles[0].metadata["truncation_signals"], [])
+        self.assertEqual(articles[0].metadata["integrity_warnings"], [])
+
+    def test_truncated_article_before_next_header_is_marked_incomplete(self) -> None:
+        """Ensure abrupt truncated article endings become explicit parser metadata."""
+        root = build_structure_from_lines(
+            (
+                "Artigo 7 - Pagamento\n"
+                "O estudante deve efetuar o pagamento da propina no prazo e\n"
+                "Artigo 8 - Incumprimento\n"
+                "O incumprimento determina a aplicacao das medidas previstas."
+            )
+        )
+
+        articles = collect_articles(root)
+
+        self.assertEqual(len(articles), 2)
+        self.assertTrue(articles[0].metadata["is_structurally_incomplete"])
+        self.assertEqual(
+            articles[0].metadata["truncation_signals"],
+            ["suspicious_truncated_ending", "abrupt_transition_to_article"],
+        )
+        self.assertEqual(articles[0].metadata["integrity_warnings"], [])
+        self.assertFalse(articles[1].metadata["is_structurally_incomplete"])
+
+    def test_complete_article_is_not_marked_incomplete(self) -> None:
+        """Ensure ordinary article closure does not trigger integrity noise."""
+        root = build_structure_from_lines(
+            (
+                "Artigo 3 - Ambito\n"
+                "O presente regulamento aplica-se a todos os cursos.\n"
+                "Artigo 4 - Entrada em vigor\n"
+                "O regulamento entra em vigor no dia seguinte a sua publicacao."
+            )
+        )
+
+        articles = collect_articles(root)
+
+        self.assertEqual(len(articles), 2)
+        self.assertFalse(articles[0].metadata["is_structurally_incomplete"])
+        self.assertEqual(articles[0].metadata["truncation_signals"], [])
+        self.assertEqual(articles[0].metadata["integrity_warnings"], [])
+        self.assertFalse(articles[1].metadata["is_structurally_incomplete"])
+
+    def test_missing_title_boundary_is_reported_as_integrity_warning(self) -> None:
+        """Ensure strong unrecovered title/body patterns are exposed explicitly."""
+        root = build_structure_from_lines(
+            (
+                "Artigo 9 - Entrada em vigor\n"
+                "REGIME TRANSITORIO PARA ESTUDANTES DOS CURSOS DE MESTRADO E POS GRADUACAO EM FUNCIONAMENTO NO ANO LETIVO EM CURSO\n"
+                "O presente regulamento entra em vigor no dia seguinte."
+            )
+        )
+
+        articles = collect_articles(root)
+
+        self.assertEqual(len(articles), 1)
+        self.assertTrue(articles[0].metadata["is_structurally_incomplete"])
+        self.assertEqual(articles[0].metadata["truncation_signals"], [])
+        self.assertEqual(
+            articles[0].metadata["integrity_warnings"],
+            ["possible_unrecovered_title_body_boundary"],
+        )
+
+    def test_orphaned_decimal_numbering_is_reported_as_integrity_warning(self) -> None:
+        """Ensure sub-numbering without its parent unit is marked as suspicious."""
+        root = build_structure_from_lines(
+            (
+                "Artigo 19 - Regime aplicavel\n"
+                "Os estudantes abrangidos pelo regime transitório mantêm os direitos já constituídos.\n"
+                "1.1. No ato de inscrição, devem confirmar os dados pessoais junto dos serviços."
+            )
+        )
+
+        articles = collect_articles(root)
+
+        self.assertEqual(len(articles), 1)
+        self.assertTrue(articles[0].metadata["is_structurally_incomplete"])
+        self.assertEqual(articles[0].metadata["truncation_signals"], [])
+        self.assertEqual(
+            articles[0].metadata["integrity_warnings"],
+            ["possible_orphaned_numbered_continuation"],
+        )
+
+    def test_interrupted_definition_capture_is_reported_as_integrity_warning(self) -> None:
+        """Ensure colon-ended sections without subordinate content are marked."""
+        root = build_structure_from_lines(
+            (
+                "Artigo 12 - Definicoes\n"
+                "1. Para efeitos do presente regulamento, considera-se:\n"
+                "2. O estudante internacional beneficia do regime previsto na lei."
+            )
+        )
+
+        articles = collect_articles(root)
+
+        self.assertEqual(len(articles), 1)
+        self.assertTrue(articles[0].metadata["is_structurally_incomplete"])
+        self.assertEqual(articles[0].metadata["truncation_signals"], [])
+        self.assertEqual(
+            articles[0].metadata["integrity_warnings"],
+            ["possible_interrupted_definition_capture"],
+        )
+
+    def test_complete_definition_capture_with_contiguous_alineas_is_not_flagged(self) -> None:
+        """Ensure valid definition lists do not trigger continuity warnings."""
+        root = build_structure_from_lines(
+            (
+                "Artigo 12 - Definicoes\n"
+                "1. Para efeitos do presente regulamento, considera-se:\n"
+                "a) Estudante internacional o estudante abrangido pelo regime legal aplicavel;\n"
+                "b) Estudante em mobilidade o estudante inscrito ao abrigo de programa especifico.\n"
+                "2. O disposto no numero anterior aplica-se sem prejuizo da legislacao em vigor."
+            )
+        )
+
+        articles = collect_articles(root)
+
+        self.assertEqual(len(articles), 1)
+        self.assertFalse(articles[0].metadata["is_structurally_incomplete"])
+        self.assertEqual(articles[0].metadata["truncation_signals"], [])
+        self.assertEqual(articles[0].metadata["integrity_warnings"], [])
+
+    def test_decimal_subnumbering_after_colon_is_not_reported_as_interrupted(self) -> None:
+        """Ensure decimal subsection continuity is not treated as missing content."""
+        root = build_structure_from_lines(
+            (
+                "Artigo 5 - Plano geral de pagamento de propinas\n"
+                "1. A propina e devida no momento da matricula.\n"
+                "2. A propina pode ser paga em prestacoes:\n"
+                "2.1 Para estudante nacional, em dez prestacoes mensais.\n"
+                "2.2 Para estudante internacional, em oito prestacoes mensais.\n"
+                "3. O pagamento deve respeitar os prazos fixados pela escola."
+            )
+        )
+
+        articles = collect_articles(root)
+
+        self.assertEqual(len(articles), 1)
+        self.assertFalse(articles[0].metadata["is_structurally_incomplete"])
+        self.assertEqual(articles[0].metadata["truncation_signals"], [])
+        self.assertEqual(articles[0].metadata["integrity_warnings"], [])
+
+    def test_broken_lettered_enumeration_is_reported_as_integrity_warning(self) -> None:
+        """Ensure missing alinea continuity is exposed in article metadata."""
+        root = build_structure_from_lines(
+            (
+                "Artigo 14 - Exclusao\n"
+                "1. O candidato e excluido quando:\n"
+                "a) Nao apresente a documentacao exigida;\n"
+                "c) Preste falsas declaracoes.\n"
+                "2. A decisao final e notificada por via eletronica."
+            )
+        )
+
+        articles = collect_articles(root)
+
+        self.assertEqual(len(articles), 1)
+        self.assertTrue(articles[0].metadata["is_structurally_incomplete"])
+        self.assertEqual(articles[0].metadata["truncation_signals"], [])
+        self.assertEqual(
+            articles[0].metadata["integrity_warnings"],
+            ["possible_broken_lettered_enumeration"],
         )
 
 
