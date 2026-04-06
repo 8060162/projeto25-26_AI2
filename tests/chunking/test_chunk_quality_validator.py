@@ -5,6 +5,7 @@ from __future__ import annotations
 import unittest
 
 from Chunking.chunking.models import Chunk
+from Chunking.config.settings import PipelineSettings
 from Chunking.quality.chunk_quality_validator import ChunkQualityValidator
 
 
@@ -103,6 +104,225 @@ class ChunkQualityValidatorRegressionTests(unittest.TestCase):
 
         self.assertFalse(report["is_valid"])
         self.assertIn("low_semantic_autonomy_chunk", report["issue_codes"])
+
+    def test_validator_blocks_short_numbered_split_fragment(self) -> None:
+        """Ensure short split fragments do not pass only because they fit the size limit."""
+        validator = ChunkQualityValidator()
+        chunk = build_chunk(
+            chunk_id="short_numbered_fragment",
+            chunk_reason="fallback_legal_signal_split",
+            text="15 - Regime de precedencias.",
+            metadata={
+                "article_number": "2",
+                "article_title": "Definicoes",
+                "document_part": "regulation_body",
+                "part_index": 4,
+                "part_count": 6,
+            },
+        )
+
+        report = validator.validate_chunk(chunk)
+
+        self.assertFalse(report["is_valid"])
+        self.assertIn("problematic_undersized_chunk", report["issue_codes"])
+
+    def test_validator_respects_configured_split_fragment_thresholds(self) -> None:
+        """Ensure split-fragment rejection thresholds remain configurable."""
+        chunk = build_chunk(
+            chunk_id="configurable_split_fragment",
+            chunk_reason="fallback_legal_signal_split",
+            text="Regime geral muito aplicavel.",
+            metadata={
+                "article_number": "2",
+                "article_title": "Definicoes",
+                "document_part": "regulation_body",
+                "part_index": 2,
+                "part_count": 4,
+            },
+        )
+
+        default_report = ChunkQualityValidator().validate_chunk(chunk)
+        configured_report = ChunkQualityValidator(
+            PipelineSettings(
+                validator_problematic_split_chunk_max_chars=20,
+                validator_low_autonomy_min_word_count=4,
+            )
+        ).validate_chunk(chunk)
+
+        self.assertFalse(default_report["is_valid"])
+        self.assertIn("problematic_undersized_chunk", default_report["issue_codes"])
+        self.assertTrue(configured_report["is_valid"])
+
+    def test_validator_blocks_structurally_incomplete_article_chunk(self) -> None:
+        """Ensure parser-declared truncation metadata blocks unsafe article chunks."""
+        validator = ChunkQualityValidator()
+        chunk = build_chunk(
+            chunk_id="structural_incomplete",
+            text=(
+                "As situacoes omissas sao resolvidas pelo conselho tecnico-cientifico "
+                "nos termos do regulamento aplicavel."
+            ),
+            metadata={
+                "article_number": "18",
+                "article_title": "Duvidas e omissoes",
+                "document_part": "regulation_body",
+                "is_structurally_incomplete": True,
+                "truncation_signals": [
+                    "suspicious_truncated_ending",
+                    "abrupt_transition_to_article",
+                ],
+                "integrity_warnings": [],
+            },
+        )
+
+        report = validator.validate_chunk(chunk)
+
+        self.assertFalse(report["is_valid"])
+        self.assertIn("structurally_incomplete_source_article", report["issue_codes"])
+
+    def test_validator_blocks_parser_integrity_warning_without_truncation_signal(self) -> None:
+        """Ensure parser integrity warnings still block unsafe article chunks."""
+        validator = ChunkQualityValidator()
+        chunk = build_chunk(
+            chunk_id="integrity_warning_only",
+            text=(
+                "Para efeitos do presente regulamento, considera-se:\n"
+                "2. O estudante internacional beneficia do regime previsto na lei."
+            ),
+            metadata={
+                "article_number": "12",
+                "article_title": "Definicoes",
+                "document_part": "regulation_body",
+                "is_structurally_incomplete": True,
+                "truncation_signals": [],
+                "integrity_warnings": ["possible_interrupted_definition_capture"],
+            },
+        )
+
+        report = validator.validate_chunk(chunk)
+
+        self.assertFalse(report["is_valid"])
+        self.assertIn("structurally_incomplete_source_article", report["issue_codes"])
+
+    def test_validator_blocks_broken_enumeration_warning_without_truncation_signal(self) -> None:
+        """Ensure continuity warnings for malformed enumeration are treated as blocking."""
+        validator = ChunkQualityValidator()
+        chunk = build_chunk(
+            chunk_id="broken_enumeration_warning",
+            text=(
+                "1. O candidato e excluido quando:\n"
+                "a) Nao apresente a documentacao exigida;\n"
+                "c) Preste falsas declaracoes."
+            ),
+            metadata={
+                "article_number": "14",
+                "article_title": "Exclusao",
+                "document_part": "regulation_body",
+                "is_structurally_incomplete": True,
+                "truncation_signals": [],
+                "integrity_warnings": ["possible_broken_lettered_enumeration"],
+            },
+        )
+
+        report = validator.validate_chunk(chunk)
+
+        self.assertFalse(report["is_valid"])
+        self.assertIn("structurally_incomplete_source_article", report["issue_codes"])
+
+    def test_validator_blocks_chunk_with_dominant_symbolic_garbage(self) -> None:
+        """Ensure chunks dominated by formula-like residue are rejected."""
+        validator = ChunkQualityValidator()
+        chunk = build_chunk(
+            chunk_id="dominant_garbage",
+            text=(
+                "++==//__--**\n"
+                "00112233445566778899\n"
+                "A decisao final depende de ato formal."
+            ),
+        )
+
+        report = validator.validate_chunk(chunk)
+
+        self.assertFalse(report["is_valid"])
+        self.assertIn("dominant_non_semantic_content", report["issue_codes"])
+
+    def test_validator_blocks_grouped_chunk_with_broken_definition_capture(self) -> None:
+        """Ensure damaged grouped definitions no longer pass validation."""
+        validator = ChunkQualityValidator()
+        chunk = build_chunk(
+            chunk_id="broken_grouped_definition",
+            source_node_type="LETTERED_GROUP",
+            source_node_label="d,e,f,g",
+            chunk_reason="grouped_lettered_items",
+            text=(
+                "«Escala de classificacao portuguesa» aquela a que se refere o artigo 15.o do Decreto-Lei\n\n"
+                "«Regime geral de acesso» o regime de acesso e ingresso regulado pelo Decreto-Lei\n"
+                "junho;\n\n"
+                "«Matricula» e o ato pelo qual o estudante concretiza o ingresso num curso.\n\n"
+                "«Inscricao» e o ato pelo qual o estudante, tendo matricula valida num curso, adquire "
+                "o direito de frequentar as unidades curriculares em que se inscreve."
+            ),
+            metadata={
+                "article_number": "3",
+                "article_title": "Conceitos",
+                "document_part": "regulation_body",
+                "lettered_labels": ["d", "e", "f", "g"],
+                "source_span_type": "article_lettered_group",
+            },
+        )
+
+        report = validator.validate_chunk(chunk)
+
+        self.assertFalse(report["is_valid"])
+        self.assertIn("broken_grouped_legal_unit", report["issue_codes"])
+
+    def test_validator_accepts_grouped_chunk_with_complete_definitions(self) -> None:
+        """Ensure coherent grouped definitions remain acceptable."""
+        validator = ChunkQualityValidator()
+        chunk = build_chunk(
+            chunk_id="complete_grouped_definition",
+            source_node_type="LETTERED_GROUP",
+            source_node_label="a,b,c",
+            chunk_reason="grouped_lettered_items",
+            text=(
+                "«Reingresso» e o ato pelo qual um estudante retoma os estudos na mesma instituicao;\n\n"
+                "«Mudanca de par instituicao/curso» e o ato pelo qual um estudante se matricula em par "
+                "instituicao/curso diferente;\n\n"
+                "«Creditos» sao os creditos segundo o ECTS, cuja atribuicao e regulada pelo diploma aplicavel."
+            ),
+            metadata={
+                "article_number": "3",
+                "article_title": "Conceitos",
+                "document_part": "regulation_body",
+                "lettered_labels": ["a", "b", "c"],
+                "source_span_type": "article_lettered_group",
+            },
+        )
+
+        report = validator.validate_chunk(chunk)
+
+        self.assertTrue(report["is_valid"])
+
+    def test_validator_accepts_short_complete_legal_chunk(self) -> None:
+        """Ensure short but complete legal text remains acceptable."""
+        validator = ChunkQualityValidator()
+        chunk = build_chunk(
+            chunk_id="short_complete_legal",
+            text="Aplica-se a todos os cursos.",
+            text_for_embedding="Aplica-se a todos os cursos.",
+            metadata={
+                "article_number": "4",
+                "article_title": "Ambito",
+                "document_part": "regulation_body",
+                "is_structurally_incomplete": False,
+                "truncation_signals": [],
+                "integrity_warnings": [],
+            },
+        )
+
+        report = validator.validate_chunk(chunk)
+
+        self.assertTrue(report["is_valid"])
 
     def test_validator_does_not_treat_regular_body_text_as_document_title_residue(self) -> None:
         """Ensure ordinary body references to regulations stay acceptable."""
