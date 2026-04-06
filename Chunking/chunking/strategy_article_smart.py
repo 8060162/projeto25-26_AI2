@@ -8,8 +8,11 @@ from Chunking.chunking.strategy_base import BaseChunkingStrategy
 from Chunking.config.patterns import (
     COVER_NOISE_RE,
     FRONT_MATTER_RE,
+    INLINE_PAGE_COUNTER_LINE_RE,
+    LETTERED_ITEM_PREFIX_RE,
     LEADING_PAGE_MARKER_RE,
     LOOSE_PAGE_COUNTER_LINE_RE,
+    NUMBERED_ITEM_PREFIX_RE,
     PROSE_START_RE,
     SIGNATURE_LINE_RE,
     SUSPICIOUS_GARBLED_LINE_RE,
@@ -17,6 +20,7 @@ from Chunking.config.patterns import (
 )
 from Chunking.utils.text import (
     fold_editorial_text,
+    has_suspicious_truncated_ending,
     normalize_block_whitespace,
     split_paragraphs,
 )
@@ -42,8 +46,6 @@ from Chunking.utils.text import (
 # - residual article titles accidentally merged into body text
 # ============================================================================
 
-INLINE_PAGE_COUNTER_RE = re.compile(r"^\s*\d+\s*\|\s*\d+\s*$")
-
 DR_EDITORIAL_RE = re.compile(
     r"^\s*(N\.?\s*º|PARTE\s+[A-Z]|Diário da República)\b",
     re.IGNORECASE,
@@ -53,13 +55,6 @@ ARTICLE_HEADER_RE = re.compile(
     r"^\s*(?:ARTIGO|ART\.?)\s+\d+(?:\.\d+)?\s*(?:\.?\s*[ºo°])?\s*(?:[—–\-:]\s*.*)?$",
     re.IGNORECASE,
 )
-
-NUMBERED_ITEM_PREFIX_RE = re.compile(
-    r"^\s*(?:n\.?\s*[ºo]\s*)?\d+(?:\.\d+)*(?:\.\s+|\)\s+|\s+[—–\-]\s+|\s+)",
-    re.IGNORECASE,
-)
-
-LETTERED_ITEM_PREFIX_RE = re.compile(r"^\s*[a-z]\)\s+", re.IGNORECASE)
 
 TITLE_SEPARATOR_RE = re.compile(r"\s*\|\s*")
 
@@ -107,6 +102,14 @@ TITLE_FRAGMENT_LINE_RE = re.compile(
 
 TRUNCATED_TAIL_CONNECTOR_RE = re.compile(
     r"(?:\b(?:e|ou|que|de|do|da|dos|das|para|por)\s*)+$",
+    re.IGNORECASE,
+)
+
+LEADING_WEAK_CONTINUATION_RE = re.compile(
+    r"^\s*(?:"
+    r"(?:e|ou|que|de|do|da|dos|das|para|por|com|sem|em|na|no|nas|nos)\b"
+    r"|[a-zà-ÿ]"
+    r")",
     re.IGNORECASE,
 )
 
@@ -325,6 +328,10 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
 
             if section_children:
                 section_groups = self._group_sections(section_children)
+                section_groups = self._refine_structural_groups_for_export(
+                    article=article,
+                    groups=section_groups,
+                )
 
                 for group in section_groups:
                     group_text = self._join_cleaned_node_texts(
@@ -429,6 +436,10 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
 
             if lettered_children:
                 lettered_groups = self._group_lettered_items(lettered_children)
+                lettered_groups = self._refine_structural_groups_for_export(
+                    article=article,
+                    groups=lettered_groups,
+                )
 
                 for group in lettered_groups:
                     group_text = self._join_cleaned_node_texts(
@@ -672,6 +683,280 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
 
         return groups
 
+    def _refine_structural_groups_for_export(
+        self,
+        article: StructuralNode,
+        groups: Sequence[Sequence[StructuralNode]],
+    ) -> List[List[StructuralNode]]:
+        """
+        Avoid multi-node grouped exports when article structure is incomplete.
+
+        Why this helper exists
+        ----------------------
+        Parser integrity metadata already exposes when an article capture is
+        structurally incomplete. In that situation, grouping multiple SECTION
+        or LETTERED_ITEM nodes can crystallize weak definitions or damaged
+        continuations into one apparently valid chunk. Export should stay
+        conservative and fall back to single-node groups.
+
+        Parameters
+        ----------
+        article : StructuralNode
+            Parent article for the candidate groups.
+
+        groups : Sequence[Sequence[StructuralNode]]
+            Candidate grouped structural nodes.
+
+        Returns
+        -------
+        List[List[StructuralNode]]
+            Groups safe enough for final export.
+        """
+        if not groups:
+            return []
+
+        normalized_groups = [list(group) for group in groups if group]
+
+        normalized_groups = self._reattach_weak_group_lead_ins(
+            article=article,
+            groups=normalized_groups,
+        )
+
+        if not article.metadata.get("is_structurally_incomplete", False):
+            return normalized_groups
+
+        refined_groups: List[List[StructuralNode]] = []
+        for group in normalized_groups:
+            normalized_group = [node for node in group if node is not None]
+            if not normalized_group:
+                continue
+
+            if len(normalized_group) == 1:
+                refined_groups.append(normalized_group)
+                continue
+
+            if self._should_preserve_incomplete_structural_group(
+                article=article,
+                group=normalized_group,
+            ):
+                refined_groups.append(normalized_group)
+                continue
+
+            for node in normalized_group:
+                refined_groups.append([node])
+
+        return refined_groups
+
+    def _reattach_weak_group_lead_ins(
+        self,
+        article: StructuralNode,
+        groups: Sequence[Sequence[StructuralNode]],
+    ) -> List[List[StructuralNode]]:
+        """
+        Reattach weak introductory structural groups to the continuation group.
+
+        Why this helper exists
+        ----------------------
+        Some articles still produce a short numbered or lettered lead-in that
+        ends with a visible continuation cue such as ``:`` or ``ou:`` while the
+        real substantive content starts in the immediately following structural
+        unit. Exporting that lead-in as a standalone group creates a weak chunk,
+        even when the parser already preserved the right nearby nodes.
+
+        Parameters
+        ----------
+        article : StructuralNode
+            Parent article for the candidate groups.
+
+        groups : Sequence[Sequence[StructuralNode]]
+            Candidate grouped structural nodes.
+
+        Returns
+        -------
+        List[List[StructuralNode]]
+            Groups with weak lead-ins reattached when safe.
+        """
+        if len(groups) < 2:
+            return [list(group) for group in groups if group]
+
+        refined_groups: List[List[StructuralNode]] = [list(groups[0])]
+
+        for next_group in groups[1:]:
+            normalized_next_group = [node for node in next_group if node is not None]
+            if not normalized_next_group:
+                continue
+
+            previous_group = refined_groups[-1]
+            if self._should_reattach_weak_group_lead_in(
+                article=article,
+                current_group=previous_group,
+                next_group=normalized_next_group,
+            ):
+                previous_group.extend(normalized_next_group)
+                continue
+
+            refined_groups.append(normalized_next_group)
+
+        return refined_groups
+
+    def _should_reattach_weak_group_lead_in(
+        self,
+        article: StructuralNode,
+        current_group: Sequence[StructuralNode],
+        next_group: Sequence[StructuralNode],
+    ) -> bool:
+        """
+        Decide whether a weak structural lead-in should stay with the next group.
+
+        Parameters
+        ----------
+        article : StructuralNode
+            Parent article for the candidate groups.
+
+        current_group : Sequence[StructuralNode]
+            Current structural group under review.
+
+        next_group : Sequence[StructuralNode]
+            Immediately following structural group.
+
+        Returns
+        -------
+        bool
+            True when the current group should be merged into the next one.
+        """
+        if not current_group or not next_group:
+            return False
+
+        trailing_node = current_group[-1]
+        leading_node = next_group[0]
+        trailing_text = self._clean_chunk_text(
+            trailing_node.text,
+            remove_structural_prefixes=True,
+            source_node=article,
+        )
+        if not self._looks_like_weak_group_lead_in(trailing_text):
+            return False
+
+        if not self._is_structural_group_continuation(
+            trailing_node=trailing_node,
+            leading_node=leading_node,
+        ):
+            return False
+
+        merged_visible_text = self._join_cleaned_node_texts(
+            nodes=list(current_group) + list(next_group),
+            remove_structural_prefixes=True,
+        )
+        if not merged_visible_text:
+            return False
+
+        return len(merged_visible_text) <= self.settings.hard_max_chunk_chars
+
+    def _looks_like_weak_group_lead_in(self, text: str) -> bool:
+        """
+        Detect whether a grouped structural unit behaves like a weak lead-in.
+
+        Parameters
+        ----------
+        text : str
+            Final visible text for the candidate trailing node.
+
+        Returns
+        -------
+        bool
+            True when the text looks introductory and semantically incomplete.
+        """
+        normalized_text = normalize_block_whitespace(text).strip()
+        if not normalized_text:
+            return False
+
+        if not normalized_text.endswith(":"):
+            return False
+
+        return len(normalized_text) < self.settings.target_chunk_chars
+
+    def _is_structural_group_continuation(
+        self,
+        trailing_node: StructuralNode,
+        leading_node: StructuralNode,
+    ) -> bool:
+        """
+        Decide whether two neighboring structural nodes form a continuation pair.
+
+        Parameters
+        ----------
+        trailing_node : StructuralNode
+            Last node of the current group.
+
+        leading_node : StructuralNode
+            First node of the next group.
+
+        Returns
+        -------
+        bool
+            True when the next node continues the previous structural lead-in.
+        """
+        if trailing_node.node_type != leading_node.node_type:
+            return False
+
+        trailing_label = str(trailing_node.label).strip()
+        leading_label = str(leading_node.label).strip()
+        if not trailing_label or not leading_label:
+            return False
+
+        if trailing_node.node_type == "SECTION":
+            return leading_label.startswith(f"{trailing_label}.")
+
+        if trailing_node.node_type == "LETTERED_ITEM":
+            return (
+                len(trailing_label) == 1
+                and len(leading_label) == 1
+                and trailing_label.isalpha()
+                and leading_label.isalpha()
+                and ord(leading_label.lower()) == ord(trailing_label.lower()) + 1
+            )
+
+        return False
+
+    def _should_preserve_incomplete_structural_group(
+        self,
+        article: StructuralNode,
+        group: Sequence[StructuralNode],
+    ) -> bool:
+        """
+        Decide whether an incomplete multi-node group is still safe to export.
+
+        Parameters
+        ----------
+        article : StructuralNode
+            Parent article for the candidate group.
+
+        group : Sequence[StructuralNode]
+            Candidate grouped structural nodes.
+
+        Returns
+        -------
+        bool
+            True when keeping the multi-node group is safer than splitting it.
+        """
+        if len(group) < 2:
+            return False
+
+        first_node = group[0]
+        second_node = group[1]
+        first_text = self._clean_chunk_text(
+            first_node.text,
+            remove_structural_prefixes=True,
+            source_node=article,
+        )
+        if not self._looks_like_weak_group_lead_in(first_text):
+            return False
+
+        return self._is_structural_group_continuation(
+            trailing_node=first_node,
+            leading_node=second_node,
+        )
+
     def _group_lettered_items(self, items: List[StructuralNode]) -> List[List[StructuralNode]]:
         """
         Group adjacent LETTERED_ITEM nodes into chunk-sized bundles.
@@ -824,7 +1109,7 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
             return [text], "paragraph_split"
 
         if len(paragraph_groups) > 1:
-            return paragraph_groups, "paragraph_split"
+            return self._repair_weak_split_boundaries(paragraph_groups), "paragraph_split"
 
         only_group = paragraph_groups[0].strip()
         if len(only_group) <= self._split_target_chars():
@@ -832,9 +1117,9 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
 
         legal_groups = self._split_by_legal_signals(only_group)
         if len(legal_groups) >= 2:
-            return legal_groups, "legal_signal_split"
+            return self._repair_weak_split_boundaries(legal_groups), "legal_signal_split"
 
-        return paragraph_groups, "paragraph_split"
+        return self._repair_weak_split_boundaries(paragraph_groups), "paragraph_split"
 
     def _split_by_legal_signals(self, text: str) -> List[str]:
         """
@@ -1188,7 +1473,7 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
                 groups[-2] = merged_text
                 groups.pop()
 
-        return groups
+        return self._repair_weak_split_boundaries(groups)
 
     def _split_target_chars(self) -> int:
         """
@@ -1277,7 +1562,81 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
         if not cleaned_parts:
             return [visible_text], "paragraph_split"
 
-        return cleaned_parts, split_mode
+        return self._repair_weak_split_boundaries(cleaned_parts), split_mode
+
+    def _repair_weak_split_boundaries(self, parts: Sequence[str]) -> List[str]:
+        """
+        Merge neighboring split parts when the boundary is semantically weak.
+
+        Why this helper exists
+        ----------------------
+        Size-based grouping and legal-marker splits can still create awkward
+        boundaries where one part ends like a truncated fragment or the next
+        part starts like a weak continuation. This helper reattaches those
+        cases conservatively when doing so stays within the hard size ceiling.
+
+        Parameters
+        ----------
+        parts : Sequence[str]
+            Ordered split parts after initial grouping.
+
+        Returns
+        -------
+        List[str]
+            Split parts with weak boundaries merged when safe.
+        """
+        normalized_parts = [
+            normalize_block_whitespace(part).strip()
+            for part in parts
+            if normalize_block_whitespace(part).strip()
+        ]
+        if len(normalized_parts) < 2:
+            return normalized_parts
+
+        repaired_parts: List[str] = [normalized_parts[0]]
+
+        for current_part in normalized_parts[1:]:
+            previous_part = repaired_parts[-1]
+            boundary_is_weak = (
+                has_suspicious_truncated_ending(previous_part)
+                or self._starts_with_weak_continuation(current_part)
+            )
+            joiner = " " if boundary_is_weak else "\n\n"
+            candidate = f"{previous_part}{joiner}{current_part}".strip()
+
+            if (
+                len(candidate) <= self.settings.hard_max_chunk_chars
+                and boundary_is_weak
+            ):
+                repaired_parts[-1] = candidate
+                continue
+
+            repaired_parts.append(current_part)
+
+        return repaired_parts
+
+    def _starts_with_weak_continuation(self, text: str) -> bool:
+        """
+        Detect whether one split part starts like a dangling continuation.
+
+        Parameters
+        ----------
+        text : str
+            Candidate split part.
+
+        Returns
+        -------
+        bool
+            True when the part opens with a weak continuation fragment.
+        """
+        normalized_text = normalize_block_whitespace(text).strip()
+        if not normalized_text:
+            return False
+
+        if self._part_starts_with_legal_marker(normalized_text):
+            return False
+
+        return LEADING_WEAK_CONTINUATION_RE.match(normalized_text) is not None
 
     def _clean_chunk_text(
         self,
@@ -1337,7 +1696,7 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
             if not line:
                 continue
 
-            if INLINE_PAGE_COUNTER_RE.match(line):
+            if INLINE_PAGE_COUNTER_LINE_RE.match(line):
                 continue
 
             if LOOSE_PAGE_COUNTER_LINE_RE.match(line):
@@ -2335,6 +2694,12 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
             "document_part": article.metadata.get("document_part"),
             "source_node_id": article.node_id,
             "parent_node_id": article.parent_node_id,
+            "is_structurally_incomplete": article.metadata.get(
+                "is_structurally_incomplete",
+                False,
+            ),
+            "truncation_signals": list(article.metadata.get("truncation_signals", [])),
+            "integrity_warnings": list(article.metadata.get("integrity_warnings", [])),
         }
 
     def _merge_hierarchy_path(
@@ -2507,7 +2872,7 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
             if not line:
                 continue
 
-            if INLINE_PAGE_COUNTER_RE.match(line):
+            if INLINE_PAGE_COUNTER_LINE_RE.match(line):
                 continue
 
             if LOOSE_PAGE_COUNTER_LINE_RE.match(line):
@@ -2628,6 +2993,26 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
         if not visible_text:
             return None
 
+        effective_source_node_type = source_node_type_override or getattr(
+            source_node,
+            "node_type",
+            "",
+        )
+        effective_source_node_label = source_node_label_override or getattr(
+            source_node,
+            "label",
+            "",
+        )
+
+        if self._should_drop_unsafe_chunk(
+            visible_text=visible_text,
+            source_node=source_node,
+            metadata=metadata,
+            source_node_type=effective_source_node_type,
+            source_node_label=effective_source_node_label,
+        ):
+            return None
+
         effective_hierarchy_path = list(
             hierarchy_path or getattr(source_node, "hierarchy_path", [])
         )
@@ -2651,13 +3036,204 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
             text_for_embedding=text_for_embedding,
             page_start=page_start,
             page_end=page_end,
-            source_node_type=source_node_type_override or getattr(source_node, "node_type", ""),
-            source_node_label=source_node_label_override or getattr(source_node, "label", ""),
+            source_node_type=effective_source_node_type,
+            source_node_label=effective_source_node_label,
             hierarchy_path=effective_hierarchy_path,
             chunk_reason=chunk_reason,
             char_count=len(visible_text),
             metadata=metadata,
         )
+
+    def _should_drop_unsafe_chunk(
+        self,
+        visible_text: str,
+        source_node: StructuralNode,
+        metadata: Dict[str, Any],
+        source_node_type: str,
+        source_node_label: str,
+    ) -> bool:
+        """
+        Decide whether a chunk should be dropped as structurally unsafe.
+
+        Why this helper exists
+        ----------------------
+        Task-level cleanup should not fabricate missing text. When the parser
+        already signals that an article is structurally incomplete and the final
+        visible text still ends like a damaged fragment, exporting the chunk
+        creates a semantically weak retrieval unit. In that narrow case the
+        strategy should refuse the export.
+
+        Parameters
+        ----------
+        visible_text : str
+            Final candidate visible chunk text.
+
+        source_node : StructuralNode
+            Main structural origin of the chunk.
+
+        metadata : Dict[str, Any]
+            Chunk metadata payload.
+
+        source_node_type : str
+            Effective exported source-node type for the chunk.
+
+        source_node_label : str
+            Effective exported source-node label for the chunk.
+
+        Returns
+        -------
+        bool
+            True when the chunk should be dropped.
+        """
+        if not visible_text:
+            return True
+
+        if not metadata.get("is_structurally_incomplete", False):
+            return False
+
+        if (
+            source_node_type == "ARTICLE"
+            and source_node.node_type == "ARTICLE"
+            and has_suspicious_truncated_ending(visible_text)
+        ):
+            return True
+
+        return self._is_orphaned_structural_continuation_chunk(
+            metadata=metadata,
+            source_node_type=source_node_type,
+            source_node_label=source_node_label,
+        )
+
+    def _is_orphaned_structural_continuation_chunk(
+        self,
+        metadata: Dict[str, Any],
+        source_node_type: str,
+        source_node_label: str,
+    ) -> bool:
+        """
+        Detect chunk exports that still represent orphaned structural continuation.
+
+        Parameters
+        ----------
+        metadata : Dict[str, Any]
+            Chunk metadata payload.
+
+        source_node_type : str
+            Effective exported source-node type.
+
+        source_node_label : str
+            Effective exported source-node label.
+
+        Returns
+        -------
+        bool
+            True when the export is still an orphaned continuation unit.
+        """
+        integrity_warnings = set(metadata.get("integrity_warnings", []))
+        if not integrity_warnings:
+            return False
+
+        if source_node_type == "SECTION_GROUP":
+            section_labels = self._extract_structural_labels(
+                metadata.get("section_labels"),
+                source_node_label,
+            )
+            if (
+                "possible_orphaned_numbered_continuation" in integrity_warnings
+                and section_labels
+                and all(
+                    self._is_subordinate_numbered_label(label)
+                    for label in section_labels
+                )
+            ):
+                return True
+
+        if source_node_type == "LETTERED_GROUP":
+            lettered_labels = self._extract_structural_labels(
+                metadata.get("lettered_labels"),
+                source_node_label,
+            )
+            if (
+                "possible_broken_lettered_enumeration" in integrity_warnings
+                and lettered_labels
+                and self._is_non_initial_lettered_label(lettered_labels[0])
+            ):
+                return True
+
+        return False
+
+    def _extract_structural_labels(
+        self,
+        labels: Any,
+        fallback_label: str,
+    ) -> List[str]:
+        """
+        Normalize grouped structural labels from metadata or export fallback.
+
+        Parameters
+        ----------
+        labels : Any
+            Candidate labels payload from chunk metadata.
+
+        fallback_label : str
+            Exported label string used when metadata is absent.
+
+        Returns
+        -------
+        List[str]
+            Normalized non-empty labels.
+        """
+        if isinstance(labels, Sequence) and not isinstance(labels, str):
+            return [str(label).strip() for label in labels if str(label).strip()]
+
+        if not fallback_label:
+            return []
+
+        return [
+            part.strip()
+            for part in str(fallback_label).split(",")
+            if part.strip()
+        ]
+
+    def _is_subordinate_numbered_label(self, label: str) -> bool:
+        """
+        Decide whether a numbered label represents a subordinate continuation.
+
+        Parameters
+        ----------
+        label : str
+            Candidate structural label.
+
+        Returns
+        -------
+        bool
+            True when the label behaves like a decimal continuation.
+        """
+        normalized_label = str(label).strip()
+        if not normalized_label:
+            return False
+
+        return re.match(r"^\d+\.\d+$", normalized_label) is not None
+
+    def _is_non_initial_lettered_label(self, label: str) -> bool:
+        """
+        Decide whether a lettered label starts after the expected first item.
+
+        Parameters
+        ----------
+        label : str
+            Candidate lettered label.
+
+        Returns
+        -------
+        bool
+            True when the label starts after ``a``.
+        """
+        normalized_label = str(label).strip().lower()
+        if not normalized_label:
+            return False
+
+        return len(normalized_label) == 1 and normalized_label.isalpha() and normalized_label != "a"
 
     def _link_neighbor_chunks(self, chunks: List[Chunk]) -> None:
         """
