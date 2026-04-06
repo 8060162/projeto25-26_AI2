@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
 from Chunking.chunking.models import ExtractedDocument, ExtractedPage, PageText
+from Chunking.config.patterns import INLINE_PAGE_COUNTER_LINE_RE
 from Chunking.utils.text import (
     fold_editorial_text,
     normalize_block_whitespace,
@@ -42,13 +43,6 @@ from Chunking.utils.text import (
 # Strip this marker only when it appears at the beginning of the line so
 # that useful content after the marker can still survive.
 LEADING_PAGE_MARKER_RE = re.compile(r"^\s*Pág\.\s*\d+\s*", re.IGNORECASE)
-
-# Example:
-# "3|14"
-# "10 | 14"
-#
-# Classic page counters from headers/footers.
-INLINE_PAGE_COUNTER_RE = re.compile(r"^\s*\d+\s*\|\s*\d+\s*$")
 
 # Slightly looser page counter variants.
 LOOSE_PAGE_COUNTER_RE = re.compile(r"^\s*\d+\s*\|\s*\d+\s*[\-–—.]?\s*$")
@@ -106,6 +100,16 @@ SHORT_LAYOUT_RESIDUE_RE = re.compile(
 # Common editorial date formats found in publication headers.
 EDITORIAL_DATE_RE = re.compile(
     r"\b\d{1,2}\s*[-/.]\s*\d{1,2}\s*[-/.]\s*\d{2,4}\b"
+)
+
+# Recover missing spacing in short Portuguese date expressions such as:
+# - "13de junho"
+# - "1de março"
+MISSING_SPACE_DAY_DE_MONTH_RE = re.compile(
+    r"\b(?P<day>\d{1,2})de(?=\s+"
+    r"(?:janeiro|fevereiro|mar[cç]o|abril|maio|junho|julho|agosto|"
+    r"setembro|outubro|novembro|dezembro)\b)",
+    re.IGNORECASE,
 )
 
 # Publication summary lines from Diario da Republica pages.
@@ -171,6 +175,14 @@ NUMBERED_ITEM_RE = re.compile(
     r"^\s*\d+(?:\.\d+)*(?:\.\s+|\)\s+|\s+[—–\-]\s+)"
 )
 
+# Normalize malformed line-start legal numbering such as:
+# - "1-— O texto"
+# - "1-—A prática"
+# - "2—Texto"
+MALFORMED_NUMBERING_PREFIX_RE = re.compile(
+    r"^(?P<number>\d+(?:\.\d+)*)\s*[-–—]+\s*(?P<rest>\S.*)$"
+)
+
 # Detect lettered legal items such as:
 # - "a) ..."
 # - "b) ..."
@@ -179,6 +191,13 @@ LETTERED_ITEM_RE = re.compile(r"^\s*[a-z]\)\s+", re.IGNORECASE)
 # Detect likely starts of ordinary prose.
 PROSE_START_RE = re.compile(
     r"^\s*(?:O|A|Os|As|No|Na|Nos|Nas|Em|Para|Por|Quando|Sempre|Caso|Se|Nos\s+termos|Deve|Devem|Pode|Podem|É|São)\b",
+    re.IGNORECASE,
+)
+
+# Detect short explanation headers that often follow an unrecoverable formula
+# diagram and introduce the meaningful prose definitions that must survive.
+FORMULA_EXPLANATION_HEADER_RE = re.compile(
+    r"^\s*(?:\d+\s+)?onde\s*:\s*$",
     re.IGNORECASE,
 )
 
@@ -481,6 +500,16 @@ class TextNormalizer:
             )
             dropped_counter.update(early_residue_report)
 
+            cleaned_lines, local_garbled_report = self._trim_local_garbled_blocks(
+                cleaned_lines
+            )
+            dropped_counter.update(local_garbled_report)
+
+            cleaned_lines, isolated_residue_report = (
+                self._trim_isolated_formula_residue_lines(cleaned_lines)
+            )
+            dropped_counter.update(isolated_residue_report)
+
             cleaned_lines, garbled_tail_report = self._trim_trailing_garbled_blocks(
                 cleaned_lines
             )
@@ -587,7 +616,7 @@ class TextNormalizer:
                 return None, "page_marker_only"
 
         # Remove classic page counters like "3|14".
-        if INLINE_PAGE_COUNTER_RE.match(line):
+        if INLINE_PAGE_COUNTER_LINE_RE.match(line):
             return None, "inline_page_counter"
 
         # Remove slightly noisier page counter variants.
@@ -637,11 +666,23 @@ class TextNormalizer:
         ):
             return None, "institutional_cover_title_line"
 
+        line = self._repair_local_lexical_breaks(line)
+        if not line:
+            return None, "empty_after_lexical_repair"
+
+        original_line_before_inline_cleanup = line
+
         # Remove only the inline garbled fragments that clearly behave like
         # extraction residue inside an otherwise meaningful line.
         line = self._strip_inline_garbled_residue(line)
         if not line:
             return None, "inline_garbled_residue"
+
+        if self._looks_like_leading_displaced_continuation_fragment(
+            original_line=original_line_before_inline_cleanup,
+            cleaned_line=line,
+        ):
+            return None, "displaced_continuation_fragment_line"
 
         # Remove clearly unusable symbolic garbage lines.
         if MOSTLY_SYMBOLIC_RE.match(line):
@@ -1065,6 +1106,42 @@ class TextNormalizer:
 
         return cleaned_line.strip()
 
+    def _repair_local_lexical_breaks(self, line: str) -> str:
+        """
+        Repair small local lexical defects when the correction is low-risk.
+
+        This helper stays intentionally narrow and only normalizes patterns
+        already observed in legal PDF extraction artifacts:
+        - short date expressions with a missing space before "de"
+        - malformed numeric-item prefixes built from fused dash clusters
+        """
+        if not line:
+            return ""
+
+        line = MISSING_SPACE_DAY_DE_MONTH_RE.sub(r"\g<day> de", line)
+        line = self._normalize_malformed_numbering_prefix(line)
+
+        return line.strip()
+
+    def _normalize_malformed_numbering_prefix(self, line: str) -> str:
+        """
+        Repair fused or duplicated dash clusters in legal item prefixes.
+
+        The normalization is restricted to line starts that already behave like
+        numeric legal items, so ordinary prose containing dashes is untouched.
+        """
+        malformed_match = MALFORMED_NUMBERING_PREFIX_RE.match(line)
+        if malformed_match is None:
+            return line
+
+        number = malformed_match.group("number")
+        rest = malformed_match.group("rest")
+
+        if not rest:
+            return line
+
+        return f"{number} — {rest}".strip()
+
     def _clean_inline_garbled_token(self, token: str) -> str:
         """
         Remove or recover a single token when it clearly looks corrupted.
@@ -1087,6 +1164,42 @@ class TextNormalizer:
             return ""
 
         return token
+
+    def _looks_like_leading_displaced_continuation_fragment(
+        self,
+        original_line: str,
+        cleaned_line: str,
+    ) -> bool:
+        """
+        Detect lines that start with recovered garbage and remain non-autonomous.
+
+        This targets a narrow failure mode where extraction injects a corrupted
+        prefix into the first token of a line and the readable lowercase tail is
+        later merged as if it were ordinary prose continuation.
+        """
+        if not original_line or not cleaned_line:
+            return False
+
+        if cleaned_line == original_line:
+            return False
+
+        if self._is_structural_line(cleaned_line):
+            return False
+
+        if PROSE_START_RE.match(cleaned_line):
+            return False
+
+        cleaned_first_token = cleaned_line.split()[0]
+        if not cleaned_first_token[:1].islower():
+            return False
+
+        original_first_token = original_line.split()[0].lstrip("([<{\"'")
+        recovered_tail = self._recover_inline_garbled_tail(original_first_token)
+
+        if recovered_tail is None:
+            return False
+
+        return cleaned_first_token == recovered_tail
 
     def _recover_inline_garbled_tail(self, token: str) -> Optional[str]:
         """
@@ -2099,6 +2212,279 @@ class TextNormalizer:
         dropped_counter: Counter[str] = Counter()
         dropped_counter["trailing_garbled_block_line"] += len(candidate)
         return lines[:start_index], dropped_counter
+
+    def _trim_isolated_formula_residue_lines(
+        self,
+        lines: List[str],
+    ) -> Tuple[List[str], Counter[str]]:
+        """
+        Remove short isolated formula residue lines between substantive lines.
+
+        Why this helper exists
+        ----------------------
+        Some mixed-quality pages alternate useful explanatory lines with tiny
+        OCR residue fragments such as symbolic placeholders or corrupted
+        formula variable names. Those fragments do not form a long enough block
+        for block-level cleanup, but they still pollute downstream parsing.
+
+        Safety behavior
+        ---------------
+        A line is removed only when:
+        - it matches a narrow formula-residue profile
+        - it is bounded by meaningful surrounding context
+        - it does not behave like ordinary legal prose or structure
+        """
+        if len(lines) < 3:
+            return lines, Counter()
+
+        kept_lines: List[str] = []
+        dropped_counter: Counter[str] = Counter()
+        index = 0
+
+        while index < len(lines):
+            line = lines[index]
+            if not self._looks_like_isolated_formula_residue_line(line):
+                kept_lines.append(line)
+                index += 1
+                continue
+
+            start_index = index
+            while (
+                index < len(lines)
+                and self._looks_like_isolated_formula_residue_line(lines[index])
+            ):
+                index += 1
+
+            candidate = lines[start_index:index]
+            previous_line = kept_lines[-1] if kept_lines else ""
+            next_line = lines[index] if index < len(lines) else ""
+
+            if self._supports_isolated_formula_residue_removal(
+                candidate=candidate,
+                previous_line=previous_line,
+                next_line=next_line,
+            ):
+                dropped_counter["isolated_formula_residue_line"] += len(candidate)
+                continue
+
+            kept_lines.extend(candidate)
+
+        return kept_lines, dropped_counter
+
+    def _trim_local_garbled_blocks(
+        self,
+        lines: List[str],
+    ) -> Tuple[List[str], Counter[str]]:
+        """
+        Remove unrecoverable local garbled blocks embedded inside useful text.
+
+        Why this helper exists
+        ----------------------
+        Some mixed-quality pages contain a short toxic block between two useful
+        legal regions, for example after a formula introducer and before the
+        prose that defines the formula variables. Those blocks are not always at
+        the page tail, so trailing-only cleanup is not sufficient.
+
+        Safety behavior
+        ---------------
+        The helper removes only interior blocks that:
+        - are composed of weak short lines
+        - contain multiple strong garbling signals
+        - are bounded by meaningful surrounding context
+        """
+        if len(lines) < 3:
+            return lines, Counter()
+
+        kept_lines: List[str] = []
+        dropped_counter: Counter[str] = Counter()
+        index = 0
+
+        while index < len(lines):
+            line = lines[index]
+            if not self._looks_like_local_garbled_block_line(line):
+                kept_lines.append(line)
+                index += 1
+                continue
+
+            start_index = index
+            while (
+                index < len(lines)
+                and self._looks_like_local_garbled_block_line(lines[index])
+            ):
+                index += 1
+
+            candidate = lines[start_index:index]
+            previous_line = kept_lines[-1] if kept_lines else ""
+            next_line = lines[index] if index < len(lines) else ""
+
+            if self._should_drop_local_garbled_block(
+                candidate=candidate,
+                previous_line=previous_line,
+                next_line=next_line,
+            ):
+                dropped_counter["local_garbled_block_line"] += len(candidate)
+                continue
+
+            kept_lines.extend(candidate)
+
+        return kept_lines, dropped_counter
+
+    def _should_drop_local_garbled_block(
+        self,
+        candidate: Sequence[str],
+        previous_line: str,
+        next_line: str,
+    ) -> bool:
+        """
+        Decide whether an interior weak block is safe to remove.
+
+        Parameters
+        ----------
+        candidate : Sequence[str]
+            Consecutive weak lines that may represent toxic residue.
+        previous_line : str
+            Nearest kept line before the candidate block.
+        next_line : str
+            First non-candidate line after the candidate block.
+
+        Returns
+        -------
+        bool
+            True when the block looks unrecoverable and well-bounded.
+        """
+        if len(candidate) < 4:
+            return False
+
+        if not previous_line or not next_line:
+            return False
+
+        if any(self._line_looks_like_body_content(line) for line in candidate):
+            return False
+
+        short_line_count = sum(1 for line in candidate if len(line.split()) <= 2)
+        strong_signal_count = sum(
+            1 for line in candidate if self._is_strong_trailing_garbled_line(line)
+        )
+
+        if short_line_count < len(candidate) - 1:
+            return False
+
+        if strong_signal_count < 2:
+            return False
+
+        return self._supports_local_garbled_block_removal(
+            previous_line=previous_line,
+            next_line=next_line,
+        )
+
+    def _supports_isolated_formula_residue_removal(
+        self,
+        candidate: Sequence[str],
+        previous_line: str,
+        next_line: str,
+    ) -> bool:
+        """
+        Validate that isolated residue removal is bounded by meaningful context.
+        """
+        if not candidate or len(candidate) > 2:
+            return False
+
+        if not previous_line or not next_line:
+            return False
+
+        previous_supports_removal = (
+            previous_line.endswith(":")
+            or self._line_looks_like_body_content(previous_line)
+            or self._is_structural_line(previous_line)
+        )
+        next_supports_removal = (
+            self._line_looks_like_body_content(next_line)
+            or self._is_structural_line(next_line)
+            or FORMULA_EXPLANATION_HEADER_RE.match(next_line) is not None
+        )
+
+        return previous_supports_removal and next_supports_removal
+
+    def _supports_local_garbled_block_removal(
+        self,
+        previous_line: str,
+        next_line: str,
+    ) -> bool:
+        """
+        Validate that surrounding context makes local block removal safe.
+        """
+        previous_supports_removal = (
+            previous_line.endswith(":")
+            or self._line_looks_like_body_content(previous_line)
+            or self._is_structural_line(previous_line)
+        )
+        next_supports_removal = (
+            self._line_looks_like_body_content(next_line)
+            or self._is_structural_line(next_line)
+            or FORMULA_EXPLANATION_HEADER_RE.match(next_line) is not None
+        )
+
+        return previous_supports_removal and next_supports_removal
+
+    def _looks_like_local_garbled_block_line(self, line: str) -> bool:
+        """
+        Detect weak short lines that can belong to an interior toxic block.
+        """
+        if not line:
+            return False
+
+        if self._looks_like_trailing_garbled_line(line):
+            return True
+
+        if len(line) > 24 or self._is_structural_line(line):
+            return False
+
+        if self._line_looks_like_body_content(line):
+            return False
+
+        return self._looks_like_garbled_line(line)
+
+    def _looks_like_isolated_formula_residue_line(self, line: str) -> bool:
+        """
+        Detect short formula-like residue that survives between useful lines.
+        """
+        if not line:
+            return False
+
+        stripped = line.strip()
+        if not stripped or len(stripped) > 18:
+            return False
+
+        if self._is_structural_line(stripped):
+            return False
+
+        if self._line_looks_like_body_content(stripped):
+            return False
+
+        if re.fullmatch(r"[_=+\-*/\\|(){}\[\]]+", stripped):
+            return True
+
+        tokens = stripped.split()
+        if len(tokens) > 2:
+            return False
+
+        alpha_only_tokens = [
+            token
+            for token in tokens
+            if re.fullmatch(r"[A-Za-zÀ-ÿ]+", token) is not None
+        ]
+        if len(alpha_only_tokens) != len(tokens):
+            return False
+
+        has_mixed_case_token = any(
+            any(character.islower() for character in token)
+            and any(character.isupper() for character in token)
+            for token in alpha_only_tokens
+        )
+        if not has_mixed_case_token:
+            return False
+
+        return any(len(token) >= 4 for token in alpha_only_tokens)
 
     def _looks_like_trailing_garbled_line(self, line: str) -> bool:
         """
