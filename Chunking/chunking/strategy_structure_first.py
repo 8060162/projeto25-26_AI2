@@ -716,19 +716,19 @@ class StructureFirstChunkingStrategy(BaseChunkingStrategy):
                 result.append(item)
         return result
 
-    def _build_text_for_embedding(
+    def _build_meta_text(
         self,
         source_node: StructuralNode,
         visible_text: str,
     ) -> str:
         """
-        Build enriched embedding text from visible chunk text.
+        Build optional structure-enriched text from visible chunk text.
 
         Why this helper exists
         ----------------------
-        A chunk body alone may be too context-poor for retrieval. A small
-        structural prefix such as article number and title often improves
-        embedding quality without polluting the visible text.
+        A chunk body alone may be too context-poor during manual inspection.
+        A small structural prefix such as article number and title can provide
+        traceability without polluting the visible text.
 
         Parameters
         ----------
@@ -740,7 +740,7 @@ class StructureFirstChunkingStrategy(BaseChunkingStrategy):
         Returns
         -------
         str
-            Enriched embedding text.
+            Enriched auxiliary text.
         """
         visible_text = normalize_block_whitespace(visible_text)
         if not visible_text:
@@ -834,9 +834,13 @@ class StructureFirstChunkingStrategy(BaseChunkingStrategy):
             doc_id=document_metadata.doc_id,
             strategy=self.name,
             text=normalized_text,
-            text_for_embedding=self._build_text_for_embedding(
-                source_node=source_node,
-                visible_text=normalized_text,
+            meta_text=(
+                self._build_meta_text(
+                    source_node=source_node,
+                    visible_text=normalized_text,
+                )
+                if self.settings.include_meta_text
+                else ""
             ),
             page_start=page_start,
             page_end=page_end,
