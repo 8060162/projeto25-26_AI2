@@ -16,7 +16,7 @@ def build_chunk(**overrides: object) -> Chunk:
         "doc_id": "validator_doc",
         "strategy": "article_smart",
         "text": "O presente regulamento aplica-se a todos os cursos.",
-        "text_for_embedding": "O presente regulamento aplica-se a todos os cursos.",
+        "meta_text": "O presente regulamento aplica-se a todos os cursos.",
         "page_start": 1,
         "page_end": 1,
         "source_node_type": "ARTICLE",
@@ -70,7 +70,7 @@ class ChunkQualityValidatorRegressionTests(unittest.TestCase):
                 "Determino a aprovacao do regulamento anexo ao presente despacho.\n"
                 "Regulamento P.PORTO/P -005/2023"
             ),
-            text_for_embedding=(
+            meta_text=(
                 "Preamble\n\nDetermino a aprovacao do regulamento anexo ao presente despacho.\n"
                 "Regulamento P.PORTO/P -005/2023"
             ),
@@ -309,7 +309,7 @@ class ChunkQualityValidatorRegressionTests(unittest.TestCase):
         chunk = build_chunk(
             chunk_id="short_complete_legal",
             text="Aplica-se a todos os cursos.",
-            text_for_embedding="Aplica-se a todos os cursos.",
+            meta_text="Aplica-se a todos os cursos.",
             metadata={
                 "article_number": "4",
                 "article_title": "Ambito",
