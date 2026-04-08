@@ -2735,7 +2735,7 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
                 result.append(item)
         return result
 
-    def _build_text_for_embedding(
+    def _build_meta_text(
         self,
         source_node: StructuralNode,
         visible_text: str,
@@ -2743,13 +2743,13 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
         source_node_type_override: Optional[str] = None,
     ) -> str:
         """
-        Build enriched embedding text from clean visible chunk text.
+        Build optional structure-enriched text from clean visible chunk text.
 
         Why this helper exists
         ----------------------
         In legal retrieval, the chunk body alone may be too context-poor.
-        A short contextual prefix such as article label and title often improves
-        retrieval quality while still keeping the visible chunk text clean.
+        A short contextual prefix such as article label and title can help
+        manual inspection while still keeping the visible chunk text clean.
 
         Parameters
         ----------
@@ -2771,7 +2771,7 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
         Returns
         -------
         str
-            Context-enriched text suitable for embedding.
+            Context-enriched text suitable for auxiliary inspection.
         """
         visible_text = normalize_block_whitespace(visible_text)
         if not visible_text:
@@ -2942,7 +2942,7 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
         Important behavior
         ------------------
         - visible chunk text is normalized before export
-        - enriched embedding text is generated separately
+        - optional meta text is generated separately
         - empty chunks are discarded defensively
         - chunk ids remain deterministic and sequential
         - source structure is promoted into explicit chunk fields
@@ -3017,15 +3017,15 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
             hierarchy_path or getattr(source_node, "hierarchy_path", [])
         )
 
-        text_for_embedding = (
-            self._build_text_for_embedding(
+        meta_text = (
+            self._build_meta_text(
                 source_node=source_node,
                 visible_text=visible_text,
                 metadata=metadata,
                 source_node_type_override=source_node_type_override,
             )
-            if self.settings.include_text_for_embedding
-            else visible_text
+            if self.settings.include_meta_text
+            else ""
         )
 
         return Chunk(
@@ -3033,7 +3033,7 @@ class ArticleSmartChunkingStrategy(BaseChunkingStrategy):
             doc_id=document_metadata.doc_id,
             strategy=self.name,
             text=visible_text,
-            text_for_embedding=text_for_embedding,
+            meta_text=meta_text,
             page_start=page_start,
             page_end=page_end,
             source_node_type=effective_source_node_type,
