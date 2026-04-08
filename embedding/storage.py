@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Optional, Sequence
@@ -81,6 +82,7 @@ class LocalEmbeddingStorage:
             run_id=manifest.run_id,
             embedding_records=embedding_records,
             manifest=manifest,
+            replace_existing_strategy_output=True,
         )
         records_path = run_directory / "embedding_records.json"
         manifest_path = run_directory / "run_manifest.json"
@@ -129,6 +131,7 @@ class LocalEmbeddingStorage:
         run_directory = self._resolve_run_directory(
             run_id=run_id,
             embedding_records=embedding_records,
+            replace_existing_strategy_output=True,
         )
         records_path = run_directory / "embedding_records.json"
         records_payload = [
@@ -171,6 +174,7 @@ class LocalEmbeddingStorage:
         run_id: str,
         embedding_records: Sequence[EmbeddingVectorRecord] = (),
         manifest: Optional[EmbeddingRunManifest] = None,
+        replace_existing_strategy_output: bool = False,
     ) -> Path:
         """
         Build the directory used to store one embedding run.
@@ -185,6 +189,10 @@ class LocalEmbeddingStorage:
 
         manifest : Optional[EmbeddingRunManifest]
             Manifest used to infer the active strategy when available.
+
+        replace_existing_strategy_output : bool
+            When `True`, remove previous persisted runs for the same strategy
+            before creating the new run directory.
 
         Returns
         -------
@@ -201,9 +209,32 @@ class LocalEmbeddingStorage:
             manifest=manifest,
         )
 
+        if replace_existing_strategy_output:
+            self._clear_strategy_output_root(strategy_name)
+
         run_directory = self.output_root / strategy_name / normalized_run_id
         run_directory.mkdir(parents=True, exist_ok=True)
         return run_directory
+
+    def _clear_strategy_output_root(self, strategy_name: str) -> None:
+        """
+        Remove any previously persisted output for one embedding strategy.
+
+        Parameters
+        ----------
+        strategy_name : str
+            Normalized strategy name whose existing artifacts must be removed.
+        """
+
+        strategy_output_root = self.output_root / strategy_name
+        if not strategy_output_root.exists():
+            return
+
+        if strategy_output_root.is_dir():
+            shutil.rmtree(strategy_output_root)
+            return
+
+        strategy_output_root.unlink()
 
     def _resolve_strategy_name(
         self,
