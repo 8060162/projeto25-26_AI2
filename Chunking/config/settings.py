@@ -379,8 +379,8 @@ class PipelineSettings:
     # These settings apply only to the optional chunking stage.
     # ---------------------------------------------------------------------
 
-    # Include structure-enriched text_for_embedding in final chunk payloads.
-    include_text_for_embedding: bool = True
+    # Include optional structure-enriched meta_text in final chunk payloads.
+    include_meta_text: bool = True
 
     # Link neighboring chunks using prev_chunk_id / next_chunk_id.
     enable_chunk_neighbor_links: bool = True
@@ -431,7 +431,7 @@ class PipelineSettings:
     embedding_model: str = "text-embedding-3-large"
     embedding_input_root: Path = PROJECT_ROOT / "data" / "chunks"
     embedding_output_root: Path = PROJECT_ROOT / "data" / "embeddings"
-    embedding_input_text_field: str = "text_for_embedding"
+    embedding_input_text_field: str = "text"
     embedding_batch_size: int = 100
     embedding_visualization_enabled: bool = False
     embedding_visualization_spotlight_enabled: bool = False
@@ -516,11 +516,11 @@ class PipelineSettings:
         )
         self.embedding_input_text_field = self._resolve_string_setting(
             current_value=self.embedding_input_text_field,
-            default_value="text_for_embedding",
+            default_value="text",
             configured_value=_get_nested_value(
                 embedding_settings,
                 ["input_text_field"],
-                "text_for_embedding",
+                "text",
             ),
         )
         self.embedding_batch_size = self._resolve_int_setting(
