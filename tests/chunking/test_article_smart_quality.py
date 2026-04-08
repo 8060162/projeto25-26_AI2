@@ -77,8 +77,8 @@ class ArticleSmartQualityRegressionTests(unittest.TestCase):
             chunks[0].text,
             "O regulamento aplica-se a todos os cursos.",
         )
-        self.assertNotIn("DIÁRIO", chunks[0].text_for_embedding.upper())
-        self.assertNotIn("REPÚBLICA", chunks[0].text_for_embedding.upper())
+        self.assertNotIn("DIÁRIO", chunks[0].meta_text.upper())
+        self.assertNotIn("REPÚBLICA", chunks[0].meta_text.upper())
 
     def test_broken_hyphenation_is_repaired_before_chunk_export(self) -> None:
         """Ensure broken same-line hyphenation is fixed in final chunk text."""
@@ -100,8 +100,8 @@ class ArticleSmartQualityRegressionTests(unittest.TestCase):
         self.assertNotIn("apli- cáveis", chunks[0].text)
         self.assertNotIn("inscrever -se", chunks[0].text)
 
-    def test_embedding_text_does_not_keep_artificial_title_separators(self) -> None:
-        """Ensure embedding headers normalize titles polluted with pipe separators."""
+    def test_meta_text_does_not_keep_artificial_title_separators(self) -> None:
+        """Ensure meta-text headers normalize titles polluted with pipe separators."""
         article = StructuralNode(
             node_type="ARTICLE",
             label="ART_5",
@@ -125,8 +125,8 @@ class ArticleSmartQualityRegressionTests(unittest.TestCase):
         chunks = strategy.build_chunks(build_document_metadata(), root)
 
         self.assertEqual(len(chunks), 1)
-        self.assertIn("Artigo 5 - Âmbito Aplicação", chunks[0].text_for_embedding)
-        self.assertNotIn(" | ", chunks[0].text_for_embedding)
+        self.assertIn("Artigo 5 - Âmbito Aplicação", chunks[0].meta_text)
+        self.assertNotIn(" | ", chunks[0].meta_text)
 
     def test_long_enumerated_article_splits_into_multiple_chunks(self) -> None:
         """Ensure long enumerated article content no longer stays monolithic."""
@@ -534,7 +534,7 @@ class ArticleSmartQualityRegressionTests(unittest.TestCase):
         self.assertTrue(
             all(
                 "Escola Superior de Tecnologia e Gestao"
-                not in chunk.text_for_embedding
+                not in chunk.meta_text
                 for chunk in chunks
             )
         )
@@ -633,8 +633,8 @@ class ArticleSmartQualityRegressionTests(unittest.TestCase):
         self.assertEqual(len(chunks), 2)
         self.assertEqual(chunks[0].text, "Considerando a necessidade de fixar regras comuns.")
         self.assertEqual(chunks[0].source_node_type, "PREAMBLE")
-        self.assertNotIn("CAPITULO I", chunks[0].text_for_embedding)
-        self.assertNotIn("1|14", chunks[0].text_for_embedding)
+        self.assertNotIn("CAPITULO I", chunks[0].meta_text)
+        self.assertNotIn("1|14", chunks[0].meta_text)
         self.assertEqual(chunks[1].text, "O presente regulamento define o objeto.")
 
     def test_default_settings_split_long_preamble_within_1024_chars(self) -> None:
