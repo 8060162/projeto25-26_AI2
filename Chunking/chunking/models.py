@@ -344,9 +344,9 @@ class Chunk:
     - text:
         Clean chunk text intended for inspection and normal downstream usage
 
-    - text_for_embedding:
-        Optional enriched text intended specifically for embedding generation
-        or retrieval-specific workflows
+    - meta_text:
+        Optional structure-enriched text kept only for inspection or
+        retrieval-specific debugging workflows
 
     Structural traceability fields
     ------------------------------
@@ -380,7 +380,7 @@ class Chunk:
     page_start: Optional[int]
     page_end: Optional[int]
 
-    text_for_embedding: str = ""
+    meta_text: str = ""
 
     source_node_type: str = ""
     source_node_label: str = ""
@@ -400,12 +400,8 @@ class Chunk:
 
         Current consistency rules
         -------------------------
-        - If text_for_embedding is empty, default it to visible text
         - If char_count is zero but text exists, derive it from visible text
         """
-        if not self.text_for_embedding and self.text:
-            self.text_for_embedding = self.text
-
         if self.char_count == 0 and self.text:
             self.char_count = len(self.text)
 
