@@ -201,7 +201,7 @@ class JsonExporter:
             "doc_id": chunk.doc_id,
             "strategy": chunk.strategy,
             "text": chunk.text,
-            "text_for_embedding": getattr(chunk, "text_for_embedding", ""),
+            "meta_text": getattr(chunk, "meta_text", ""),
             "page_start": chunk.page_start,
             "page_end": chunk.page_end,
             "source_node_type": getattr(chunk, "source_node_type", ""),
