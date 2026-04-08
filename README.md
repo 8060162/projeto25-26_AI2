@@ -33,7 +33,7 @@ Current example:
     "model": "text-embedding-3-large",
     "input_root": "data/chunks",
     "output_root": "data/embeddings",
-    "input_text_field": "text_for_embedding",
+    "input_text_field": "text",
     "batch_size": 100,
     "visualization": {
       "enabled": false,
@@ -119,7 +119,8 @@ Chunking outputs:
 
 Embedding outputs:
 
-- run artifacts under `data/embeddings/<strategy>/<run_id>/`
+- the latest run artifacts under `data/embeddings/<strategy>/<run_id>/`
+- each new embedding execution removes the previous persisted run for that strategy before writing the new one
 
 Typical embedding artifacts:
 
