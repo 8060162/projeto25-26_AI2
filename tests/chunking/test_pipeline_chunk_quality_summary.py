@@ -95,7 +95,7 @@ class PipelineChunkQualitySummaryTests(unittest.TestCase):
                 doc_id="doc_clean",
                 strategy="article_smart",
                 text="O presente regulamento aplica-se a todos os cursos.",
-                text_for_embedding="O presente regulamento aplica-se a todos os cursos.",
+                meta_text="O presente regulamento aplica-se a todos os cursos.",
                 page_start=1,
                 page_end=1,
                 source_node_type="ARTICLE",
@@ -149,7 +149,7 @@ class PipelineChunkQualitySummaryTests(unittest.TestCase):
                 doc_id="doc_bad",
                 strategy="article_smart",
                 text="Disposições finais\n(1) Acessível em https://domus.ipp.pt/",
-                text_for_embedding=(
+                meta_text=(
                     "Disposições finais\n(1) Acessível em https://domus.ipp.pt/"
                 ),
                 page_start=1,
@@ -224,7 +224,7 @@ class PipelineChunkQualitySummaryTests(unittest.TestCase):
                     "Disposicoes finais do regulamento aplicavel.\n"
                     "https://domus.ipp.pt/"
                 ),
-                text_for_embedding=(
+                meta_text=(
                     "Preamble\n\nDisposicoes finais do regulamento aplicavel.\n"
                     "https://domus.ipp.pt/"
                 ),
@@ -271,7 +271,7 @@ class PipelineChunkQualitySummaryTests(unittest.TestCase):
                 doc_id="doc_hybrid_reject",
                 strategy="article_smart",
                 text="- sem contexto autonomo",
-                text_for_embedding="- sem contexto autonomo",
+                meta_text="- sem contexto autonomo",
                 page_start=2,
                 page_end=2,
                 source_node_type="ARTICLE",
@@ -384,7 +384,7 @@ class PipelineChunkQualitySummaryTests(unittest.TestCase):
                     "Artigo 1.o Objeto\n"
                     "O presente regulamento define as regras aplicaveis aos cursos."
                 ),
-                text_for_embedding=(
+                meta_text=(
                     "Artigo 1.o Objeto\n"
                     "O presente regulamento define as regras aplicaveis aos cursos."
                 ),
@@ -489,7 +489,7 @@ class PipelineChunkQualitySummaryTests(unittest.TestCase):
                 doc_id="doc_hybrid_scope",
                 strategy="article_smart",
                 text="Artigo 1.o Objeto\nTexto regulamentar estavel.",
-                text_for_embedding="Artigo 1.o Objeto\nTexto regulamentar estavel.",
+                meta_text="Artigo 1.o Objeto\nTexto regulamentar estavel.",
                 page_start=1,
                 page_end=3,
                 source_node_type="ARTICLE",
