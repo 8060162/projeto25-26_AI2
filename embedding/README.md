@@ -51,7 +51,7 @@ Current example:
     "model": "text-embedding-3-large",
     "input_root": "data/chunks",
     "output_root": "data/embeddings",
-    "input_text_field": "text_for_embedding",
+    "input_text_field": "text",
     "batch_size": 100,
     "visualization": {
       "enabled": false,
@@ -119,6 +119,10 @@ Embedding outputs are written under:
 ```text
 data/embeddings/<strategy>/<run_id>/
 ```
+
+Each new embedding execution replaces the previously persisted run for the
+same strategy. The timestamped `run_id` still identifies the current run, but
+older run folders for that strategy are removed before new artifacts are saved.
 
 Artifacts created by the storage layer:
 
