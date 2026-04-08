@@ -104,9 +104,8 @@ class ChunkQualityValidator:
     ------------------------
     The validator detects at least:
     - editorial noise still present in visible chunk text
-    - structural pollution in `text_for_embedding`
     - oversized chunks
-    - broken hyphenation patterns still visible in output
+    - broken hyphenation patterns still visible in output text
     - missing minimum traceability fields
     """
 
@@ -140,10 +139,6 @@ class ChunkQualityValidator:
         editorial_issue = self._validate_editorial_noise_in_text(chunk)
         if editorial_issue is not None:
             issues.append(editorial_issue)
-
-        embedding_issue = self._validate_structural_pollution_in_embedding(chunk)
-        if embedding_issue is not None:
-            issues.append(embedding_issue)
 
         oversized_issue = self._validate_chunk_size(chunk)
         if oversized_issue is not None:
@@ -288,54 +283,6 @@ class ChunkQualityValidator:
             "evidence": matched_lines[:3],
         }
 
-    def _validate_structural_pollution_in_embedding(
-        self,
-        chunk: Chunk,
-    ) -> Optional[Dict[str, Any]]:
-        """
-        Detect structural pollution inside `text_for_embedding`.
-
-        Parameters
-        ----------
-        chunk : Chunk
-            Chunk under validation.
-
-        Returns
-        -------
-        Optional[Dict[str, Any]]
-            Issue payload when embedding text carries avoidable pollution.
-        """
-        embedding_text = getattr(chunk, "text_for_embedding", "") or ""
-        if not embedding_text.strip():
-            return None
-
-        evidence: List[str] = []
-
-        if " | " in embedding_text:
-            evidence.append("contains artificial title separator ' | '")
-
-        if ARTIFICIAL_STRUCTURE_TOKEN_RE.search(embedding_text):
-            evidence.append("contains artificial structural token")
-
-        for raw_line in embedding_text.splitlines():
-            line = raw_line.strip()
-            if not line:
-                continue
-
-            if self._looks_like_editorial_line(line):
-                evidence.append(f"editorial line: {line}")
-                break
-
-        if not evidence:
-            return None
-
-        return {
-            "code": "structural_pollution_in_embedding",
-            "severity": "error",
-            "message": "Embedding text still contains structural or editorial pollution.",
-            "evidence": evidence[:3],
-        }
-
     def _validate_chunk_size(self, chunk: Chunk) -> Optional[Dict[str, Any]]:
         """
         Detect chunks that exceed the configured hard size limit.
@@ -385,7 +332,7 @@ class ChunkQualityValidator:
         """
         evidence: List[str] = []
 
-        for text_field in (chunk.text, getattr(chunk, "text_for_embedding", "")):
+        for text_field in (chunk.text,):
             if not text_field:
                 continue
 
