@@ -89,7 +89,7 @@ class DocxInspectionExporter:
         - explicit structural fields
         - metadata
         - visible chunk text
-        - optional embedding text when different from visible text
+        - optional meta text when different from visible text
 
         Parameters
         ----------
@@ -240,10 +240,10 @@ class DocxInspectionExporter:
         document.add_paragraph("Visible text:")
         document.add_paragraph(sanitize_for_docx(chunk.text or ""))
 
-        embedding_text = getattr(chunk, "text_for_embedding", "") or ""
-        if embedding_text and embedding_text != (chunk.text or ""):
-            document.add_paragraph("Embedding text:")
-            document.add_paragraph(sanitize_for_docx(embedding_text))
+        meta_text = getattr(chunk, "meta_text", "") or ""
+        if meta_text and meta_text != (chunk.text or ""):
+            document.add_paragraph("Meta text:")
+            document.add_paragraph(sanitize_for_docx(meta_text))
 
     def _add_key_value_paragraph(
         self,
