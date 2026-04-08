@@ -1388,7 +1388,7 @@ class StructureParser:
         ----------------------
         Structural titles may legitimately span multiple physical lines in the
         PDF, but those line breaks should not become synthetic markers such as
-        " | " in parser output or downstream embedding text.
+        " | " in parser output or downstream auxiliary text.
 
         Parameters
         ----------
