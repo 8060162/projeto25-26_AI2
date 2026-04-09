@@ -3,11 +3,16 @@ from __future__ import annotations
 import argparse
 import importlib
 import json
+import os
+import sqlite3
 import sys
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
 from typing import Any, Optional, Sequence
+
+import pandas as pd
 
 from Chunking.config.settings import PipelineSettings
 
@@ -266,6 +271,12 @@ def _load_spotlight_module() -> ModuleType:
     for module_name in candidate_module_names:
         try:
             return importlib.import_module(module_name)
+        except sqlite3.OperationalError as exc:
+            if not _is_cache_database_error(exc):
+                raise
+            _configure_fallback_spotlight_cache()
+            _clear_spotlight_modules()
+            return importlib.import_module(module_name)
         except ModuleNotFoundError:
             continue
 
@@ -273,6 +284,49 @@ def _load_spotlight_module() -> ModuleType:
         "Renumics Spotlight is not installed. Install the Spotlight package "
         "before launching the embedding viewer."
     )
+
+
+def _is_cache_database_error(error: sqlite3.OperationalError) -> bool:
+    """
+    Check whether Spotlight import failed because its cache database is unavailable.
+
+    Parameters
+    ----------
+    error : sqlite3.OperationalError
+        Import-time sqlite error raised by Spotlight.
+
+    Returns
+    -------
+    bool
+        `True` when the failure matches the cache initialization issue.
+    """
+
+    return "unable to open database file" in str(error).lower()
+
+
+def _configure_fallback_spotlight_cache() -> None:
+    """
+    Point Spotlight cache files to one writable temporary directory.
+    """
+
+    cache_home = Path(tempfile.gettempdir()) / "projeto25-26_AI2" / "spotlight-cache"
+    cache_home.mkdir(parents=True, exist_ok=True)
+    os.environ["XDG_CACHE_HOME"] = str(cache_home)
+
+
+def _clear_spotlight_modules() -> None:
+    """
+    Remove partially imported Spotlight modules before one retry.
+    """
+
+    spotlight_module_names = [
+        module_name
+        for module_name in sys.modules
+        if module_name == "spotlight" or module_name.startswith("renumics.spotlight")
+    ]
+
+    for module_name in spotlight_module_names:
+        sys.modules.pop(module_name, None)
 
 
 def _open_dataset_in_spotlight(
@@ -297,7 +351,7 @@ def _open_dataset_in_spotlight(
             "The installed Spotlight module does not expose a callable 'show' API."
         )
 
-    dataset_argument = str(dataset_path)
+    dataset_argument = _load_dataset_frame(dataset_path)
     call_patterns = (
         ((dataset_argument,), {}),
         ((), {"data": dataset_argument}),
@@ -322,6 +376,29 @@ def _open_dataset_in_spotlight(
         "Unable to launch Spotlight because the installed 'show' API does not "
         "match the supported call patterns."
     ) from last_error
+
+
+def _load_dataset_frame(dataset_path: Path) -> pd.DataFrame:
+    """
+    Load one Spotlight JSONL export into a pandas dataframe.
+
+    Parameters
+    ----------
+    dataset_path : Path
+        Dataset export path to load.
+
+    Returns
+    -------
+    pd.DataFrame
+        Dataframe ready to be passed to `spotlight.show`.
+    """
+
+    try:
+        return pd.read_json(dataset_path, lines=True)
+    except ValueError as exc:
+        raise RuntimeError(
+            f"Spotlight dataset '{dataset_path}' could not be loaded as JSONL."
+        ) from exc
 
 
 def _build_argument_parser() -> argparse.ArgumentParser:
