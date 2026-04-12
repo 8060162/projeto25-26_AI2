@@ -427,14 +427,22 @@ class PipelineSettings:
     # ---------------------------------------------------------------------
     chunking_strategy: str = "article_smart"
     embedding_enabled: bool = False
-    embedding_provider: str = "openai"
-    embedding_model: str = "text-embedding-3-large"
+    embedding_provider: str = "sentence_transformers"
+    embedding_model: str = "all-MiniLM-L6-v2"
     embedding_input_root: Path = PROJECT_ROOT / "data" / "chunks"
     embedding_output_root: Path = PROJECT_ROOT / "data" / "embeddings"
     embedding_input_text_field: str = "text"
     embedding_batch_size: int = 100
     embedding_visualization_enabled: bool = False
     embedding_visualization_spotlight_enabled: bool = False
+    chromadb_mode: str = "cloud"
+    chromadb_persist_directory: Path = PROJECT_ROOT / "data" / "chromadb"
+    chromadb_collection_name: str = "rag_embeddings"
+    chromadb_cloud_tenant: str = ""
+    chromadb_cloud_database: str = ""
+    chromadb_cloud_host: str = "api.trychroma.com"
+    chromadb_cloud_port: int = 443
+    chromadb_cloud_api_key_env_var: str = "CHROMA_API_KEY"
 
     def __post_init__(self) -> None:
         """
@@ -449,6 +457,12 @@ class PipelineSettings:
         chunking_settings = _get_nested_value(appsettings, ["chunking"], {})
         extraction_settings = _get_nested_value(appsettings, ["extraction"], {})
         embedding_settings = _get_nested_value(appsettings, ["embedding"], {})
+        chromadb_settings = _get_nested_value(embedding_settings, ["chromadb"], {})
+        chromadb_cloud_settings = _get_nested_value(
+            chromadb_settings,
+            ["cloud"],
+            {},
+        )
         chunking_validation_settings = _get_nested_value(
             chunking_settings,
             ["validation"],
@@ -480,20 +494,20 @@ class PipelineSettings:
         )
         self.embedding_provider = self._resolve_string_setting(
             current_value=self.embedding_provider,
-            default_value="openai",
+            default_value="sentence_transformers",
             configured_value=_get_nested_value(
                 embedding_settings,
                 ["provider"],
-                "openai",
+                "sentence_transformers",
             ),
         )
         self.embedding_model = self._resolve_string_setting(
             current_value=self.embedding_model,
-            default_value="text-embedding-3-large",
+            default_value="all-MiniLM-L6-v2",
             configured_value=_get_nested_value(
                 embedding_settings,
                 ["model"],
-                "text-embedding-3-large",
+                "all-MiniLM-L6-v2",
             ),
         )
         self.embedding_input_root = self._resolve_path_setting(
@@ -548,6 +562,78 @@ class PipelineSettings:
                 visualization_settings,
                 ["spotlight_enabled"],
                 False,
+            ),
+        )
+        self.chromadb_mode = self._resolve_string_setting(
+            current_value=self.chromadb_mode,
+            default_value="cloud",
+            configured_value=_get_nested_value(
+                chromadb_settings,
+                ["mode"],
+                "cloud",
+            ),
+        )
+        self.chromadb_persist_directory = self._resolve_path_setting(
+            current_value=self.chromadb_persist_directory,
+            default_value=PROJECT_ROOT / "data" / "chromadb",
+            configured_value=_get_nested_value(
+                chromadb_settings,
+                ["persist_directory"],
+                "data/chromadb",
+            ),
+        )
+        self.chromadb_collection_name = self._resolve_string_setting(
+            current_value=self.chromadb_collection_name,
+            default_value="rag_embeddings",
+            configured_value=_get_nested_value(
+                chromadb_settings,
+                ["collection_name"],
+                "rag_embeddings",
+            ),
+        )
+        self.chromadb_cloud_tenant = self._resolve_string_setting(
+            current_value=self.chromadb_cloud_tenant,
+            default_value="",
+            configured_value=_get_nested_value(
+                chromadb_cloud_settings,
+                ["tenant"],
+                "",
+            ),
+        )
+        self.chromadb_cloud_database = self._resolve_string_setting(
+            current_value=self.chromadb_cloud_database,
+            default_value="",
+            configured_value=_get_nested_value(
+                chromadb_cloud_settings,
+                ["database"],
+                "",
+            ),
+        )
+        self.chromadb_cloud_host = self._resolve_string_setting(
+            current_value=self.chromadb_cloud_host,
+            default_value="api.trychroma.com",
+            configured_value=_get_nested_value(
+                chromadb_cloud_settings,
+                ["host"],
+                "api.trychroma.com",
+            ),
+        )
+        self.chromadb_cloud_port = self._resolve_int_setting(
+            current_value=self.chromadb_cloud_port,
+            default_value=443,
+            configured_value=_get_nested_value(
+                chromadb_cloud_settings,
+                ["port"],
+                443,
+            ),
+        )
+        self.chromadb_cloud_api_key_env_var = self._resolve_string_setting(
+            current_value=self.chromadb_cloud_api_key_env_var,
+            default_value="CHROMA_API_KEY",
+            configured_value=_get_nested_value(
+                chromadb_cloud_settings,
+                ["api_key_env_var"],
+                "CHROMA_API_KEY",
             ),
         )
         self.enable_ocr_fallback = self._resolve_bool_setting(
