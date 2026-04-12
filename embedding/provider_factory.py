@@ -4,6 +4,9 @@ from typing import Callable, Dict, List, Optional, Protocol, Sequence
 
 from Chunking.config.settings import PipelineSettings
 from embedding.providers.openai_provider import OpenAIEmbeddingProvider
+from embedding.providers.sentence_transformers_provider import (
+    SentenceTransformersEmbeddingProvider,
+)
 
 
 class EmbeddingProvider(Protocol):
@@ -77,6 +80,7 @@ def _get_provider_builders() -> Dict[str, ProviderBuilder]:
 
     return {
         "openai": _build_openai_embedding_provider,
+        "sentence_transformers": _build_sentence_transformers_embedding_provider,
     }
 
 
@@ -124,3 +128,26 @@ def _build_openai_embedding_provider(
         batch_size=settings.embedding_batch_size,
     )
 
+
+def _build_sentence_transformers_embedding_provider(
+    settings: PipelineSettings,
+) -> SentenceTransformersEmbeddingProvider:
+    """
+    Build the Sentence Transformers embedding provider from shared runtime settings.
+
+    Parameters
+    ----------
+    settings : PipelineSettings
+        Shared runtime settings.
+
+    Returns
+    -------
+    SentenceTransformersEmbeddingProvider
+        Sentence Transformers provider configured with the selected model and
+        batch size.
+    """
+
+    return SentenceTransformersEmbeddingProvider(
+        model=settings.embedding_model,
+        batch_size=settings.embedding_batch_size,
+    )
