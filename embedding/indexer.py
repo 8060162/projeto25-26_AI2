@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from hashlib import sha256
 from typing import Dict, List, Optional, Sequence
 
 from Chunking.config.settings import PipelineSettings
@@ -12,7 +13,7 @@ from embedding.models import (
     EmbeddingVectorRecord,
 )
 from embedding.provider_factory import EmbeddingProvider, create_embedding_provider
-from embedding.storage import EmbeddingStorageResult, LocalEmbeddingStorage
+from embedding.storage import ChromaEmbeddingStorage, EmbeddingStorageResult
 from embedding.text_builder import build_embedding_text
 from embedding.visualization.spotlight_export import export_spotlight_dataset
 
@@ -88,7 +89,7 @@ def run_embedding_indexer(
         settings=resolved_settings,
     )
 
-    storage = LocalEmbeddingStorage(resolved_settings)
+    storage = ChromaEmbeddingStorage(resolved_settings)
     storage_result = storage.save_run(
         embedding_records=embedding_vector_records,
         manifest=run_manifest,
@@ -189,6 +190,7 @@ def _generate_embedding_vector_records(
             )
 
         for input_record, vector in zip(record_batch, batch_vectors):
+            strategy_name = _resolve_input_record_strategy_name(input_record)
             embedding_vector_records.append(
                 EmbeddingVectorRecord(
                     chunk_id=input_record.chunk_id,
@@ -199,6 +201,16 @@ def _generate_embedding_vector_records(
                     provider=settings.embedding_provider,
                     source_file=input_record.source_file,
                     text=input_record.text,
+                    record_id=_build_record_id(
+                        strategy_name=strategy_name,
+                        input_record=input_record,
+                    ),
+                    storage_record_id=_build_storage_record_id(
+                        strategy_name=strategy_name,
+                        input_record=input_record,
+                    ),
+                    storage_backend="chromadb",
+                    storage_collection=settings.chromadb_collection_name,
                 )
             )
 
@@ -255,6 +267,88 @@ def _build_vector_metadata(input_record: EmbeddingInputRecord) -> Dict[str, obje
     vector_metadata["page_start"] = input_record.page_start
     vector_metadata["page_end"] = input_record.page_end
     return vector_metadata
+
+
+def _resolve_input_record_strategy_name(input_record: EmbeddingInputRecord) -> str:
+    """
+    Resolve the normalized strategy name stored on one prepared input record.
+
+    Parameters
+    ----------
+    input_record : EmbeddingInputRecord
+        Prepared input record being converted into a vector record.
+
+    Returns
+    -------
+    str
+        Non-empty normalized strategy name.
+    """
+
+    strategy_name = str(input_record.metadata.get("strategy", "")).strip().lower()
+    if not strategy_name:
+        raise ValueError(
+            "Prepared embedding input record does not define a valid strategy."
+        )
+
+    return strategy_name
+
+
+def _build_record_id(
+    strategy_name: str,
+    input_record: EmbeddingInputRecord,
+) -> str:
+    """
+    Build a stable logical record identifier for one embedding output record.
+
+    Parameters
+    ----------
+    strategy_name : str
+        Active strategy associated with the prepared input record.
+
+    input_record : EmbeddingInputRecord
+        Prepared input record being converted into a vector record.
+
+    Returns
+    -------
+    str
+        Stable logical identifier preserved on the embedding record.
+    """
+
+    return "::".join(
+        (
+            strategy_name,
+            input_record.doc_id.strip(),
+            input_record.record_id.strip() or input_record.chunk_id.strip(),
+        )
+    )
+
+
+def _build_storage_record_id(
+    strategy_name: str,
+    input_record: EmbeddingInputRecord,
+) -> str:
+    """
+    Build a stable ChromaDB upsert identifier for one embedding output record.
+
+    Parameters
+    ----------
+    strategy_name : str
+        Active strategy associated with the prepared input record.
+
+    input_record : EmbeddingInputRecord
+        Prepared input record being converted into a vector record.
+
+    Returns
+    -------
+    str
+        Deterministic identifier suitable for repeated ChromaDB upserts.
+    """
+
+    logical_record_id = _build_record_id(
+        strategy_name=strategy_name,
+        input_record=input_record,
+    )
+    return f"emb_{sha256(logical_record_id.encode('utf-8')).hexdigest()[:32]}"
 
 
 def _build_run_manifest(
