@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional, Sequence
 
 from Chunking.config.settings import PipelineSettings
 from embedding.models import EmbeddingRunManifest, EmbeddingVectorRecord
+from retrieval.models import RetrievedChunkResult
 
 
 @dataclass(slots=True)
@@ -81,6 +82,7 @@ class ChromaEmbeddingStorage:
         """
 
         resolved_settings = settings or PipelineSettings()
+        self.settings = resolved_settings
         self.output_root = resolved_settings.embedding_output_root
         self.chromadb_mode = resolved_settings.chromadb_mode
         self.chromadb_persist_directory = resolved_settings.chromadb_persist_directory
@@ -260,6 +262,44 @@ class ChromaEmbeddingStorage:
         )
         return manifest_path
 
+    def query_similar_chunks(
+        self,
+        query_vector: Sequence[float],
+        top_k: Optional[int] = None,
+        where: Optional[Dict[str, Any]] = None,
+    ) -> List[RetrievedChunkResult]:
+        """
+        Query ChromaDB for the closest stored chunks to one query vector.
+
+        Parameters
+        ----------
+        query_vector : Sequence[float]
+            Query embedding generated with the configured embedding provider.
+
+        top_k : Optional[int]
+            Maximum number of nearest chunks to return. When omitted, the
+            shared retrieval default is used.
+
+        where : Optional[Dict[str, Any]]
+            Optional ChromaDB metadata filter applied by the storage layer.
+
+        Returns
+        -------
+        List[RetrievedChunkResult]
+            Ordered normalized retrieval results returned from ChromaDB.
+        """
+
+        normalized_vector = self._normalize_query_vector(query_vector)
+        normalized_top_k = self._resolve_query_top_k(top_k)
+        collection = self._get_collection()
+        query_response = collection.query(
+            query_embeddings=[normalized_vector],
+            n_results=normalized_top_k,
+            where=self._normalize_query_filter(where),
+            include=["documents", "metadatas", "distances"],
+        )
+        return self._normalize_query_results(query_response)
+
     def _get_collection(self) -> Any:
         """
         Build the ChromaDB collection used by the embedding storage layer.
@@ -272,6 +312,371 @@ class ChromaEmbeddingStorage:
 
         client = self._build_chromadb_client()
         return client.get_or_create_collection(name=self.chromadb_collection_name)
+
+    def _normalize_query_vector(
+        self,
+        query_vector: Sequence[float],
+    ) -> List[float]:
+        """
+        Normalize one query vector into the ChromaDB request format.
+
+        Parameters
+        ----------
+        query_vector : Sequence[float]
+            Raw embedding vector to normalize.
+
+        Returns
+        -------
+        List[float]
+            Numeric query vector compatible with the ChromaDB client.
+        """
+
+        normalized_vector = [float(value) for value in query_vector]
+        if not normalized_vector:
+            raise ValueError("Query vector cannot be empty.")
+        return normalized_vector
+
+    def _resolve_query_top_k(self, top_k: Optional[int]) -> int:
+        """
+        Resolve the effective top-k value for one storage query.
+
+        Parameters
+        ----------
+        top_k : Optional[int]
+            Explicit top-k override supplied by the caller.
+
+        Returns
+        -------
+        int
+            Positive top-k value used by the ChromaDB query.
+        """
+
+        resolved_top_k = top_k
+        if resolved_top_k is None:
+            resolved_top_k = self.settings.retrieval_top_k
+
+        normalized_top_k = int(resolved_top_k)
+        if normalized_top_k <= 0:
+            raise ValueError("Query top_k must be greater than zero.")
+        return normalized_top_k
+
+    def _normalize_query_filter(
+        self,
+        where: Optional[Dict[str, Any]],
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Normalize one optional ChromaDB metadata filter.
+
+        Parameters
+        ----------
+        where : Optional[Dict[str, Any]]
+            Raw metadata filter supplied by the caller.
+
+        Returns
+        -------
+        Optional[Dict[str, Any]]
+            Detached filter mapping, or `None` when no filter is provided.
+        """
+
+        if where is None:
+            return None
+        return dict(where)
+
+    def _normalize_query_results(
+        self,
+        query_response: Dict[str, Any],
+    ) -> List[RetrievedChunkResult]:
+        """
+        Normalize one ChromaDB query response into retrieval result models.
+
+        Parameters
+        ----------
+        query_response : Dict[str, Any]
+            Raw response returned by `collection.query(...)`.
+
+        Returns
+        -------
+        List[RetrievedChunkResult]
+            Ordered normalized retrieval results for the first query vector.
+        """
+
+        query_ids = self._extract_query_response_list(query_response, "ids")
+        query_documents = self._extract_query_response_list(query_response, "documents")
+        query_metadatas = self._extract_query_response_list(query_response, "metadatas")
+        query_distances = self._extract_query_response_list(query_response, "distances")
+
+        result_count = max(
+            len(query_ids),
+            len(query_documents),
+            len(query_metadatas),
+            len(query_distances),
+        )
+        normalized_results: List[RetrievedChunkResult] = []
+
+        for result_index in range(result_count):
+            normalized_results.append(
+                self._build_retrieved_chunk_result(
+                    raw_id=self._read_query_response_item(query_ids, result_index),
+                    raw_document=self._read_query_response_item(
+                        query_documents,
+                        result_index,
+                    ),
+                    raw_metadata=self._read_query_response_item(
+                        query_metadatas,
+                        result_index,
+                    ),
+                    raw_distance=self._read_query_response_item(
+                        query_distances,
+                        result_index,
+                    ),
+                    rank=result_index + 1,
+                )
+            )
+
+        return normalized_results
+
+    def _extract_query_response_list(
+        self,
+        query_response: Dict[str, Any],
+        field_name: str,
+    ) -> List[Any]:
+        """
+        Extract the first query-result list from one ChromaDB response field.
+
+        Parameters
+        ----------
+        query_response : Dict[str, Any]
+            Raw response returned by the ChromaDB collection.
+
+        field_name : str
+            Name of the response field to extract.
+
+        Returns
+        -------
+        List[Any]
+            Flat list for the first query vector, or an empty list when absent.
+        """
+
+        raw_value = query_response.get(field_name)
+        if not isinstance(raw_value, list) or not raw_value:
+            return []
+
+        first_result_set = raw_value[0]
+        if not isinstance(first_result_set, list):
+            return []
+
+        return list(first_result_set)
+
+    def _read_query_response_item(
+        self,
+        values: Sequence[Any],
+        index: int,
+    ) -> Any:
+        """
+        Read one indexed value from a query response list safely.
+
+        Parameters
+        ----------
+        values : Sequence[Any]
+            Query-response field values for one query vector.
+
+        index : int
+            Result index to read.
+
+        Returns
+        -------
+        Any
+            Indexed value when present, otherwise `None`.
+        """
+
+        if index < len(values):
+            return values[index]
+        return None
+
+    def _build_retrieved_chunk_result(
+        self,
+        raw_id: Any,
+        raw_document: Any,
+        raw_metadata: Any,
+        raw_distance: Any,
+        rank: int,
+    ) -> RetrievedChunkResult:
+        """
+        Build one normalized retrieval result from raw ChromaDB query fields.
+
+        Parameters
+        ----------
+        raw_id : Any
+            Raw record identifier returned by ChromaDB.
+
+        raw_document : Any
+            Raw stored document text returned by ChromaDB.
+
+        raw_metadata : Any
+            Raw flat metadata mapping returned by ChromaDB.
+
+        raw_distance : Any
+            Raw distance value returned by ChromaDB.
+
+        rank : int
+            One-based ranking position in the current query result set.
+
+        Returns
+        -------
+        RetrievedChunkResult
+            Normalized retrieval contract used by the retrieval layer.
+        """
+
+        metadata_payload = dict(raw_metadata) if isinstance(raw_metadata, dict) else {}
+        metadata_scope = self._restore_scoped_metadata(
+            prefix="metadata",
+            payload=metadata_payload,
+        )
+        chunk_metadata_scope = self._restore_scoped_metadata(
+            prefix="chunk",
+            payload=metadata_payload,
+        )
+        document_metadata_scope = self._restore_scoped_metadata(
+            prefix="document",
+            payload=metadata_payload,
+        )
+
+        chunk_id = self._normalize_result_string(metadata_payload.get("chunk_id"))
+        record_id = self._normalize_result_string(metadata_payload.get("record_id"))
+        doc_id = self._normalize_result_string(metadata_payload.get("doc_id"))
+        source_file = self._normalize_result_string(metadata_payload.get("source_file"))
+        raw_result_id = self._normalize_result_string(raw_id)
+
+        normalized_chunk_id = chunk_id or record_id or raw_result_id
+        normalized_record_id = raw_result_id or record_id or normalized_chunk_id
+
+        return RetrievedChunkResult(
+            chunk_id=normalized_chunk_id,
+            doc_id=doc_id,
+            text=self._normalize_result_string(raw_document),
+            record_id=normalized_record_id,
+            rank=rank,
+            distance=self._normalize_optional_float(raw_distance),
+            source_file=source_file,
+            metadata=metadata_scope,
+            chunk_metadata=chunk_metadata_scope,
+            document_metadata=document_metadata_scope,
+        )
+
+    def _restore_scoped_metadata(
+        self,
+        prefix: str,
+        payload: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """
+        Rebuild one logical metadata scope from flat stored ChromaDB fields.
+
+        Parameters
+        ----------
+        prefix : str
+            Scope prefix used during metadata persistence.
+
+        payload : Dict[str, Any]
+            Flat ChromaDB metadata payload.
+
+        Returns
+        -------
+        Dict[str, Any]
+            Detached metadata mapping for the requested logical scope.
+        """
+
+        scoped_metadata: Dict[str, Any] = {}
+        scoped_prefix = f"{prefix}_"
+        extras_key = f"{prefix}_extras"
+
+        for key, value in payload.items():
+            if key == extras_key:
+                scoped_metadata.update(self._parse_metadata_extras(value))
+                continue
+
+            if not isinstance(key, str) or not key.startswith(scoped_prefix):
+                continue
+
+            scoped_key = key[len(scoped_prefix) :]
+            if scoped_key and scoped_key not in {"extras", "id"}:
+                scoped_metadata[scoped_key] = value
+
+        return scoped_metadata
+
+    def _parse_metadata_extras(self, value: Any) -> Dict[str, Any]:
+        """
+        Parse one serialized metadata extras payload safely.
+
+        Parameters
+        ----------
+        value : Any
+            Raw extras field returned by ChromaDB.
+
+        Returns
+        -------
+        Dict[str, Any]
+            Decoded extras mapping, or an empty dictionary when invalid.
+        """
+
+        if isinstance(value, dict):
+            return dict(value)
+
+        if not isinstance(value, str) or not value.strip():
+            return {}
+
+        try:
+            parsed_value = json.loads(value)
+        except json.JSONDecodeError:
+            return {}
+
+        if isinstance(parsed_value, dict):
+            return parsed_value
+        return {}
+
+    def _normalize_result_string(self, value: Any) -> str:
+        """
+        Normalize one optional query-result field into a stripped string.
+
+        Parameters
+        ----------
+        value : Any
+            Raw query-result field.
+
+        Returns
+        -------
+        str
+            Stripped string when available, otherwise an empty string.
+        """
+
+        if isinstance(value, str):
+            return value.strip()
+        return ""
+
+    def _normalize_optional_float(self, value: Any) -> Optional[float]:
+        """
+        Normalize one optional numeric query-result field into a float.
+
+        Parameters
+        ----------
+        value : Any
+            Raw query-result field.
+
+        Returns
+        -------
+        Optional[float]
+            Float value when conversion is safe, otherwise `None`.
+        """
+
+        if value is None or isinstance(value, bool):
+            return None
+
+        if isinstance(value, (int, float)):
+            return float(value)
+
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
 
     def _build_chromadb_client(self) -> Any:
         """
