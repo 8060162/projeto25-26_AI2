@@ -444,6 +444,47 @@ class PipelineSettings:
     chromadb_cloud_port: int = 443
     chromadb_cloud_api_key_env_var: str = "CHROMA_API_KEY"
 
+    # ---------------------------------------------------------------------
+    # Retrieval runtime configuration
+    # ---------------------------------------------------------------------
+    retrieval_enabled: bool = True
+    retrieval_top_k: int = 8
+    retrieval_score_filtering_enabled: bool = False
+    retrieval_min_similarity_score: float = 0.0
+    retrieval_context_max_chunks: int = 4
+    retrieval_context_max_characters: int = 12000
+
+    # ---------------------------------------------------------------------
+    # Response-generation runtime configuration
+    # ---------------------------------------------------------------------
+    response_generation_enabled: bool = True
+    response_generation_provider: str = "openai"
+    response_generation_model: str = "gpt-4o"
+    response_generation_grounded_fallback_enabled: bool = True
+
+    # ---------------------------------------------------------------------
+    # Deterministic guardrail runtime configuration
+    # ---------------------------------------------------------------------
+    guardrails_enabled: bool = True
+    guardrails_pre_request_offensive_language_checks_enabled: bool = True
+    guardrails_pre_request_sexual_content_checks_enabled: bool = True
+    guardrails_pre_request_discriminatory_content_checks_enabled: bool = True
+    guardrails_pre_request_criminal_or_dangerous_content_checks_enabled: bool = True
+    guardrails_pre_request_sensitive_data_checks_enabled: bool = True
+    guardrails_pre_request_dangerous_command_checks_enabled: bool = True
+    guardrails_post_response_unsafe_output_checks_enabled: bool = True
+    guardrails_post_response_grounded_response_checks_enabled: bool = True
+    guardrails_post_response_unsupported_answer_checks_enabled: bool = True
+
+    # ---------------------------------------------------------------------
+    # Retrieval metrics runtime configuration
+    # ---------------------------------------------------------------------
+    metrics_enabled: bool = True
+    metrics_track_deflection_rate: bool = True
+    metrics_track_false_positive_rate: bool = True
+    metrics_track_jailbreak_resistance: bool = True
+    metrics_track_stage_latency: bool = True
+
     def __post_init__(self) -> None:
         """
         Merge central appsettings values into the runtime settings object.
@@ -457,6 +498,34 @@ class PipelineSettings:
         chunking_settings = _get_nested_value(appsettings, ["chunking"], {})
         extraction_settings = _get_nested_value(appsettings, ["extraction"], {})
         embedding_settings = _get_nested_value(appsettings, ["embedding"], {})
+        retrieval_settings = _get_nested_value(appsettings, ["retrieval"], {})
+        retrieval_score_filtering_settings = _get_nested_value(
+            retrieval_settings,
+            ["score_filtering"],
+            {},
+        )
+        retrieval_context_settings = _get_nested_value(
+            retrieval_settings,
+            ["context"],
+            {},
+        )
+        response_generation_settings = _get_nested_value(
+            appsettings,
+            ["response_generation"],
+            {},
+        )
+        guardrails_settings = _get_nested_value(appsettings, ["guardrails"], {})
+        guardrails_pre_request_settings = _get_nested_value(
+            guardrails_settings,
+            ["pre_request"],
+            {},
+        )
+        guardrails_post_response_settings = _get_nested_value(
+            guardrails_settings,
+            ["post_response"],
+            {},
+        )
+        metrics_settings = _get_nested_value(appsettings, ["metrics"], {})
         chromadb_settings = _get_nested_value(embedding_settings, ["chromadb"], {})
         chromadb_cloud_settings = _get_nested_value(
             chromadb_settings,
@@ -634,6 +703,263 @@ class PipelineSettings:
                 chromadb_cloud_settings,
                 ["api_key_env_var"],
                 "CHROMA_API_KEY",
+            ),
+        )
+        self.retrieval_enabled = self._resolve_bool_setting(
+            current_value=self.retrieval_enabled,
+            default_value=True,
+            configured_value=_get_nested_value(
+                retrieval_settings,
+                ["enabled"],
+                True,
+            ),
+        )
+        self.retrieval_top_k = self._resolve_int_setting(
+            current_value=self.retrieval_top_k,
+            default_value=8,
+            configured_value=_get_nested_value(
+                retrieval_settings,
+                ["top_k"],
+                8,
+            ),
+        )
+        self.retrieval_score_filtering_enabled = self._resolve_bool_setting(
+            current_value=self.retrieval_score_filtering_enabled,
+            default_value=False,
+            configured_value=_get_nested_value(
+                retrieval_score_filtering_settings,
+                ["enabled"],
+                False,
+            ),
+        )
+        self.retrieval_min_similarity_score = self._resolve_float_setting(
+            current_value=self.retrieval_min_similarity_score,
+            default_value=0.0,
+            configured_value=_get_nested_value(
+                retrieval_score_filtering_settings,
+                ["min_similarity_score"],
+                0.0,
+            ),
+        )
+        self.retrieval_context_max_chunks = self._resolve_int_setting(
+            current_value=self.retrieval_context_max_chunks,
+            default_value=4,
+            configured_value=_get_nested_value(
+                retrieval_context_settings,
+                ["max_chunks"],
+                4,
+            ),
+        )
+        self.retrieval_context_max_characters = self._resolve_int_setting(
+            current_value=self.retrieval_context_max_characters,
+            default_value=12000,
+            configured_value=_get_nested_value(
+                retrieval_context_settings,
+                ["max_characters"],
+                12000,
+            ),
+        )
+        self.response_generation_enabled = self._resolve_bool_setting(
+            current_value=self.response_generation_enabled,
+            default_value=True,
+            configured_value=_get_nested_value(
+                response_generation_settings,
+                ["enabled"],
+                True,
+            ),
+        )
+        self.response_generation_provider = self._resolve_string_setting(
+            current_value=self.response_generation_provider,
+            default_value="openai",
+            configured_value=_get_nested_value(
+                response_generation_settings,
+                ["provider"],
+                "openai",
+            ),
+        )
+        self.response_generation_model = self._resolve_string_setting(
+            current_value=self.response_generation_model,
+            default_value="gpt-4o",
+            configured_value=_get_nested_value(
+                response_generation_settings,
+                ["model"],
+                "gpt-4o",
+            ),
+        )
+        self.response_generation_grounded_fallback_enabled = (
+            self._resolve_bool_setting(
+                current_value=self.response_generation_grounded_fallback_enabled,
+                default_value=True,
+                configured_value=_get_nested_value(
+                    response_generation_settings,
+                    ["grounded_fallback_enabled"],
+                    True,
+                ),
+            )
+        )
+        self.guardrails_enabled = self._resolve_bool_setting(
+            current_value=self.guardrails_enabled,
+            default_value=True,
+            configured_value=_get_nested_value(
+                guardrails_settings,
+                ["enabled"],
+                True,
+            ),
+        )
+        self.guardrails_pre_request_offensive_language_checks_enabled = (
+            self._resolve_bool_setting(
+                current_value=(
+                    self.guardrails_pre_request_offensive_language_checks_enabled
+                ),
+                default_value=True,
+                configured_value=_get_nested_value(
+                    guardrails_pre_request_settings,
+                    ["offensive_language_checks_enabled"],
+                    True,
+                ),
+            )
+        )
+        self.guardrails_pre_request_sexual_content_checks_enabled = (
+            self._resolve_bool_setting(
+                current_value=self.guardrails_pre_request_sexual_content_checks_enabled,
+                default_value=True,
+                configured_value=_get_nested_value(
+                    guardrails_pre_request_settings,
+                    ["sexual_content_checks_enabled"],
+                    True,
+                ),
+            )
+        )
+        self.guardrails_pre_request_discriminatory_content_checks_enabled = (
+            self._resolve_bool_setting(
+                current_value=(
+                    self.guardrails_pre_request_discriminatory_content_checks_enabled
+                ),
+                default_value=True,
+                configured_value=_get_nested_value(
+                    guardrails_pre_request_settings,
+                    ["discriminatory_content_checks_enabled"],
+                    True,
+                ),
+            )
+        )
+        self.guardrails_pre_request_criminal_or_dangerous_content_checks_enabled = (
+            self._resolve_bool_setting(
+                current_value=(
+                    self.guardrails_pre_request_criminal_or_dangerous_content_checks_enabled
+                ),
+                default_value=True,
+                configured_value=_get_nested_value(
+                    guardrails_pre_request_settings,
+                    ["criminal_or_dangerous_content_checks_enabled"],
+                    True,
+                ),
+            )
+        )
+        self.guardrails_pre_request_sensitive_data_checks_enabled = (
+            self._resolve_bool_setting(
+                current_value=self.guardrails_pre_request_sensitive_data_checks_enabled,
+                default_value=True,
+                configured_value=_get_nested_value(
+                    guardrails_pre_request_settings,
+                    ["sensitive_data_checks_enabled"],
+                    True,
+                ),
+            )
+        )
+        self.guardrails_pre_request_dangerous_command_checks_enabled = (
+            self._resolve_bool_setting(
+                current_value=(
+                    self.guardrails_pre_request_dangerous_command_checks_enabled
+                ),
+                default_value=True,
+                configured_value=_get_nested_value(
+                    guardrails_pre_request_settings,
+                    ["dangerous_command_checks_enabled"],
+                    True,
+                ),
+            )
+        )
+        self.guardrails_post_response_unsafe_output_checks_enabled = (
+            self._resolve_bool_setting(
+                current_value=self.guardrails_post_response_unsafe_output_checks_enabled,
+                default_value=True,
+                configured_value=_get_nested_value(
+                    guardrails_post_response_settings,
+                    ["unsafe_output_checks_enabled"],
+                    True,
+                ),
+            )
+        )
+        self.guardrails_post_response_grounded_response_checks_enabled = (
+            self._resolve_bool_setting(
+                current_value=(
+                    self.guardrails_post_response_grounded_response_checks_enabled
+                ),
+                default_value=True,
+                configured_value=_get_nested_value(
+                    guardrails_post_response_settings,
+                    ["grounded_response_checks_enabled"],
+                    True,
+                ),
+            )
+        )
+        self.guardrails_post_response_unsupported_answer_checks_enabled = (
+            self._resolve_bool_setting(
+                current_value=(
+                    self.guardrails_post_response_unsupported_answer_checks_enabled
+                ),
+                default_value=True,
+                configured_value=_get_nested_value(
+                    guardrails_post_response_settings,
+                    ["unsupported_answer_checks_enabled"],
+                    True,
+                ),
+            )
+        )
+        self.metrics_enabled = self._resolve_bool_setting(
+            current_value=self.metrics_enabled,
+            default_value=True,
+            configured_value=_get_nested_value(
+                metrics_settings,
+                ["enabled"],
+                True,
+            ),
+        )
+        self.metrics_track_deflection_rate = self._resolve_bool_setting(
+            current_value=self.metrics_track_deflection_rate,
+            default_value=True,
+            configured_value=_get_nested_value(
+                metrics_settings,
+                ["track_deflection_rate"],
+                True,
+            ),
+        )
+        self.metrics_track_false_positive_rate = self._resolve_bool_setting(
+            current_value=self.metrics_track_false_positive_rate,
+            default_value=True,
+            configured_value=_get_nested_value(
+                metrics_settings,
+                ["track_false_positive_rate"],
+                True,
+            ),
+        )
+        self.metrics_track_jailbreak_resistance = self._resolve_bool_setting(
+            current_value=self.metrics_track_jailbreak_resistance,
+            default_value=True,
+            configured_value=_get_nested_value(
+                metrics_settings,
+                ["track_jailbreak_resistance"],
+                True,
+            ),
+        )
+        self.metrics_track_stage_latency = self._resolve_bool_setting(
+            current_value=self.metrics_track_stage_latency,
+            default_value=True,
+            configured_value=_get_nested_value(
+                metrics_settings,
+                ["track_stage_latency"],
+                True,
             ),
         )
         self.enable_ocr_fallback = self._resolve_bool_setting(
