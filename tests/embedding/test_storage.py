@@ -14,6 +14,7 @@ from unittest.mock import patch
 from Chunking.config.settings import PipelineSettings
 from embedding.models import EmbeddingRunManifest, EmbeddingVectorRecord
 from embedding.storage import LocalEmbeddingStorage
+from retrieval.models import RetrievedChunkResult
 
 
 class FakeCollection:
@@ -22,7 +23,9 @@ class FakeCollection:
     def __init__(self, existing_ids: list[str] | None = None) -> None:
         """Store the initial record set returned by `get`."""
         self.existing_ids = list(existing_ids or [])
+        self.query_response: dict[str, object] = {}
         self.get_calls: list[dict[str, object]] = []
+        self.query_calls: list[dict[str, object]] = []
         self.delete_calls: list[dict[str, object]] = []
         self.upsert_calls: list[dict[str, object]] = []
 
@@ -35,6 +38,24 @@ class FakeCollection:
         """Record the identifiers deleted by the storage layer."""
         self.delete_calls.append({"ids": list(ids)})
         self.existing_ids = []
+
+    def query(
+        self,
+        query_embeddings: list[list[float]],
+        n_results: int,
+        where: dict[str, object] | None,
+        include: list[object],
+    ) -> dict[str, object]:
+        """Record one ChromaDB query payload and return the configured response."""
+        self.query_calls.append(
+            {
+                "query_embeddings": [list(vector) for vector in query_embeddings],
+                "n_results": n_results,
+                "where": None if where is None else dict(where),
+                "include": list(include),
+            }
+        )
+        return dict(self.query_response)
 
     def upsert(
         self,
@@ -282,6 +303,174 @@ class ChromaEmbeddingStorageTests(unittest.TestCase):
             "90cd7e0f-0662-4e42-bfd0-785efb6dcb14",
         )
         self.assertEqual(cloud_client_calls[0]["database"], "RAG-AI2")
+
+    def test_get_collection_uses_configured_collection_name_with_persistent_client(self) -> None:
+        """Ensure persistent mode resolves the shared ChromaDB collection name."""
+        requested_collection_names: list[str] = []
+
+        class FakePersistentClient:
+            """Expose one deterministic collection lookup for storage tests."""
+
+            def get_or_create_collection(self, name: str) -> FakeCollection:
+                """Record the requested collection name and return one collection."""
+                requested_collection_names.append(name)
+                return FakeCollection()
+
+        settings = PipelineSettings(
+            chromadb_mode="persistent",
+            chromadb_collection_name="rag_embeddings",
+        )
+        storage = LocalEmbeddingStorage(settings)
+        storage._build_chromadb_client = lambda: FakePersistentClient()  # type: ignore[method-assign]
+
+        collection = storage._get_collection()
+
+        self.assertIsInstance(collection, FakeCollection)
+        self.assertEqual(requested_collection_names, ["rag_embeddings"])
+
+    def test_get_collection_uses_configured_collection_name_with_cloud_client(self) -> None:
+        """Ensure cloud mode resolves the shared ChromaDB collection name."""
+        requested_collection_names: list[str] = []
+
+        class FakeCloudClient:
+            """Expose one deterministic collection lookup for storage tests."""
+
+            def get_or_create_collection(self, name: str) -> FakeCollection:
+                """Record the requested collection name and return one collection."""
+                requested_collection_names.append(name)
+                return FakeCollection()
+
+        settings = PipelineSettings(
+            chromadb_mode="cloud",
+            chromadb_collection_name="rag_embeddings",
+        )
+        storage = LocalEmbeddingStorage(settings)
+        storage._build_chromadb_client = lambda: FakeCloudClient()  # type: ignore[method-assign]
+
+        collection = storage._get_collection()
+
+        self.assertIsInstance(collection, FakeCollection)
+        self.assertEqual(requested_collection_names, ["rag_embeddings"])
+
+    def test_query_similar_chunks_uses_shared_collection_and_returns_normalized_results(self) -> None:
+        """Ensure the storage layer normalizes ChromaDB query results for retrieval."""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            collection = FakeCollection()
+            collection.query_response = {
+                "ids": [["doc_1:article_smart:chunk_1", "doc_1:article_smart:chunk_2"]],
+                "documents": [["Chunk text 1", "Chunk text 2"]],
+                "metadatas": [
+                    [
+                        {
+                            "record_id": "chunk_1",
+                            "chunk_id": "chunk_1",
+                            "doc_id": "doc_1",
+                            "source_file": "data/chunks/doc_1/article_smart/05_chunks.json",
+                            "strategy": "article_smart",
+                            "metadata_chunk_file_path": "data/chunks/doc_1/article_smart/05_chunks.json",
+                            "metadata_extras": "{\"tags\": [\"alpha\"]}",
+                            "chunk_page_start": 1,
+                            "chunk_page_end": 2,
+                            "chunk_section_title": "General Rules",
+                            "document_document_title": "Test Regulation",
+                            "document_jurisdiction": "PT",
+                        },
+                        {
+                            "record_id": "chunk_2",
+                            "chunk_id": "chunk_2",
+                            "doc_id": "doc_1",
+                            "source_file": "data/chunks/doc_1/article_smart/05_chunks.json",
+                            "chunk_page_start": 3,
+                            "chunk_page_end": 3,
+                            "document_document_title": "Test Regulation",
+                        },
+                    ]
+                ],
+                "distances": [[0.11, 0.27]],
+            }
+            storage = self._build_storage(temporary_directory, collection)
+
+            results = storage.query_similar_chunks(
+                query_vector=[0.5, 0.4, 0.3],
+                where={"strategy": "article_smart"},
+            )
+
+            self.assertEqual(len(collection.query_calls), 1)
+            self.assertEqual(collection.query_calls[0]["n_results"], 8)
+            self.assertEqual(
+                collection.query_calls[0]["query_embeddings"],
+                [[0.5, 0.4, 0.3]],
+            )
+            self.assertEqual(
+                collection.query_calls[0]["where"],
+                {"strategy": "article_smart"},
+            )
+            self.assertEqual(
+                collection.query_calls[0]["include"],
+                ["documents", "metadatas", "distances"],
+            )
+
+            self.assertEqual(len(results), 2)
+            self.assertTrue(
+                all(isinstance(result, RetrievedChunkResult) for result in results)
+            )
+
+            first_result = results[0]
+            self.assertEqual(first_result.chunk_id, "chunk_1")
+            self.assertEqual(first_result.record_id, "doc_1:article_smart:chunk_1")
+            self.assertEqual(first_result.doc_id, "doc_1")
+            self.assertEqual(first_result.text, "Chunk text 1")
+            self.assertEqual(first_result.rank, 1)
+            self.assertEqual(first_result.distance, 0.11)
+            self.assertEqual(
+                first_result.source_file,
+                "data/chunks/doc_1/article_smart/05_chunks.json",
+            )
+            self.assertEqual(
+                first_result.metadata,
+                {
+                    "chunk_file_path": "data/chunks/doc_1/article_smart/05_chunks.json",
+                    "tags": ["alpha"],
+                },
+            )
+            self.assertEqual(
+                first_result.chunk_metadata,
+                {
+                    "page_start": 1,
+                    "page_end": 2,
+                    "section_title": "General Rules",
+                },
+            )
+            self.assertEqual(
+                first_result.document_metadata,
+                {
+                    "document_title": "Test Regulation",
+                    "jurisdiction": "PT",
+                },
+            )
+
+    def test_query_similar_chunks_honors_explicit_top_k_and_handles_sparse_payloads(self) -> None:
+        """Ensure sparse ChromaDB query responses still normalize deterministically."""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            collection = FakeCollection()
+            collection.query_response = {
+                "ids": [["storage_id_only"]],
+                "metadatas": [[{"doc_id": "doc_sparse"}]],
+            }
+            storage = self._build_storage(temporary_directory, collection)
+
+            results = storage.query_similar_chunks(
+                query_vector=[1.0, 2.0],
+                top_k=1,
+            )
+
+            self.assertEqual(collection.query_calls[0]["n_results"], 1)
+            self.assertEqual(len(results), 1)
+            self.assertEqual(results[0].chunk_id, "storage_id_only")
+            self.assertEqual(results[0].record_id, "storage_id_only")
+            self.assertEqual(results[0].doc_id, "doc_sparse")
+            self.assertEqual(results[0].text, "")
+            self.assertEqual(results[0].distance, None)
 
 
 if __name__ == "__main__":
