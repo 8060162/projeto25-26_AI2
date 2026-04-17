@@ -7,7 +7,14 @@ uma lista de objectos `Artigo`.
 Cada `Artigo`:
   - Transporta o conteúdo e os metadados de rastreabilidade.
   - Expõe `to_metadata()` para desacoplar consumidores da estrutura interna.
-  - Expõe `to_chunks_args()` para desacoplar chamadas ao chunker.
+  - Expõe `conteudo` directamente para o chunker — to_chunks_args() foi
+    removido porque chunker.dividir_em_chunks() recebe agora apenas conteudo.
+
+ALTERAÇÃO (refactor): to_chunks_args() foi removido. O método expunha
+quatro campos do dataclass que o chunker não utilizava, criando acoplamento
+implícito entre Artigo e a assinatura de dividir_em_chunks. O chamador
+(ingest.py) acede agora a artigo.conteudo directamente — mais simples
+e mais honesto.
 """
 
 import json
@@ -47,10 +54,6 @@ class Artigo:
 
         Centraliza o mapeamento campo→chave usando MetaKey,
         isolando os consumidores de alterações internas ao dataclass.
-
-        Nota: 'art_titulo' foi adicionado para corrigir o mapeamento
-        semântico em search.py — anteriormente 'doc_titulo' era atribuído
-        erroneamente ao campo artigo_titulo do ArtigoContexto.
         """
         return {
             MetaKey.SOURCE:     self.filename,
@@ -60,21 +63,6 @@ class Artigo:
             MetaKey.ARTIGO_ID:  self.art_id,
             MetaKey.PAGINA:     self.pagina,
             MetaKey.TRUNCATED:  "false",  # valor base; ingest.py actualiza se necessário
-        }
-
-    def to_chunks_args(self) -> dict:
-        """
-        Devolve os argumentos necessários para chamar `dividir_em_chunks`.
-
-        Evita que ingest.py aceda directamente aos atributos do dataclass
-        para construir a chamada ao chunker.
-        """
-        return {
-            "filename":   self.filename,
-            "cap_titulo": self.cap_titulo,
-            "art_id":     self.art_id,
-            "art_titulo": self.art_titulo,
-            "conteudo":   self.conteudo,
         }
 
 

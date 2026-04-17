@@ -10,8 +10,23 @@ Fluxo:
 
 O cliente LLM activo é seleccionado em runtime via variável de ambiente
 LLM_BACKEND, sem necessidade de editar este ficheiro.
+
+ALTERAÇÕES (refactor):
+  1. Introduzida GeneratorError — excepção própria que permite ao chamador
+     distinguir entre uma resposta legítima e uma falha do pipeline.
+     Os erros deixam de ser devolvidos como strings, o que impossibilitava
+     retry lógico e logging estruturado.
+
+  2. Registry de backends (_BACKENDS) substituiu o if/elif em _get_cliente().
+     Adicionar um novo backend requer apenas registar o módulo no dicionário,
+     sem tocar na lógica de orquestração (princípio Open/Closed).
+
+  3. gerar_resposta() propaga GeneratorError — o ponto de entrada (CLI)
+     trata o erro de forma adequada ao contexto em vez de receber uma
+     string de erro disfarçada de resposta.
 """
 
+import importlib
 import os
 import sys
 import warnings
@@ -19,10 +34,8 @@ from typing import Callable
 
 warnings.filterwarnings("ignore", category=UserWarning)
 
-# Adiciona src/ ao path para que todos os pacotes sejam encontrados
-# independentemente do directório de trabalho no momento de execução.
-_THIS_DIR = os.path.dirname(os.path.abspath(__file__))   # src/generator/
-_SRC_DIR  = os.path.dirname(_THIS_DIR)                   # src/
+_THIS_DIR = os.path.dirname(os.path.abspath(__file__))
+_SRC_DIR  = os.path.dirname(_THIS_DIR)
 for _p in (_SRC_DIR, _THIS_DIR):
     if _p not in sys.path:
         sys.path.insert(0, _p)
@@ -32,18 +45,46 @@ from prompt_builder  import construir_prompt
 from settings        import LLM_BACKEND, MODEL_DISPLAY_NAME
 
 
-def _get_cliente() -> Callable[[str, str], str]:
-    """Devolve a função chamar_modelo do cliente configurado em LLM_BACKEND."""
-    if LLM_BACKEND == "ollama":
-        from ollama_client import chamar_modelo
-    elif LLM_BACKEND == "openai":
-        from openai_client import chamar_modelo
-    else:
-        raise ValueError(
-            f"LLM_BACKEND inválido: '{LLM_BACKEND}'. Valores válidos: 'openai', 'ollama'."
-        )
-    return chamar_modelo
+# ── Excepção própria ──────────────────────────────────────────────────────────
 
+class GeneratorError(Exception):
+    """
+    Excepção levantada quando o pipeline RAG falha a gerar uma resposta.
+
+    Distingue falhas do pipeline de respostas legítimas do modelo,
+    permitindo ao chamador aplicar retry, logging estruturado ou
+    tratamento diferenciado conforme o contexto (CLI, API, teste).
+    """
+
+
+# ── Registry de backends ──────────────────────────────────────────────────────
+
+# Mapeamento backend → nome do módulo cliente.
+# Para adicionar um novo backend: registar aqui sem tocar em _get_cliente().
+_BACKENDS: dict[str, str] = {
+    "openai": "openai_client",
+    "ollama": "ollama_client",
+}
+
+
+def _get_cliente() -> Callable[[str, str], str]:
+    """
+    Devolve a função chamar_modelo do cliente configurado em LLM_BACKEND.
+
+    Raises:
+        GeneratorError: se LLM_BACKEND não corresponder a nenhum backend registado.
+    """
+    module_name = _BACKENDS.get(LLM_BACKEND)
+    if module_name is None:
+        raise GeneratorError(
+            f"LLM_BACKEND inválido: '{LLM_BACKEND}'. "
+            f"Valores válidos: {', '.join(repr(k) for k in _BACKENDS)}."
+        )
+    module = importlib.import_module(module_name)
+    return module.chamar_modelo
+
+
+# ── Pipeline RAG ──────────────────────────────────────────────────────────────
 
 def gerar_resposta(pergunta: str) -> str:
     """
@@ -53,7 +94,11 @@ def gerar_resposta(pergunta: str) -> str:
         pergunta: Questão do utilizador.
 
     Returns:
-        Resposta fundamentada nos regulamentos, ou mensagem de erro controlada.
+        Resposta fundamentada nos regulamentos.
+
+    Raises:
+        GeneratorError: se qualquer etapa do pipeline falhar.
+                        O chamador decide como tratar o erro (log, retry, UI).
     """
     artigos = obter_contexto(pergunta)
 
@@ -63,17 +108,20 @@ def gerar_resposta(pergunta: str) -> str:
     try:
         prompt_sistema, prompt_utilizador = construir_prompt(pergunta, artigos)
     except FileNotFoundError as e:
-        return (
-            f"Erro de configuração: o template do prompt não foi encontrado. "
-            f"Detalhes: {e}"
-        )
+        raise GeneratorError(
+            f"Erro de configuração: o template do prompt não foi encontrado. Detalhes: {e}"
+        ) from e
 
     try:
         chamar_modelo = _get_cliente()
         return chamar_modelo(prompt_sistema, prompt_utilizador)
-    except (RuntimeError, ValueError) as e:
-        return f"Erro ao gerar resposta: {e}"
+    except GeneratorError:
+        raise
+    except (RuntimeError, ValueError, EnvironmentError) as e:
+        raise GeneratorError(f"Erro ao gerar resposta: {e}") from e
 
+
+# ── CLI interactivo ───────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     print("\n" + "═" * 60)
@@ -88,7 +136,10 @@ if __name__ == "__main__":
             continue
 
         print("\n[A processar...]")
-        resposta = gerar_resposta(pergunta)
-        print("\n" + "─" * 20 + " RESPOSTA " + "─" * 20)
-        print(resposta)
+        try:
+            resposta = gerar_resposta(pergunta)
+            print("\n" + "─" * 20 + " RESPOSTA " + "─" * 20)
+            print(resposta)
+        except GeneratorError as e:
+            print(f"\n[ERRO] {e}")
         print("─" * 50)

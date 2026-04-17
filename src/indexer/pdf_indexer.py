@@ -18,7 +18,7 @@ if str(_SRC) not in sys.path:
 
 from indexer.loader_protocol    import LoaderProtocol
 from indexer.anchor_parser      import AnchorParser
-from indexer.metadata_extractor import MetadataExtractor
+from indexer.metadata_keys import MetadataExtractor
 
 
 class PDFIndexer:

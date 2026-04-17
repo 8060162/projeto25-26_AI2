@@ -24,8 +24,15 @@ Fluxo por elemento:
 
 Responsabilidade: APENAS parsing. Não sabe o nome do ficheiro,
 não extrai metadados, não faz I/O.
+
+ALTERAÇÃO (refactor): a conversão de page para int passou a ser feita
+com tratamento explícito de ValueError/TypeError. Um elemento com valor
+de página inválido (None, "N/A", string arbitrária) já não interrompe
+o parsing do documento inteiro — é usado o valor 1 como fallback e
+emitido um aviso de logging com contexto suficiente para diagnóstico.
 """
 
+import logging
 import sys
 from pathlib import Path
 
@@ -34,6 +41,8 @@ if str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
 
 from utils.regex_patterns import CAP_PATTERN, ART_PATTERN
+
+logger = logging.getLogger(__name__)
 
 # ── Categorias ────────────────────────────────────────────────────────────────
 
@@ -57,6 +66,33 @@ _NO_TITLE            = "Sem Título"
 # (que têm o formato "CAP_<LABEL>", ex: "CAP_I", "CAP_1").
 _IMPLICIT_CAP_ID    = "__NO_CHAPTER__"
 _IMPLICIT_CAP_TITLE = "Sem Capítulos"
+
+
+def _parse_page(raw_page: object, text_preview: str) -> int:
+    """
+    Converte o valor de página para int de forma segura.
+
+    Um elemento com página inválida (None, "N/A", string arbitrária) usa
+    o valor 1 como fallback e emite aviso com contexto para diagnóstico.
+    Evita que um único elemento corrompido interrompa o parsing do
+    documento inteiro.
+
+    Args:
+        raw_page:     valor raw do campo "page" do elemento.
+        text_preview: início do texto do elemento (para contexto no log).
+
+    Returns:
+        Número de página (int), mínimo 1.
+    """
+    try:
+        return int(raw_page or 1)
+    except (ValueError, TypeError):
+        logger.warning(
+            "Valor de página inválido '%s' no elemento '%.50s…' — usando página 1.",
+            raw_page,
+            text_preview,
+        )
+        return 1
 
 
 class AnchorParser:
@@ -90,7 +126,7 @@ class AnchorParser:
         for el in elements:
             category = el.get("category", "")
             text     = el.get("text", "").strip()
-            page     = int(el.get("page", 1))
+            page     = _parse_page(el.get("page"), text)
 
             if not text or category in _DISCARD:
                 continue
@@ -112,7 +148,6 @@ class AnchorParser:
         """
         Tenta reconhecer uma âncora de capítulo.
         Aplica-se a qualquer category — o regex é a guarda suficiente.
-        "CAPÍTULO I" no início de linha nunca aparece a meio de um parágrafo.
 
         Returns:
             True se o elemento foi consumido como âncora de capítulo.
@@ -136,7 +171,6 @@ class AnchorParser:
         """
         Tenta reconhecer uma âncora de artigo.
         Aplica-se a qualquer category — o regex é a guarda suficiente.
-        ART_PATTERN exige "^\\s*Artigo\\s+\\d+" — nunca bate a meio de frase.
 
         Se não houver capítulo activo, cria um capítulo implícito com ID
         _IMPLICIT_CAP_ID (prefixo "__" impede colisão com IDs gerados por regex).
@@ -172,9 +206,6 @@ class AnchorParser:
     def _try_loose_title(self, category: str, text: str) -> bool:
         """
         Tenta aplicar um Title solto ao artigo activo.
-
-        Um Title que vem após uma âncora de artigo e o artigo ainda não
-        tem título resolvido. Ex: "Artigo 1.º" + (próxima linha) "ÂMBITO".
 
         Returns:
             True se o elemento foi consumido como título solto.

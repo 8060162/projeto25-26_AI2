@@ -10,6 +10,10 @@ Estrutura:
   - _safe_doc_id()           → utilitário: produz IDs seguros e estáveis
   - indexar_artigo()         → lógica: chunking + upsert de um artigo
   - run_ingestion()          → orquestrador: liga todas as peças
+
+ALTERAÇÃO (refactor): indexar_artigo() passa agora artigo.conteudo
+directamente a dividir_em_chunks(), de acordo com a nova assinatura
+simplificada do chunker.
 """
 
 import hashlib
@@ -18,7 +22,7 @@ import os
 import warnings
 
 import chromadb
-import sys, os
+import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -90,11 +94,14 @@ def inicializar_colecao(
 def indexar_artigo(collection: chromadb.Collection, artigo: Artigo) -> None:
     """
     Gera os chunks de um artigo e faz upsert na colecção ChromaDB.
+
+    Passa apenas artigo.conteudo ao chunker — a assinatura simplificada
+    de dividir_em_chunks não requer os restantes campos do artigo.
     """
     if not artigo.conteudo.strip():
         return
 
-    chunks      = dividir_em_chunks(**artigo.to_chunks_args())
+    chunks      = dividir_em_chunks(artigo.conteudo)
     doc_id_base = _safe_doc_id(artigo.filename, artigo.art_id)
     is_divided  = len(chunks) > 1
 

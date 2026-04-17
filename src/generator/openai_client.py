@@ -3,6 +3,11 @@ openai_client.py
 ----------------
 Cliente HTTP para o endpoint iaedu.
 Responsabilidade única: enviar prompt e devolver texto da resposta.
+
+ALTERAÇÃO (refactor): a validação das credenciais obrigatórias foi movida
+para cá (de settings.py), aplicando lazy validation — o erro só ocorre
+quando o cliente é efectivamente utilizado, não na importação do módulo.
+Isto torna settings.py importável em qualquer contexto sem efeitos laterais.
 """
 
 import json
@@ -13,14 +18,43 @@ from settings import IAEDU_ENDPOINT, IAEDU_API_KEY, IAEDU_CHANNEL_ID, IAEDU_THRE
 # Timeout em segundos para a chamada HTTP
 _REQUEST_TIMEOUT = 60
 
+# Chaves obrigatórias para o backend OpenAI
+_REQUIRED: dict[str, str] = {
+    "IAEDU_ENDPOINT":   IAEDU_ENDPOINT,
+    "IAEDU_API_KEY":    IAEDU_API_KEY,
+    "IAEDU_CHANNEL_ID": IAEDU_CHANNEL_ID,
+    "IAEDU_THREAD_ID":  IAEDU_THREAD_ID,
+}
+
+
+def _validar_credenciais() -> None:
+    """
+    Valida que todas as credenciais obrigatórias estão definidas.
+
+    Chamada no início de chamar_modelo — garante que o erro é explícito
+    e ocorre apenas quando o cliente é efectivamente usado.
+
+    Raises:
+        EnvironmentError: se alguma variável obrigatória estiver ausente.
+    """
+    ausentes = [nome for nome, valor in _REQUIRED.items() if not valor]
+    if ausentes:
+        raise EnvironmentError(
+            f"Variáveis de ambiente obrigatórias não definidas para o backend 'openai': "
+            f"{', '.join(ausentes)}. Verifica o ficheiro .env."
+        )
+
 
 def chamar_modelo(prompt_sistema: str, prompt_utilizador: str) -> str:
     """Envia o prompt ao endpoint iaedu e devolve o texto da resposta.
 
     Raises:
-        RuntimeError: Em caso de falha de rede, timeout ou resposta HTTP não-2xx.
-        ValueError:   Se o stream devolver conteúdo vazio ou não parseável.
+        EnvironmentError: se as credenciais obrigatórias não estiverem definidas.
+        RuntimeError:     em caso de falha de rede, timeout ou resposta HTTP não-2xx.
+        ValueError:       se o stream devolver conteúdo vazio ou não parseável.
     """
+    _validar_credenciais()
+
     mensagem_completa = f"{prompt_sistema.strip()}\n\n{prompt_utilizador.strip()}"
 
     try:

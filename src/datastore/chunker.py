@@ -8,13 +8,20 @@ Toda a rastreabilidade (ficheiro, capítulo, artigo, página) é da
 responsabilidade dos metadados no ChromaDB — ver Artigo.to_metadata()
 em document_parser.py.
 
-Constantes de chunking importadas de config.py — não redefinir aqui.
+Constantes de chunking importadas de settings.py — não redefinir aqui.
+
+ALTERAÇÃO (refactor): a assinatura de dividir_em_chunks foi simplificada
+para receber apenas `conteudo: str`. Os parâmetros filename, cap_titulo,
+art_id e art_titulo não eram utilizados internamente — a sua presença
+criava acoplamento desnecessário com a estrutura do dataclass Artigo e
+tornava a função desonesta sobre as suas dependências reais.
+O chamador (ingest.py) passa agora apenas artigo.conteudo.
 """
 
 import re
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-from config import CHUNK_TARGET, CHUNK_OVERLAP, CHUNK_MAX
+from settings import CHUNK_TARGET, CHUNK_OVERLAP, CHUNK_MAX
 
 # ── Fallback genérico para artigos sem estrutura numerada clara ───────────────
 
@@ -36,24 +43,22 @@ _PATTERN_SEMANTICO = re.compile(
 )
 
 
-def dividir_em_chunks(
-    filename: str,
-    cap_titulo: str,
-    art_id: str,
-    art_titulo: str,
-    conteudo: str,
-) -> list[str]:
+def dividir_em_chunks(conteudo: str) -> list[str]:
     """
-    Divide o artigo em chunks de conteúdo puro seguindo a estratégia de 3 zonas:
+    Divide o conteúdo de um artigo em chunks semânticos seguindo a
+    estratégia de 3 zonas:
 
       Zona 1+2 — artigo completo cabe no limite → devolve um único chunk.
       Zona 3   — divisão estrutural por padrão semântico (alíneas, números).
                  Se uma alínea isolada exceder CHUNK_TARGET, aplica fallback
                  com RecursiveCharacterTextSplitter.
 
-    Nota: os parâmetros filename, cap_titulo, art_id, art_titulo são mantidos
-    na assinatura para compatibilidade com to_chunks_args() — não são usados
-    na construção do chunk, apenas nos metadados (ver Artigo.to_metadata()).
+    Args:
+        conteudo: texto integral do artigo, já strip().
+
+    Returns:
+        Lista de strings com o conteúdo dividido. Nunca vazia se conteudo
+        não for vazio.
     """
     conteudo = conteudo.strip()
 

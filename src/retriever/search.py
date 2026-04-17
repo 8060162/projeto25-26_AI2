@@ -3,6 +3,12 @@ search.py
 ---------
 Responsabilidade única: orquestrar a pesquisa vetorial e devolver
 uma lista de ArtigoContexto sem lógica de negócio embutida.
+
+ALTERAÇÃO (refactor): _is_truncated() foi removida deste módulo e
+substituída por is_truncated() de shared.metadata_keys, que é agora
+a Single Source of Truth para interpretar o campo 'truncated'.
+Garante que search.py e evaluate.py usam exactamente a mesma lógica
+de interpretação, independentemente do formato de serialização do ChromaDB.
 """
 
 import logging
@@ -11,23 +17,12 @@ from settings import N_RESULTS, QUERY_FETCH, CHUNK_HEADER_SEP
 from retriever.db_client import get_collection
 from retriever.json_store import get_artigo_completo
 from retriever.models import ArtigoContexto
-from shared.metadata_keys import MetaKey
+from shared.metadata_keys import MetaKey, is_truncated
 
 logger = logging.getLogger(__name__)
 
 
 # ── helpers privados ──────────────────────────────────────────────────────────
-
-def _is_truncated(meta: dict) -> bool:
-    """
-    Interpreta o campo 'truncated' dos metadados do ChromaDB de forma
-    robusta, independentemente de estar serializado como bool ou string.
-    """
-    val = meta.get(MetaKey.TRUNCATED, False)
-    if isinstance(val, bool):
-        return val
-    return str(val).lower() == "true"
-
 
 def _remover_cabecalho(chunk: str) -> str:
     """
@@ -49,7 +44,7 @@ def _expandir_se_truncado(doc: str, meta: dict) -> str:
     Devolve o chunk original como fallback se a expansão falhar,
     garantindo que nunca se devolve uma string vazia.
     """
-    if not _is_truncated(meta):
+    if not is_truncated(meta):
         return doc
 
     completo = get_artigo_completo(meta[MetaKey.SOURCE], meta[MetaKey.ARTIGO_ID])
@@ -72,7 +67,7 @@ def _resolver_conteudo(doc: str, meta: dict) -> str:
       2. Remove o cabeçalho técnico do chunk não truncado.
     """
     conteudo = _expandir_se_truncado(doc, meta)
-    if _is_truncated(meta):
+    if is_truncated(meta):
         return conteudo
     return _remover_cabecalho(conteudo)
 
