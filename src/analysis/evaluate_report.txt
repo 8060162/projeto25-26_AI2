@@ -1,0 +1,181 @@
+  Gerado em: 2026-03-20 23:44:30
+
+════════════════════════════════════════════════════════════════════════
+  RESUMO DO CORPUS
+════════════════════════════════════════════════════════════════════════
+
+  ┌─ Estatísticas gerais
+  └────────────────────────────────────────────────────────────────────
+
+  Documentos indexados                    4
+  Artigos totais                         83
+  Artigos com 1 chunk (não divididos)    34
+  Artigos com 2+ chunks (divididos)      49
+  Total de chunks                       254
+  Média de chunks por artigo           3.06
+
+════════════════════════════════════════════════════════════════════════
+  NÍVEL 1 — AVALIAÇÃO POR REGULAMENTO
+════════════════════════════════════════════════════════════════════════
+  Unidade de análise: centroide de cada artigo
+  Inclui todos os artigos (com ou sem divisão em chunks)
+
+  ┌─ Silhouette Score  (separação entre regulamentos)
+  └────────────────────────────────────────────────────────────────────
+
+  Silhouette Score (por regulamento) 0.0479  [░░░░░░░░░░░░░░░░░░░░]  escala: -1 → +1
+  Interpretação                      sobreposição elevada — esperado em legislação do mesmo domínio
+
+  O que significa:
+    +1.0  →  artigos do mesmo regulamento muito próximos e bem separados dos restantes
+     0.0  →  sobreposição entre regulamentos (normal em legislação académica)
+    -1.0  →  artigos mais próximos de outro regulamento do que do seu
+
+  Nota: cada artigo é representado pelo centroide dos seus chunks.
+
+  ┌─ Coesão intra-regulamento  (homogeneidade semântica dos artigos)
+  └────────────────────────────────────────────────────────────────────
+
+  Regulamentos avaliados : 4
+  Média de coesão        : 0.6801
+  Mediana                : 0.6799
+
+  Regulamento                                           Artigos  Coesão  Barra
+  ────────────────────────────────────────────────────  ───────  ──────  ────────────────────
+  Despacho nº 7088-2023 - Regulamento de Matrículas e…       19  0.7005  ████████████████████
+  Regulamento nº 633-2024_Alteração ao Regulamento de…       11  0.6858  ████████████░░░░░░░░
+  Despacho P.PORTO-P-029-2024_Regulamento Regimes Rei…       26  0.6740  ██████░░░░░░░░░░░░░░
+  Despacho P.PORTO-P- 043-2025_Regulamento de Propinas       27  0.6601  ░░░░░░░░░░░░░░░░░░░░
+
+  Leitura: barra mais longa = artigos do regulamento mais homogéneos entre si.
+  Coesão = similaridade coseno média entre centroides de artigos do mesmo regulamento.
+  Valores > 0.5 são normais em regulamentos académicos do mesmo instituto.
+
+  ┌─ Distância inter-regulamento  (separação semântica entre pares)
+  └────────────────────────────────────────────────────────────────────
+
+  Regulamento A                       Regulamento B                       Dist.  Barra
+  ──────────────────────────────────  ──────────────────────────────────  ─────  ────────────────────
+  Despacho P.PORTO-P- 043-2025_Regu…  Regulamento nº 633-2024_Alteração…  0.1186  ████████████████████
+  Despacho P.PORTO-P- 043-2025_Regu…  Despacho P.PORTO-P-029-2024_Regul…  0.0959  ████████████░░░░░░░░
+  Despacho P.PORTO-P-029-2024_Regul…  Regulamento nº 633-2024_Alteração…  0.0911  ███████████░░░░░░░░░
+  Despacho nº 7088-2023 - Regulamen…  Regulamento nº 633-2024_Alteração…  0.0871  █████████░░░░░░░░░░░
+  Despacho P.PORTO-P- 043-2025_Regu…  Despacho nº 7088-2023 - Regulamen…  0.0593  █░░░░░░░░░░░░░░░░░░░
+  Despacho P.PORTO-P-029-2024_Regul…  Despacho nº 7088-2023 - Regulamen…  0.0557  ░░░░░░░░░░░░░░░░░░░░
+
+  Leitura: barra mais longa = regulamentos semanticamente mais afastados.
+  Centroide do regulamento = média dos centroides dos seus artigos.
+  Distância coseno = 1 − similaridade. Próximo de 0 = regulamentos muito semelhantes.
+
+════════════════════════════════════════════════════════════════════════
+  NÍVEL 2 — VERIFICAÇÃO DE CHUNKING (por Artigo)
+════════════════════════════════════════════════════════════════════════
+  Unidade de análise: chunks individuais
+  Inclui apenas artigos com 2+ chunks (truncated=true)
+
+  ┌─ Silhouette Score  (coesão intra-artigo vs separação inter-artigo)
+  └────────────────────────────────────────────────────────────────────
+
+  Silhouette Score (por artigo)      -0.0481  [░░░░░░░░░░░░░░░░░░░░]  escala: -1 → +1
+  Interpretação                      chunks semanticamente mais próximos de outros artigos
+
+  O que significa:
+    +1.0  →  chunks do mesmo artigo muito coesos e separados de outros artigos
+     0.0  →  chunks na fronteira semântica entre artigos
+    -1.0  →  chunks mais próximos de outro artigo do que do seu próprio
+
+  Nota: avalia apenas artigos com 2+ chunks (truncated=true).
+
+  ┌─ Coesão intra-artigo  (chunks do mesmo artigo)
+  └────────────────────────────────────────────────────────────────────
+
+  Artigos avaliados : 49
+  Média de coesão   : 0.6631
+  Mediana           : 0.6660
+  Mínimo / Máximo   : 0.4806 / 0.8010
+
+  Regulamento                   Artigo                Chunks  Coesão  Barra
+  ────────────────────────────  ────────────────────  ──────  ──────  ────────────────────
+  Despacho nº 7088-2023 - Reg…  ART_6                      2  0.8010  ████████████████████
+  Despacho P.PORTO-P-029-2024…  ART_6                      2  0.7906  ███████████████████░
+  Despacho nº 7088-2023 - Reg…  ART_15                     2  0.7678  █████████████████░░░
+  Despacho P.PORTO-P-029-2024…  ART_13                     2  0.7639  █████████████████░░░
+  Despacho P.PORTO-P- 043-202…  ART_13                     4  0.7416  ████████████████░░░░
+  Despacho P.PORTO-P- 043-202…  ART_5                      4  0.7411  ████████████████░░░░
+  Despacho P.PORTO-P- 043-202…  ART_17                     2  0.7299  ███████████████░░░░░
+  Despacho P.PORTO-P-029-2024…  ART_21                     2  0.7280  ███████████████░░░░░
+  Despacho nº 7088-2023 - Reg…  ART_13                     2  0.7258  ███████████████░░░░░
+  Despacho nº 7088-2023 - Reg…  ART_10                     4  0.7233  ███████████████░░░░░
+  Despacho P.PORTO-P- 043-202…  ART_23                     5  0.7217  ███████████████░░░░░
+  Despacho P.PORTO-P-029-2024…  ART_7                      3  0.7161  ██████████████░░░░░░
+  Despacho P.PORTO-P- 043-202…  ART_19                     4  0.7150  ██████████████░░░░░░
+  Despacho P.PORTO-P-029-2024…  ART_19                     3  0.7099  ██████████████░░░░░░
+  Despacho P.PORTO-P- 043-202…  ART_12                     2  0.7081  ██████████████░░░░░░
+  Despacho P.PORTO-P- 043-202…  ART_2                      3  0.7008  █████████████░░░░░░░
+  Despacho nº 7088-2023 - Reg…  ART_12                     4  0.6968  █████████████░░░░░░░
+  Despacho P.PORTO-P-029-2024…  ART_10                     2  0.6899  █████████████░░░░░░░
+  Despacho P.PORTO-P-029-2024…  ART_20                     2  0.6840  ████████████░░░░░░░░
+  Despacho P.PORTO-P-029-2024…  ART_16                     2  0.6798  ████████████░░░░░░░░
+  Despacho P.PORTO-P-029-2024…  ART_15                     3  0.6776  ████████████░░░░░░░░
+  Despacho P.PORTO-P-029-2024…  ART_22                     3  0.6755  ████████████░░░░░░░░
+  Despacho nº 7088-2023 - Reg…  ART_8                      6  0.6711  ███████████░░░░░░░░░
+  Despacho P.PORTO-P-029-2024…  ART_9                      3  0.6680  ███████████░░░░░░░░░
+  Despacho P.PORTO-P- 043-202…  ART_9                      4  0.6660  ███████████░░░░░░░░░
+  Despacho P.PORTO-P- 043-202…  ART_8                      5  0.6644  ███████████░░░░░░░░░
+  Despacho nº 7088-2023 - Reg…  ART_5                      3  0.6621  ███████████░░░░░░░░░
+  Despacho nº 7088-2023 - Reg…  ART_2                      9  0.6596  ███████████░░░░░░░░░
+  Regulamento nº 633-2024_Alt…  ART_14                     7  0.6595  ███████████░░░░░░░░░
+  Despacho P.PORTO-P-029-2024…  ART_18                     2  0.6590  ███████████░░░░░░░░░
+  Despacho P.PORTO-P-029-2024…  ART_17                     6  0.6539  ██████████░░░░░░░░░░
+  Despacho P.PORTO-P-029-2024…  ART_4                     15  0.6457  ██████████░░░░░░░░░░
+  Despacho P.PORTO-P-029-2024…  ART_3                      5  0.6447  ██████████░░░░░░░░░░
+  Despacho nº 7088-2023 - Reg…  ART_17                     4  0.6444  ██████████░░░░░░░░░░
+  Regulamento nº 633-2024_Alt…  ART_2                      5  0.6415  ██████████░░░░░░░░░░
+  Despacho P.PORTO-P- 043-202…  ART_11                     3  0.6308  █████████░░░░░░░░░░░
+  Despacho nº 7088-2023 - Reg…  ART_3                      5  0.6257  █████████░░░░░░░░░░░
+  Despacho P.PORTO-P- 043-202…  ART_24                     2  0.6252  █████████░░░░░░░░░░░
+  Despacho P.PORTO-P- 043-202…  ART_6                      4  0.6214  ████████░░░░░░░░░░░░
+  Despacho P.PORTO-P- 043-202…  ART_15                     8  0.6092  ████████░░░░░░░░░░░░
+  Despacho P.PORTO-P- 043-202…  ART_16                     4  0.5883  ██████░░░░░░░░░░░░░░
+  Regulamento nº 633-2024_Alt…  ART_4                     10  0.5861  ██████░░░░░░░░░░░░░░
+  Regulamento nº 633-2024_Alt…  ART_12                     6  0.5798  ██████░░░░░░░░░░░░░░
+  Regulamento nº 633-2024_Alt…  ART_8                     18  0.5712  █████░░░░░░░░░░░░░░░
+  Despacho P.PORTO-P-029-2024…  ART_8                      7  0.5697  █████░░░░░░░░░░░░░░░
+  Despacho nº 7088-2023 - Reg…  ART_1                      5  0.5502  ████░░░░░░░░░░░░░░░░
+  Despacho nº 7088-2023 - Reg…  ART_14                     5  0.5283  ██░░░░░░░░░░░░░░░░░░
+  Regulamento nº 633-2024_Alt…  ART_6                      2  0.4983  █░░░░░░░░░░░░░░░░░░░
+  Regulamento nº 633-2024_Alt…  ART_7                      5  0.4806  ░░░░░░░░░░░░░░░░░░░░
+
+  Leitura: barra mais longa = chunks do artigo mais coesos entre si.
+  Coesão = similaridade coseno média entre chunks do mesmo artigo.
+  Valores > 0.7 indicam que os chunks representam bem o mesmo conteúdo.
+
+  ┌─ Distância inter-artigo  (pares mais distantes por regulamento)
+  └────────────────────────────────────────────────────────────────────
+
+  (a mostrar os 15 pares de artigos mais distantes por regulamento)
+
+  Regulamento             Artigo A                Artigo B                Dist.  Barra
+  ──────────────────────  ──────────────────────  ──────────────────────  ─────  ────────────────────
+  Despacho P.PORTO-P- 0…  ART_26                  ART_4                   0.6235  ████████████████████
+  Despacho P.PORTO-P- 0…  ART_26                  ART_3                   0.6185  ███████████████████░
+  Despacho P.PORTO-P- 0…  ART_18                  ART_7                   0.6051  ███████████████████░
+  Despacho P.PORTO-P-02…  ART_25                  ART_5                   0.6024  ███████████████████░
+  Despacho P.PORTO-P- 0…  ART_27                  ART_7                   0.6002  ███████████████████░
+  Despacho P.PORTO-P- 0…  ART_4                   ART_7                   0.5937  ██████████████████░░
+  Despacho P.PORTO-P- 0…  ART_14                  ART_26                  0.5901  ██████████████████░░
+  Despacho P.PORTO-P- 0…  ART_3                   ART_7                   0.5852  ██████████████████░░
+  Despacho P.PORTO-P- 0…  ART_1                   ART_14                  0.5846  ██████████████████░░
+  Regulamento nº 633-20…  ART_19                  ART_5                   0.5812  ██████████████████░░
+  Despacho P.PORTO-P-02…  ART_14                  ART_24                  0.5786  ██████████████████░░
+  Despacho P.PORTO-P- 0…  ART_1                   ART_7                   0.5781  ██████████████████░░
+  Despacho P.PORTO-P-02…  ART_14                  ART_23                  0.5699  ██████████████████░░
+  Despacho P.PORTO-P- 0…  ART_10                  ART_27                  0.5683  █████████████████░░░
+  Despacho P.PORTO-P-02…  ART_14                  ART_25                  0.5675  █████████████████░░░
+
+  Leitura: barra mais longa = artigos semanticamente mais afastados.
+  Baseado em centroides de artigos — inclui artigos com chunk único.
+  Distância coseno = 1 − similaridade. Próximo de 0 = artigos muito semelhantes.
+
+════════════════════════════════════════════════════════════════════════
+
