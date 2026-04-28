@@ -125,6 +125,8 @@ class EmbeddingIndexerEndToEndTests(unittest.TestCase):
                         "page_end": 1,
                         "metadata": {
                             "document_title": "Regulation A",
+                            "article_number": "1",
+                            "article_title": "Scope",
                             "section_title": "Scope",
                         },
                     },
@@ -138,6 +140,8 @@ class EmbeddingIndexerEndToEndTests(unittest.TestCase):
                         "page_end": 3,
                         "metadata": {
                             "document_title": "Regulation A",
+                            "article_number": "2",
+                            "article_title": "Definitions",
                             "section_title": "Definitions",
                         },
                     },
@@ -164,7 +168,10 @@ class EmbeddingIndexerEndToEndTests(unittest.TestCase):
             self.assertEqual(result.embedded_record_count, 2)
             self.assertEqual(
                 fake_provider.embed_calls,
-                [["First regulation chunk."], ["Second line wrapped chunk."]],
+                [
+                    ["First regulation chunk."],
+                    ["Second line wrapped chunk."],
+                ],
             )
             self.assertEqual(
                 fake_collection.get_calls,
@@ -223,7 +230,10 @@ class EmbeddingIndexerEndToEndTests(unittest.TestCase):
             ]
             self.assertEqual(len(spotlight_rows), 2)
             self.assertEqual(spotlight_rows[0]["run_id"], result.run_id)
-            self.assertEqual(spotlight_rows[0]["text"], "First regulation chunk.")
+            self.assertEqual(
+                spotlight_rows[0]["text"],
+                "First regulation chunk.",
+            )
             self.assertEqual(spotlight_rows[0]["strategy"], "article_smart")
             self.assertEqual(spotlight_rows[0]["document_title"], "Regulation A")
             self.assertEqual(
@@ -277,6 +287,10 @@ class EmbeddingIndexerEndToEndTests(unittest.TestCase):
             self.assertEqual(
                 fake_collection.upsert_calls[0]["ids"],
                 ["emb_f8e106c88b634889f3f17ad98ff5a0bf"],
+            )
+            self.assertEqual(
+                fake_provider.embed_calls,
+                [["Standalone chunk for storage only."]],
             )
             self.assertTrue(Path(result.manifest_path).exists())
             self.assertTrue(Path(result.records_path).exists())

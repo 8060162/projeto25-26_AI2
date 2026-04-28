@@ -378,9 +378,66 @@ class ChromaEmbeddingStorage:
             Detached filter mapping, or `None` when no filter is provided.
         """
 
+        strategy_filter = self._build_active_strategy_filter()
         if where is None:
-            return None
-        return dict(where)
+            return strategy_filter
+
+        normalized_filter = dict(where)
+        if self._filter_already_constrains_strategy(normalized_filter):
+            return normalized_filter
+
+        return {"$and": [strategy_filter, normalized_filter]}
+
+    def _build_active_strategy_filter(self) -> Dict[str, Any]:
+        """
+        Build the mandatory ChromaDB filter for the active chunking strategy.
+
+        Returns
+        -------
+        Dict[str, Any]
+            ChromaDB metadata filter that keeps retrieval scoped to the current
+            chunking strategy.
+        """
+
+        strategy_name = self.settings.chunking_strategy.strip().lower()
+        if not strategy_name:
+            raise ValueError("Chunking strategy cannot be empty for retrieval queries.")
+
+        return {"strategy": strategy_name}
+
+    def _filter_already_constrains_strategy(self, where: Dict[str, Any]) -> bool:
+        """
+        Check whether a caller-provided ChromaDB filter already constrains strategy.
+
+        Parameters
+        ----------
+        where : Dict[str, Any]
+            Caller-provided ChromaDB filter.
+
+        Returns
+        -------
+        bool
+            `True` when the filter already contains a strategy condition.
+        """
+
+        if "strategy" in where:
+            return True
+
+        for operator_name in ("$and", "$or"):
+            nested_filters = where.get(operator_name)
+            if not isinstance(nested_filters, list):
+                continue
+
+            for nested_filter in nested_filters:
+                if isinstance(
+                    nested_filter,
+                    dict,
+                ) and self._filter_already_constrains_strategy(
+                    nested_filter,
+                ):
+                    return True
+
+        return False
 
     def _normalize_query_results(
         self,

@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Protocol
 
 from Chunking.config.settings import PipelineSettings
-from retrieval.models import AnswerGenerationInput
+from retrieval.models import AnswerGenerationInput, ContextChunkMetadata
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 class AnswerGenerationError(RuntimeError):
@@ -122,7 +126,9 @@ def _get_generator_builders() -> Dict[str, GeneratorBuilder]:
     """
 
     return {
+        "external_gpt4o": _build_external_gpt4o_answer_generator,
         "openai": _build_openai_answer_generator,
+        "openai_direct": _build_openai_answer_generator,
     }
 
 
@@ -164,6 +170,7 @@ class OpenAIAnswerGenerator:
     """
 
     model: str
+    api_key_env_var: str = "OPENAI_API_KEY"
     grounded_fallback_enabled: bool = True
 
     def __post_init__(self) -> None:
@@ -176,6 +183,10 @@ class OpenAIAnswerGenerator:
             raise ValueError("Response-generation model cannot be empty.")
 
         self.model = normalized_model
+        self.api_key_env_var = self.api_key_env_var.strip()
+
+        if not self.api_key_env_var:
+            raise ValueError("OpenAI API-key environment variable cannot be empty.")
 
     def generate_answer(
         self,
@@ -295,10 +306,10 @@ class OpenAIAnswerGenerator:
             OpenAI SDK client instance.
         """
 
-        api_key = os.getenv("OPENAI_API_KEY", "").strip()
+        api_key = os.getenv(self.api_key_env_var, "").strip()
         if not api_key:
             raise AnswerGenerationError(
-                "Environment variable 'OPENAI_API_KEY' is required for "
+                f"Environment variable '{self.api_key_env_var}' is required for "
                 "OpenAI answer generation."
             )
 
@@ -341,6 +352,13 @@ class OpenAIAnswerGenerator:
                 messages=messages,
             )
         except Exception as exc:
+            if _looks_like_rate_limit_error(exc):
+                LOGGER.warning(
+                    "OpenAI answer generation hit rate limiting for model '%s'. "
+                    "Provider='openai', api_key_env_var='%s'.",
+                    self.model,
+                    self.api_key_env_var,
+                )
             raise AnswerGenerationError(
                 "OpenAI answer-generation request failed with model "
                 f"'{self.model}': {exc}"
@@ -398,8 +416,12 @@ class OpenAIAnswerGenerator:
 
         instruction_parts = [
             "Answer the user using only the grounded context provided.",
-            "Do not invent facts, citations, or legal conclusions not supported by the context.",
-            "If the context is insufficient, state that clearly and keep the answer concise.",
+            "Treat article numbers, article titles, section titles, and document titles as explicit legal anchors when they are present.",
+            "When the context identifies a regulation, article, or title, cite those anchors explicitly in the answer instead of giving a generic summary.",
+            "Do not invent facts, citations, regulations, article numbers, article titles, or legal conclusions not supported by the context.",
+            "Use the original user question to understand what must be answered, and treat the normalized retrieval query only as retrieval metadata.",
+            "Apply formatting instructions only to the final presentation of the answer, never to the legal substance.",
+            "If the context is insufficient to identify the applicable rule, regulation, or article, state that clearly and do not guess.",
         ]
 
         if generation_input.system_instruction:
@@ -430,13 +452,144 @@ class OpenAIAnswerGenerator:
 
         context_text = generation_input.context.context_text.strip()
         question_text = generation_input.question.question_text.strip()
+        normalized_query_text = generation_input.question.normalized_query_text.strip()
+        formatting_instructions = self._build_formatting_instruction_text(
+            generation_input
+        )
+        structural_context = self._build_structural_context_text(generation_input)
 
         return (
             "Grounded context:\n"
             f"{context_text}\n\n"
-            "User question:\n"
+            "Structural legal anchors:\n"
+            f"{structural_context}\n\n"
+            "Original user question:\n"
             f"{question_text}"
+            "\n\n"
+            "Normalized retrieval query:\n"
+            f"{normalized_query_text}\n\n"
+            "Formatting expectations:\n"
+            f"{formatting_instructions}"
         )
+
+    def _build_formatting_instruction_text(
+        self,
+        generation_input: AnswerGenerationInput,
+    ) -> str:
+        """
+        Serialize explicit formatting directives preserved outside retrieval.
+
+        Parameters
+        ----------
+        generation_input : AnswerGenerationInput
+            Normalized grounded generation payload.
+
+        Returns
+        -------
+        str
+            Human-readable formatting instructions or a stable no-op marker.
+        """
+
+        formatting_instructions = generation_input.question.formatting_instructions
+        if not formatting_instructions:
+            return "None."
+
+        return "\n".join(
+            f"- {formatting_instruction}"
+            for formatting_instruction in formatting_instructions
+        )
+
+    def _build_structural_context_text(
+        self,
+        generation_input: AnswerGenerationInput,
+    ) -> str:
+        """
+        Serialize structural metadata cues already selected for grounding.
+
+        Parameters
+        ----------
+        generation_input : AnswerGenerationInput
+            Normalized grounded generation payload.
+
+        Returns
+        -------
+        str
+            Structured legal-anchor summary aligned with the packed context.
+        """
+
+        structural_lines: List[str] = []
+
+        for source_index, context_metadata in enumerate(
+            generation_input.context.selected_context_metadata,
+            start=1,
+        ):
+            if not isinstance(context_metadata, ContextChunkMetadata):
+                continue
+
+            serialized_anchor = self._serialize_context_anchor(
+                source_index=source_index,
+                context_metadata=context_metadata,
+            )
+            if serialized_anchor:
+                structural_lines.append(serialized_anchor)
+
+        if not structural_lines:
+            return "No explicit structural legal anchors were preserved in the selected context."
+
+        return "\n".join(structural_lines)
+
+    def _serialize_context_anchor(
+        self,
+        *,
+        source_index: int,
+        context_metadata: ContextChunkMetadata,
+    ) -> str:
+        """
+        Serialize one selected chunk metadata record into legal-anchor text.
+
+        Parameters
+        ----------
+        source_index : int
+            One-based source number matching the packed context order.
+
+        context_metadata : ContextChunkMetadata
+            Explicit metadata attached to one selected context chunk.
+
+        Returns
+        -------
+        str
+            Compact structural summary for one selected source.
+        """
+
+        anchor_fields = [f"Source {source_index}"]
+
+        if context_metadata.document_title:
+            anchor_fields.append(f"document={context_metadata.document_title}")
+        if context_metadata.article_number:
+            anchor_fields.append(f"article={context_metadata.article_number}")
+        if context_metadata.article_title:
+            anchor_fields.append(f"article_title={context_metadata.article_title}")
+        if context_metadata.section_title:
+            anchor_fields.append(f"section={context_metadata.section_title}")
+        if context_metadata.parent_structure:
+            anchor_fields.append(
+                "parent_structure="
+                + " > ".join(context_metadata.parent_structure)
+            )
+
+        if context_metadata.page_start is not None and context_metadata.page_end is not None:
+            anchor_fields.append(
+                f"pages={context_metadata.page_start}-{context_metadata.page_end}"
+            )
+        elif context_metadata.page_start is not None:
+            anchor_fields.append(f"page={context_metadata.page_start}")
+        elif context_metadata.page_end is not None:
+            anchor_fields.append(f"page={context_metadata.page_end}")
+
+        if len(anchor_fields) == 1:
+            return ""
+
+        return " | ".join(anchor_fields)
 
     def _extract_answer_text(self, response: Any) -> str:
         """
@@ -525,6 +678,88 @@ def _build_openai_answer_generator(
 
     return OpenAIAnswerGenerator(
         model=settings.response_generation_model,
+        api_key_env_var=settings.response_generation_openai_api_key_env_var,
+        grounded_fallback_enabled=(
+            settings.response_generation_grounded_fallback_enabled
+        ),
+    )
+
+
+def _looks_like_rate_limit_error(error: Exception) -> bool:
+    """
+    Detect provider rate limiting without depending on one SDK exception type.
+
+    Parameters
+    ----------
+    error : Exception
+        Provider exception raised by the OpenAI SDK.
+
+    Returns
+    -------
+    bool
+        `True` when the exception appears to represent HTTP 429 or rate limit.
+    """
+
+    for attribute_name in ("status_code", "status", "code"):
+        raw_status = getattr(error, attribute_name, None)
+        if raw_status == 429 or str(raw_status).strip() == "429":
+            return True
+
+    normalized_message = str(error).lower()
+    return "rate limit" in normalized_message or "429" in normalized_message
+
+
+def _build_external_gpt4o_answer_generator(
+    settings: PipelineSettings,
+) -> AnswerGenerator:
+    """
+    Build the external GPT-4o answer generator from shared runtime settings.
+
+    Parameters
+    ----------
+    settings : PipelineSettings
+        Shared runtime settings.
+
+    Returns
+    -------
+    AnswerGenerator
+        External GPT-4o generator configured through central settings.
+    """
+
+    from retrieval.external_gpt4o_answer_generator import (
+        ExternalGPT4oAnswerGenerator,
+    )
+
+    return ExternalGPT4oAnswerGenerator(
+        endpoint_url=settings.response_generation_external_gpt4o_endpoint_url,
+        auth_env_var=settings.response_generation_external_gpt4o_auth_env_var,
+        question_field_name=(
+            settings.response_generation_external_gpt4o_question_field_name
+        ),
+        context_field_name=(
+            settings.response_generation_external_gpt4o_context_field_name
+        ),
+        instructions_field_name=(
+            settings.response_generation_external_gpt4o_instructions_field_name
+        ),
+        metadata_field_name=(
+            settings.response_generation_external_gpt4o_metadata_field_name
+        ),
+        channel_id=settings.response_generation_external_gpt4o_channel_id,
+        thread_id=settings.response_generation_external_gpt4o_thread_id,
+        user_info=settings.response_generation_external_gpt4o_user_info,
+        user_id=settings.response_generation_external_gpt4o_user_id,
+        user_name=settings.response_generation_external_gpt4o_user_name,
+        auth_header_name=(
+            settings.response_generation_external_gpt4o_auth_header_name
+        ),
+        auth_header_prefix=(
+            settings.response_generation_external_gpt4o_auth_header_prefix
+        ),
+        timeout_seconds=(
+            settings.response_generation_external_gpt4o_timeout_seconds
+        ),
+        max_retries=settings.response_generation_external_gpt4o_max_retries,
         grounded_fallback_enabled=(
             settings.response_generation_grounded_fallback_enabled
         ),

@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+import os
+from dataclasses import dataclass, field
 from importlib import metadata
 from pathlib import Path
-from typing import Dict, Iterable, List, Sequence
+from typing import Dict, Iterable, List, Sequence, cast
 
 
 class EmbeddingProviderError(RuntimeError):
@@ -28,6 +29,7 @@ class SentenceTransformersEmbeddingProvider:
 
     model: str
     batch_size: int
+    _loaded_model: object | None = field(init=False, repr=False, default=None)
 
     def __post_init__(self) -> None:
         """
@@ -63,7 +65,7 @@ class SentenceTransformersEmbeddingProvider:
             return []
 
         normalized_texts = self._normalize_texts(texts)
-        model = self._build_model()
+        model = self._get_model()
         vectors: List[List[float]] = []
 
         for batch_index, batch_texts in enumerate(
@@ -79,6 +81,21 @@ class SentenceTransformersEmbeddingProvider:
 
         return vectors
 
+    def _get_model(self) -> "SentenceTransformer":
+        """
+        Return the cached Sentence Transformer model for this provider instance.
+
+        Returns
+        -------
+        SentenceTransformer
+            Loaded Sentence Transformer model instance reused across batches.
+        """
+
+        if self._loaded_model is None:
+            self._loaded_model = self._build_model()
+
+        return cast("SentenceTransformer", self._loaded_model)
+
     def _build_model(self) -> "SentenceTransformer":
         """
         Build the Sentence Transformer model for the configured embedding run.
@@ -89,16 +106,65 @@ class SentenceTransformersEmbeddingProvider:
             Loaded Sentence Transformer model instance.
         """
 
+        self._configure_runtime_quiet_mode()
         sentence_transformer_class = self._load_sentence_transformer_class()
 
         try:
-            return sentence_transformer_class(self.model)
+            return sentence_transformer_class(self.model, local_files_only=True)
         except Exception as exc:
             raise EmbeddingProviderError(
                 "Sentence Transformers model initialization failed for "
                 f"model '{self.model}'. {self._build_model_resolution_hint()} "
                 f"Original error: {self._summarize_exception(exc)}"
             ) from exc
+
+    def _configure_runtime_quiet_mode(self) -> None:
+        """
+        Configure third-party model loaders to suppress benign startup noise.
+        """
+
+        os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
+        os.environ.setdefault("HF_HUB_VERBOSITY", "error")
+        os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
+
+        self._set_huggingface_hub_logging_to_error()
+        self._set_transformers_logging_to_error()
+
+    def _set_huggingface_hub_logging_to_error(self) -> None:
+        """
+        Set Hugging Face Hub logging to errors only when the package supports it.
+        """
+
+        try:
+            from huggingface_hub.utils import logging as huggingface_hub_logging
+        except Exception:
+            return
+
+        set_verbosity_error = getattr(
+            huggingface_hub_logging,
+            "set_verbosity_error",
+            None,
+        )
+        if callable(set_verbosity_error):
+            set_verbosity_error()
+
+    def _set_transformers_logging_to_error(self) -> None:
+        """
+        Set Transformers logging and progress bars to quiet embedding startup output.
+        """
+
+        try:
+            from transformers.utils import logging as transformers_logging
+        except Exception:
+            return
+
+        set_verbosity_error = getattr(transformers_logging, "set_verbosity_error", None)
+        if callable(set_verbosity_error):
+            set_verbosity_error()
+
+        disable_progress_bar = getattr(transformers_logging, "disable_progress_bar", None)
+        if callable(disable_progress_bar):
+            disable_progress_bar()
 
     def _load_sentence_transformer_class(self) -> type["SentenceTransformer"]:
         """

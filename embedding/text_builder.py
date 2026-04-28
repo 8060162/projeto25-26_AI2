@@ -24,14 +24,31 @@ def build_embedding_text(record: EmbeddingInputRecord) -> str:
 
     Design rules
     ------------
-    - prefer the semantically useful chunk text already selected upstream
+    - preserve the semantically useful chunk text already selected upstream
     - repair conservative PDF wrapping artifacts when safe
     - remove avoidable spacing noise
     - flatten incidental single-line wrapping while preserving paragraphs
-    - avoid injecting additional structural prefixes at this stage
     """
 
-    candidate_text = normalize_block_whitespace(record.text)
+    return _normalize_embedding_body_text(record.text)
+
+
+def _normalize_embedding_body_text(text: str) -> str:
+    """
+    Apply the conservative cleanup used for the main embedding body text.
+
+    Parameters
+    ----------
+    text : str
+        Raw chunk text selected for embedding.
+
+    Returns
+    -------
+    str
+        Cleaned body text ready for vector generation.
+    """
+
+    candidate_text = normalize_block_whitespace(text)
     if not candidate_text:
         return ""
 

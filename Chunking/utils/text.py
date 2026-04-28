@@ -159,6 +159,60 @@ def slugify_file_stem(name: str) -> str:
     - We intentionally keep only ASCII alphanumerics plus underscore.
     - This helper is meant for identifiers, not for user-facing labels.
     """
+    return _slugify_identifier(name=name, max_length=120)
+
+
+def build_canonical_document_id(name: str) -> str:
+    """
+    Build a concise stable identifier for one legal document name.
+
+    The identifier favors official document references over full file names.
+    This keeps chunk identifiers short while preserving the original document
+    title and source file name in metadata.
+
+    Parameters
+    ----------
+    name : str
+        Source file stem or document title.
+
+    Returns
+    -------
+    str
+        Stable document identifier suitable for chunk and embedding IDs.
+    """
+
+    full_slug = _slugify_identifier(name=name, max_length=None)
+
+    for pattern in (
+        r"^(Despacho_P_PORTO_P_\d{3}_\d{4})(?:_|$)",
+        r"^(Despacho_no_\d+_\d{4})(?:_|$)",
+        r"^(Regulamento_no_\d+_\d{4})(?:_|$)",
+    ):
+        match = re.match(pattern, full_slug)
+        if match:
+            return match.group(1)
+
+    return slugify_file_stem(name)
+
+
+def _slugify_identifier(name: str, max_length: int | None) -> str:
+    """
+    Convert text into an ASCII identifier with optional length limiting.
+
+    Parameters
+    ----------
+    name : str
+        Raw text to normalize.
+
+    max_length : int | None
+        Maximum identifier length. When None, no length limit is applied.
+
+    Returns
+    -------
+    str
+        ASCII identifier using underscores as separators.
+    """
+
     if not name:
         return "document"
 
@@ -178,8 +232,13 @@ def slugify_file_stem(name: str) -> str:
 
     # Keep only ASCII letters, digits, and underscore separators.
     slug = re.sub(r"[^A-Za-z0-9]+", "_", without_marks).strip("_")
+    if not slug:
+        return "document"
 
-    return slug[:120] if slug else "document"
+    if max_length is None:
+        return slug
+
+    return slug[:max_length]
 
 
 def strip_control_characters(text: str) -> str:

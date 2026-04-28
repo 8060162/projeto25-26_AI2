@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import unittest
 from unittest.mock import patch
 
@@ -115,6 +116,94 @@ class SentenceTransformersEmbeddingProviderTests(unittest.TestCase):
 
         self.assertEqual(vectors, [])
         build_model_mock.assert_not_called()
+
+    def test_embed_texts_reuses_loaded_model_across_calls(self) -> None:
+        """Ensure repeated provider calls do not reload the same local model."""
+        provider = SentenceTransformersEmbeddingProvider(
+            model="all-MiniLM-L6-v2",
+            batch_size=2,
+        )
+        fake_model = FakeSentenceTransformerModel()
+
+        with patch.object(
+            SentenceTransformersEmbeddingProvider,
+            "_build_model",
+            return_value=fake_model,
+        ) as build_model_mock:
+            first_vectors = provider.embed_texts(["first"])
+            second_vectors = provider.embed_texts(["second"])
+
+        self.assertEqual(first_vectors, [[1.0, 5.0]])
+        self.assertEqual(second_vectors, [[1.0, 6.0]])
+        build_model_mock.assert_called_once_with()
+
+    def test_build_model_configures_quiet_mode_before_loading_model(self) -> None:
+        """Ensure third-party model loading noise is reduced before initialization."""
+        provider = SentenceTransformersEmbeddingProvider(
+            model="all-MiniLM-L6-v2",
+            batch_size=4,
+        )
+        call_order: list[str] = []
+
+        def configure_quiet_mode(instance: SentenceTransformersEmbeddingProvider) -> None:
+            """Record the quiet-mode configuration call for ordering assertions."""
+            self.assertIs(instance, provider)
+            call_order.append("quiet")
+
+        def load_sentence_transformer_class(
+            instance: SentenceTransformersEmbeddingProvider,
+        ) -> type[FakeLoadableSentenceTransformerModel]:
+            """Record the model class loading call for ordering assertions."""
+            self.assertIs(instance, provider)
+            call_order.append("load")
+            return FakeLoadableSentenceTransformerModel
+
+        class FakeLoadableSentenceTransformerModel(FakeSentenceTransformerModel):
+            """Accept the configured model name like the real SentenceTransformer."""
+
+            def __init__(self, model_name: str, *, local_files_only: bool) -> None:
+                """Store the configured model name and initialize fake encoding state."""
+                super().__init__()
+                self.model_name = model_name
+                self.local_files_only = local_files_only
+
+        with patch.object(
+            SentenceTransformersEmbeddingProvider,
+            "_configure_runtime_quiet_mode",
+            side_effect=configure_quiet_mode,
+            autospec=True,
+        ) as quiet_mode_mock, patch.object(
+            SentenceTransformersEmbeddingProvider,
+            "_load_sentence_transformer_class",
+            side_effect=load_sentence_transformer_class,
+            autospec=True,
+        ):
+            model = provider._build_model()
+
+        self.assertIsInstance(model, FakeSentenceTransformerModel)
+        self.assertTrue(model.local_files_only)
+        self.assertEqual(call_order, ["quiet", "load"])
+        quiet_mode_mock.assert_called_once_with(provider)
+
+    def test_configure_runtime_quiet_mode_sets_default_logging_environment(self) -> None:
+        """Ensure Hugging Face startup output is quiet without overriding user settings."""
+        provider = SentenceTransformersEmbeddingProvider(
+            model="all-MiniLM-L6-v2",
+            batch_size=4,
+        )
+
+        with patch.dict(
+            os.environ,
+            {
+                "HF_HUB_VERBOSITY": "warning",
+            },
+            clear=True,
+        ):
+            provider._configure_runtime_quiet_mode()
+
+            self.assertEqual(os.environ["HF_HUB_DISABLE_PROGRESS_BARS"], "1")
+            self.assertEqual(os.environ["HF_HUB_VERBOSITY"], "warning")
+            self.assertEqual(os.environ["TRANSFORMERS_VERBOSITY"], "error")
 
     def test_embed_texts_raises_for_invalid_text_inputs(self) -> None:
         """Ensure invalid text items fail through predictable validation rules."""

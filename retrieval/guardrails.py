@@ -145,6 +145,210 @@ class DeterministicGuardrails:
         ),
     }
 
+    _PRE_REQUEST_JAILBREAK_RULES: Sequence[_RuleSpec] = (
+        _RuleSpec(
+            rule_name="jailbreak_pattern.prompt_override",
+            category="jailbreak_pattern",
+            reason="The request contains a prompt-override or jailbreak attempt.",
+            pattern=_compile_pattern(
+                r"\b("
+                r"ignore (all|any|the|previous) instructions|"
+                r"disregard (all|previous) instructions|"
+                r"reveal (the )?(system|hidden) prompt|"
+                r"bypass (your|all) safety"
+                r")\b"
+            ),
+        ),
+    )
+
+    _PORTUGUESE_PRE_REQUEST_RULES: Dict[str, Sequence[_RuleSpec]] = {
+        "offensive_language": (
+            _RuleSpec(
+                rule_name="offensive_language.portuguese_profanity",
+                category="offensive_language",
+                reason="The request contains offensive or abusive language in Portuguese.",
+                pattern=_compile_pattern(
+                    r"\b("
+                    r"cabr[aã]o|filh[oa] da puta|fdp|ot[aá]rio|imbecil|"
+                    r"est[uú]pid[oa]|burro|caralho|merda|foda[- ]?se|"
+                    r"vai[- ]?te foder|vai se foder"
+                    r")\b"
+                ),
+            ),
+        ),
+        "sexual_content": (
+            _RuleSpec(
+                rule_name="sexual_content.portuguese_explicit_terms",
+                category="sexual_content",
+                reason="The request contains explicit sexual content in Portuguese.",
+                pattern=_compile_pattern(
+                    r"\b("
+                    r"pornografia|porno|porn[oó]gr[aá]fico|"
+                    r"conte[uú]do sexual expl[ií]cito|sexo expl[ií]cito|"
+                    r"nudes?|material pornogr[aá]fico|"
+                    r"conte[uú]do er[oó]tico|v[ií]deo [ií]ntimo|imagens? [ií]ntimas?|"
+                    r"atos? sexuais expl[ií]citos?"
+                    r")\b"
+                ),
+            ),
+        ),
+        "discriminatory_content": (
+            _RuleSpec(
+                rule_name="discriminatory_content.portuguese_slurs_or_bias",
+                category="discriminatory_content",
+                reason="The request contains discriminatory or hateful language in Portuguese.",
+                pattern=_compile_pattern(
+                    r"\b("
+                    r"supremacia branca|poder branco|limpeza [ée]tnica|"
+                    r"ra[çc]a inferior|ra[çc]a superior|"
+                    r"rac[aã] pura|"
+                    r"(pretos|negros|ciganos|judeus|mu[çc]ulmanos|imigrantes)"
+                    r"\s+s[aã]o\s+(inferiores|uma praga|criminosos)|"
+                    r"odeio (mulheres|homens|gays|homossexuais|mu[çc]ulmanos|judeus|imigrantes)|"
+                    r"expulsar (imigrantes|mu[çc]ulmanos|judeus)"
+                    r")\b"
+                ),
+            ),
+        ),
+        "criminal_or_dangerous_content": (
+            _RuleSpec(
+                rule_name="criminal_or_dangerous_content.portuguese_illicit_harm",
+                category="criminal_or_dangerous_content",
+                reason="The request asks for criminal, violent, or dangerous guidance in Portuguese.",
+                pattern=_compile_pattern(
+                    r"\b("
+                    r"como (fazer|fabricar) (uma )?bomba|"
+                    r"fabricar explosiv[oa]s?|"
+                    r"como matar algu[ée]m|"
+                    r"envenenar algu[ée]m|"
+                    r"invadir (um )?(sistema|site|servidor|conta)|"
+                    r"contornar a seguran[çc]a|"
+                    r"contornar (a )?(autentica[çc][aã]o|verifica[çc][aã]o|mfa|2fa)|"
+                    r"obter acesso n[aã]o autorizado|"
+                    r"aceder sem permiss[aã]o|"
+                    r"elevar privil[eé]gios|escalar privil[eé]gios|"
+                    r"roubar credenciais|"
+                    r"kit de phishing|"
+                    r"malware|ransomware"
+                    r")\b"
+                ),
+            ),
+            _RuleSpec(
+                rule_name="criminal_or_dangerous_content.portuguese_indirect_unauthorized_student_access",
+                category="criminal_or_dangerous_content",
+                reason="The request seeks indirect unauthorized access to another person's academic account or private data in Portuguese.",
+                pattern=_compile_pattern(
+                    r"("
+                    r"\b("
+                    r"entrar|aceder|abrir|usar|consultar|ver|espreitar|"
+                    r"observar|explorar|navegar"
+                    r")\b.{0,40}\b("
+                    r"conta|perfil|sess[aã]o|portal|[aá]rea reservada|"
+                    r"intranet|credenciais|login"
+                    r")\b.{0,40}\b("
+                    r"de outro aluno|de outra aluna|de outro estudante|"
+                    r"de outra estudante|de outro utilizador|de outra pessoa|"
+                    r"alhe[ií]a|que n[aã]o [ée] minha|que n[aã]o me pertence"
+                    r")"
+                    r"|"
+                    r"\b("
+                    r"usar|aproveitar|reutilizar|inserir|testar"
+                    r")\b.{0,40}\b("
+                    r"credenciais|login|palavra[- ]?passe|senha|conta"
+                    r")\b.{0,40}\b("
+                    r"de outro aluno|de outra aluna|de outro estudante|"
+                    r"de outra estudante|de outra pessoa|alhe[ií]as"
+                    r")"
+                    r"|"
+                    r"\b("
+                    r"ver|consultar|aceder|obter|mostrar"
+                    r")\b.{0,40}\b("
+                    r"dados acad[eé]micos|dados privados|notas|propinas|"
+                    r"hist[oó]rico escolar|avalia[çc][õo]es|inscri[çc][õo]es|"
+                    r"documentos pessoais"
+                    r")\b.{0,50}\b("
+                    r"de outro aluno|de outra aluna|de outro estudante|"
+                    r"de outra estudante|de outra pessoa"
+                    r")\b.{0,50}\b("
+                    r"sem autoriza[çc][aã]o|sem permiss[aã]o|atrav[eé]s da conta|"
+                    r"pelo portal|usando credenciais|com o login"
+                    r")"
+                    r")"
+                ),
+            ),
+        ),
+        "sensitive_data": (
+            _RuleSpec(
+                rule_name="sensitive_data.portuguese_secret_exfiltration",
+                category="sensitive_data",
+                reason="The request appears to seek sensitive data or secrets in Portuguese.",
+                pattern=_compile_pattern(
+                    r"\b("
+                    r"palavra[- ]?passe|senha|chave api|token de acesso|"
+                    r"chave secreta|chave privada|credenciais|"
+                    r"n[uú]mero do cart[aã]o|cart[aã]o de cr[eé]dito|"
+                    r"c[oó]digo de seguran[çc]a|iban|n[uú]mero de conta"
+                    r")\b"
+                ),
+            ),
+            _RuleSpec(
+                rule_name="sensitive_data.portuguese_personal_data_exfiltration",
+                category="sensitive_data",
+                reason="The request appears to seek personal or student data in Portuguese.",
+                pattern=_compile_pattern(
+                    r"\b("
+                    r"revel[ae]|mostr[ae]|fornec[ea]|partilh[ae]|list[ae]|export[ae]|"
+                    r"envi[ae]|exib[ae]|d[aá]|diz[- ]?me|obt[eé]m"
+                    r")\b.{0,80}\b("
+                    r"dados pessoais|dados dos alunos|dados de estudantes|"
+                    r"lista de alunos|lista de estudantes|"
+                    r"emails? dos alunos|emails? dos estudantes|"
+                    r"moradas?|contactos? pessoais|nif|n[uú]mero de identifica[çc][aã]o"
+                    r")\b"
+                ),
+            ),
+        ),
+        "dangerous_command": (
+            _RuleSpec(
+                rule_name="dangerous_command.portuguese_destructive_intent",
+                category="dangerous_command",
+                reason="The request describes destructive system or database actions in Portuguese.",
+                pattern=_compile_pattern(
+                    r"\b("
+                    r"apaga|apagar|elimina|eliminar|remove|remover|"
+                    r"destr[oó]i|destruir|limpa|limpar|drop"
+                    r")\b.{0,60}\b("
+                    r"base de dados|base de dados inteira|bd|database|"
+                    r"tabelas?|registos?|logs?|backups?|ficheiros? do sistema"
+                    r")\b"
+                ),
+            ),
+        ),
+    }
+
+    _PORTUGUESE_PRE_REQUEST_JAILBREAK_RULES: Sequence[_RuleSpec] = (
+        _RuleSpec(
+            rule_name="jailbreak_pattern.portuguese_prompt_override",
+            category="jailbreak_pattern",
+            reason="The request contains a prompt-override or jailbreak attempt in Portuguese.",
+            pattern=_compile_pattern(
+                r"\b("
+                r"ignora (as |todas as )?instru[çc][õo]es|"
+                r"esquece as regras|"
+                r"revela (o )?prompt (de sistema|oculto)|"
+                r"contorna (as )?restri[çc][õo]es|"
+                r"sem restri[çc][õo]es|"
+                r"sem filtros|sem limita[çc][õo]es|"
+                r"(faz de conta|finge|simula) .{0,40}(sem restri[çc][õo]es|sem filtros|"
+                r"que podes ignorar as regras|que tens permiss[aã]o total)|"
+                r"(isto [ée] (s[oó] )?(uma )?(simula[çc][aã]o|auditoria|roleplay)|"
+                r"em modo de (simula[çc][aã]o|auditoria)).{0,40}"
+                r"(ignora|contorna|sem restri[çc][õo]es|sem filtros)"
+                r")\b"
+            ),
+        ),
+    )
+
     _POST_RESPONSE_UNSAFE_RULES: Sequence[_RuleSpec] = (
         _RuleSpec(
             rule_name="unsafe_output.dangerous_command",
@@ -159,6 +363,9 @@ class DeterministicGuardrails:
                 r")"
             ),
         ),
+    )
+
+    _POST_RESPONSE_SENSITIVE_DATA_RULES: Sequence[_RuleSpec] = (
         _RuleSpec(
             rule_name="unsafe_output.sensitive_data",
             category="unsafe_output",
@@ -168,7 +375,11 @@ class DeterministicGuardrails:
                 r"sk-[a-z0-9]{12,}|"
                 r"-----BEGIN (RSA |EC )?PRIVATE KEY-----|"
                 r"\bpassword\s*[:=]\s*\S+|"
+                r"\bsenha\s*[:=]\s*\S+|"
+                r"\bpalavra[- ]?passe\s*[:=]\s*\S+|"
                 r"\bapi[_ -]?key\s*[:=]\s*\S+|"
+                r"\bchave api\s*[:=]\s*\S+|"
+                r"\btoken de acesso\s*[:=]\s*\S+|"
                 r"\bcvv\s*[:=]?\s*\d{3,4}\b"
                 r")"
             ),
@@ -181,6 +392,40 @@ class DeterministicGuardrails:
                 r"\b("
                 r"build a bomb|make a bomb|kill them|poison them|"
                 r"bypass security|steal credentials|deploy malware|ransomware"
+                r")\b"
+            ),
+        ),
+    )
+
+    _PORTUGUESE_POST_RESPONSE_UNSAFE_RULES: Sequence[_RuleSpec] = (
+        _RuleSpec(
+            rule_name="unsafe_output.portuguese_illicit_instructions",
+            category="unsafe_output",
+            reason="The response contains unsafe criminal or harmful instructions in Portuguese.",
+            pattern=_compile_pattern(
+                r"\b("
+                r"como (fazer|fabricar) (uma )?bomba|"
+                r"envenenar algu[ée]m|"
+                r"roubar credenciais|"
+                r"contornar a seguran[çc]a|"
+                r"contornar (a )?(autentica[çc][aã]o|verifica[çc][aã]o|mfa|2fa)|"
+                r"obter acesso n[aã]o autorizado|"
+                r"instalar malware|"
+                r"lan[çc]ar ransomware"
+                r")\b"
+            ),
+        ),
+        _RuleSpec(
+            rule_name="unsafe_output.portuguese_destructive_actions",
+            category="unsafe_output",
+            reason="The response contains destructive system or database instructions in Portuguese.",
+            pattern=_compile_pattern(
+                r"\b("
+                r"apaga|apagar|elimina|eliminar|remove|remover|"
+                r"destr[oó]i|destruir|limpa|limpar|drop"
+                r")\b.{0,60}\b("
+                r"base de dados|base de dados inteira|bd|database|"
+                r"tabelas?|registos?|logs?|backups?|ficheiros? do sistema"
                 r")\b"
             ),
         ),
@@ -201,6 +446,27 @@ class DeterministicGuardrails:
             reason="The response contains placeholder or unresolved content.",
             pattern=_compile_pattern(
                 r"(\[citation needed\]|\btodo\b|\blorem ipsum\b|<insert .+?>)"
+            ),
+        ),
+    )
+
+    _PORTUGUESE_POST_RESPONSE_UNSUPPORTED_RULES: Sequence[_RuleSpec] = (
+        _RuleSpec(
+            rule_name="unsupported_answer.portuguese_self_referential_model",
+            category="unsupported_answer",
+            reason="The response uses unsupported model self-reference in Portuguese.",
+            pattern=_compile_pattern(
+                r"\b("
+                r"como modelo de linguagem|"
+                r"n[aã]o consigo navegar|"
+                r"n[aã]o posso navegar|"
+                r"n[aã]o tenho acesso (ao |aos |[àa] |[àa]s )?"
+                r"(regulamentos?|documentos?|internet|web|conte[uú]do em tempo real)|"
+                r"n[aã]o posso consultar a internet|"
+                r"n[aã]o tenho acesso [àa] base de dados|"
+                r"n[aã]o consigo ver (os )?documentos? anexos|"
+                r"n[aã]o tenho contexto suficiente"
+                r")\b"
             ),
         ),
     )
@@ -284,7 +550,7 @@ class DeterministicGuardrails:
                 text=normalized_answer,
                 stage="post_response",
                 action="block",
-                rule_specs=self._POST_RESPONSE_UNSAFE_RULES,
+                rule_specs=self._build_post_response_unsafe_rules(),
             )
             if not unsafe_decision.allowed:
                 return unsafe_decision
@@ -303,7 +569,7 @@ class DeterministicGuardrails:
                 text=normalized_answer,
                 stage="post_response",
                 action="deflect",
-                rule_specs=self._POST_RESPONSE_UNSUPPORTED_RULES,
+                rule_specs=self._build_post_response_unsupported_rules(),
             )
             if not unsupported_decision.allowed:
                 return unsupported_decision
@@ -344,38 +610,120 @@ class DeterministicGuardrails:
         enabled_rule_groups: Dict[str, Sequence[_RuleSpec]] = {}
 
         if self.settings.guardrails_pre_request_offensive_language_checks_enabled:
-            enabled_rule_groups["offensive_language"] = self._PRE_REQUEST_RULES[
-                "offensive_language"
-            ]
+            enabled_rule_groups["offensive_language"] = self._build_pre_request_rule_specs(
+                category="offensive_language"
+            )
 
         if self.settings.guardrails_pre_request_sexual_content_checks_enabled:
-            enabled_rule_groups["sexual_content"] = self._PRE_REQUEST_RULES[
-                "sexual_content"
-            ]
+            enabled_rule_groups["sexual_content"] = self._build_pre_request_rule_specs(
+                category="sexual_content"
+            )
 
         if self.settings.guardrails_pre_request_discriminatory_content_checks_enabled:
-            enabled_rule_groups["discriminatory_content"] = self._PRE_REQUEST_RULES[
-                "discriminatory_content"
-            ]
+            enabled_rule_groups["discriminatory_content"] = (
+                self._build_pre_request_rule_specs(category="discriminatory_content")
+            )
 
         if (
             self.settings.guardrails_pre_request_criminal_or_dangerous_content_checks_enabled
         ):
-            enabled_rule_groups["criminal_or_dangerous_content"] = (
-                self._PRE_REQUEST_RULES["criminal_or_dangerous_content"]
+            enabled_rule_groups["criminal_or_dangerous_content"] = self._build_pre_request_rule_specs(
+                category="criminal_or_dangerous_content"
             )
 
         if self.settings.guardrails_pre_request_sensitive_data_checks_enabled:
-            enabled_rule_groups["sensitive_data"] = self._PRE_REQUEST_RULES[
-                "sensitive_data"
-            ]
+            enabled_rule_groups["sensitive_data"] = self._build_pre_request_rule_specs(
+                category="sensitive_data"
+            )
 
         if self.settings.guardrails_pre_request_dangerous_command_checks_enabled:
-            enabled_rule_groups["dangerous_command"] = self._PRE_REQUEST_RULES[
-                "dangerous_command"
-            ]
+            enabled_rule_groups["dangerous_command"] = self._build_pre_request_rule_specs(
+                category="dangerous_command"
+            )
+
+        if self.settings.guardrails_pre_request_jailbreak_pattern_checks_enabled:
+            enabled_rule_groups["jailbreak_pattern"] = self._build_pre_request_jailbreak_rule_specs()
 
         return enabled_rule_groups
+
+    def _build_pre_request_rule_specs(self, category: str) -> Sequence[_RuleSpec]:
+        """
+        Build one pre-request rule group with optional Portuguese coverage.
+
+        Parameters
+        ----------
+        category : str
+            Logical guardrail category requested by the evaluation flow.
+
+        Returns
+        -------
+        Sequence[_RuleSpec]
+            Ordered deterministic rules for the requested category.
+        """
+
+        rule_specs = list(self._PRE_REQUEST_RULES.get(category, ()))
+
+        if self.settings.guardrails_portuguese_coverage_enabled:
+            rule_specs.extend(self._PORTUGUESE_PRE_REQUEST_RULES.get(category, ()))
+
+        return tuple(rule_specs)
+
+    def _build_pre_request_jailbreak_rule_specs(self) -> Sequence[_RuleSpec]:
+        """
+        Build the enabled deterministic jailbreak rules for pre-request checks.
+
+        Returns
+        -------
+        Sequence[_RuleSpec]
+            Ordered jailbreak-pattern rules enabled for the current runtime.
+        """
+
+        rule_specs = list(self._PRE_REQUEST_JAILBREAK_RULES)
+
+        if (
+            self.settings.guardrails_portuguese_coverage_enabled
+            and self.settings.guardrails_portuguese_jailbreak_pattern_checks_enabled
+        ):
+            rule_specs.extend(self._PORTUGUESE_PRE_REQUEST_JAILBREAK_RULES)
+
+        return tuple(rule_specs)
+
+    def _build_post_response_unsafe_rules(self) -> Sequence[_RuleSpec]:
+        """
+        Build the enabled unsafe-output rules for post-response checks.
+
+        Returns
+        -------
+        Sequence[_RuleSpec]
+            Ordered unsafe-output rules enabled for the current runtime.
+        """
+
+        rule_specs = list(self._POST_RESPONSE_UNSAFE_RULES)
+
+        if self.settings.guardrails_post_response_sensitive_data_checks_enabled:
+            rule_specs.extend(self._POST_RESPONSE_SENSITIVE_DATA_RULES)
+
+        if self.settings.guardrails_portuguese_coverage_enabled:
+            rule_specs.extend(self._PORTUGUESE_POST_RESPONSE_UNSAFE_RULES)
+
+        return tuple(rule_specs)
+
+    def _build_post_response_unsupported_rules(self) -> Sequence[_RuleSpec]:
+        """
+        Build the enabled unsupported-answer rules for post-response checks.
+
+        Returns
+        -------
+        Sequence[_RuleSpec]
+            Ordered unsupported-answer rules enabled for the current runtime.
+        """
+
+        rule_specs = list(self._POST_RESPONSE_UNSUPPORTED_RULES)
+
+        if self.settings.guardrails_portuguese_coverage_enabled:
+            rule_specs.extend(self._PORTUGUESE_POST_RESPONSE_UNSUPPORTED_RULES)
+
+        return tuple(rule_specs)
 
     def _evaluate_text_rules(
         self,

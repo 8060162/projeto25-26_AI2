@@ -449,6 +449,48 @@ class ChromaEmbeddingStorageTests(unittest.TestCase):
                 },
             )
 
+    def test_query_similar_chunks_scopes_queries_to_active_strategy_by_default(
+        self,
+    ) -> None:
+        """Ensure retrieval does not search stale records from other strategies."""
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            collection = FakeCollection()
+            collection.query_response = {"ids": [[]]}
+            storage = self._build_storage(temporary_directory, collection)
+
+            storage.query_similar_chunks(query_vector=[0.5, 0.4, 0.3])
+
+            self.assertEqual(
+                collection.query_calls[0]["where"],
+                {"strategy": "article_smart"},
+            )
+
+    def test_query_similar_chunks_combines_route_filter_with_active_strategy(
+        self,
+    ) -> None:
+        """Ensure route-scoped retrieval remains limited to the active strategy."""
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            collection = FakeCollection()
+            collection.query_response = {"ids": [[]]}
+            storage = self._build_storage(temporary_directory, collection)
+
+            storage.query_similar_chunks(
+                query_vector=[0.5, 0.4, 0.3],
+                where={"doc_id": "Despacho_P_PORTO_P_043_2025"},
+            )
+
+            self.assertEqual(
+                collection.query_calls[0]["where"],
+                {
+                    "$and": [
+                        {"strategy": "article_smart"},
+                        {"doc_id": "Despacho_P_PORTO_P_043_2025"},
+                    ]
+                },
+            )
+
     def test_query_similar_chunks_honors_explicit_top_k_and_handles_sparse_payloads(self) -> None:
         """Ensure sparse ChromaDB query responses still normalize deterministically."""
         with tempfile.TemporaryDirectory() as temporary_directory:

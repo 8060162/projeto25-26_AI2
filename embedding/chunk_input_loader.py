@@ -203,20 +203,9 @@ def _build_embedding_input_record(
     if not raw_text_value:
         return None
 
-    provisional_record = EmbeddingInputRecord(
-        chunk_id=chunk_id,
-        doc_id=doc_id,
-        text=raw_text_value,
-        source_file=str(chunk_file_path),
-        hierarchy_path=_read_string_list_value(chunk_item, "hierarchy_path"),
-        page_start=_read_optional_int_value(chunk_item, "page_start"),
-        page_end=_read_optional_int_value(chunk_item, "page_end"),
-    )
-    text_value = build_embedding_text(provisional_record)
-
-    if not text_value:
-        return None
-
+    hierarchy_path = _read_string_list_value(chunk_item, "hierarchy_path")
+    page_start = _read_optional_int_value(chunk_item, "page_start")
+    page_end = _read_optional_int_value(chunk_item, "page_end")
     metadata = _build_embedding_metadata(
         chunk_item=chunk_item,
         chunk_file_path=chunk_file_path,
@@ -224,15 +213,30 @@ def _build_embedding_input_record(
         text_field_name=text_field_name,
     )
 
+    embedding_input_record = EmbeddingInputRecord(
+        chunk_id=chunk_id,
+        doc_id=doc_id,
+        text=raw_text_value,
+        metadata=metadata,
+        source_file=str(chunk_file_path),
+        hierarchy_path=hierarchy_path,
+        page_start=page_start,
+        page_end=page_end,
+    )
+    text_value = build_embedding_text(embedding_input_record)
+
+    if not text_value:
+        return None
+
     return EmbeddingInputRecord(
         chunk_id=chunk_id,
         doc_id=doc_id,
         text=text_value,
         metadata=metadata,
         source_file=str(chunk_file_path),
-        hierarchy_path=_read_string_list_value(chunk_item, "hierarchy_path"),
-        page_start=_read_optional_int_value(chunk_item, "page_start"),
-        page_end=_read_optional_int_value(chunk_item, "page_end"),
+        hierarchy_path=hierarchy_path,
+        page_start=page_start,
+        page_end=page_end,
     )
 
 

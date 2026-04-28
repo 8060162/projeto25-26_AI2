@@ -10,10 +10,15 @@ from embedding.visualization.spotlight_export import (
 )
 
 if TYPE_CHECKING:
+    from embedding.visualization.benchmark_overlay_export import (
+        BenchmarkOverlayExportResult,
+    )
     from embedding.visualization.spotlight_viewer import SpotlightLaunchResult
 
 __all__ = [
+    "BenchmarkOverlayExportResult",
     "SpotlightExportResult",
+    "export_benchmark_overlay_dataset",
     "SpotlightLaunchResult",
     "export_spotlight_dataset",
     "launch_spotlight_viewer",
@@ -34,6 +39,21 @@ def __getattr__(name: str) -> Any:
     Any
         Lazily imported viewer helper.
     """
+
+    if name in {
+        "BenchmarkOverlayExportResult",
+        "export_benchmark_overlay_dataset",
+    }:
+        from embedding.visualization.benchmark_overlay_export import (
+            BenchmarkOverlayExportResult,
+            export_benchmark_overlay_dataset,
+        )
+
+        exported_members = {
+            "BenchmarkOverlayExportResult": BenchmarkOverlayExportResult,
+            "export_benchmark_overlay_dataset": export_benchmark_overlay_dataset,
+        }
+        return exported_members[name]
 
     if name in {"SpotlightLaunchResult", "launch_spotlight_viewer"}:
         from embedding.visualization.spotlight_viewer import (

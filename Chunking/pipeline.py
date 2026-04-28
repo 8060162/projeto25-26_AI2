@@ -24,7 +24,7 @@ from Chunking.extraction.ocr_fallback import OcrFallbackReader
 from Chunking.extraction.pdf_reader import PdfReader
 from Chunking.parsing.structure_parser import StructureParser
 from Chunking.quality.chunk_quality_validator import ChunkQualityValidator
-from Chunking.utils.text import slugify_file_stem
+from Chunking.utils.text import build_canonical_document_id
 
 
 def run_pipeline() -> None:
@@ -130,6 +130,8 @@ def run_pipeline() -> None:
         raise FileNotFoundError(
             f"No PDFs found in '{settings.raw_dir}'. Please place your source files there."
         )
+
+    _validate_unique_document_ids(pdf_files)
 
     for pdf_path in pdf_files:
         print(f"[INFO] Processing: {pdf_path.name}")
@@ -429,13 +431,55 @@ def _build_document_metadata(pdf_path: Path) -> DocumentMetadata:
         Base metadata object for the document.
     """
     return DocumentMetadata(
-        doc_id=slugify_file_stem(pdf_path.stem),
+        doc_id=build_canonical_document_id(pdf_path.stem),
         file_name=pdf_path.name,
         title=pdf_path.stem,
         source_path=str(pdf_path),
         metadata={
             "source_extension": pdf_path.suffix.lower(),
         },
+    )
+
+
+def _validate_unique_document_ids(pdf_files: List[Path]) -> None:
+    """
+    Validate that all input PDFs resolve to distinct document identifiers.
+
+    Parameters
+    ----------
+    pdf_files : List[Path]
+        Source PDF paths selected for the current pipeline run.
+
+    Raises
+    ------
+    ValueError
+        Raised when two different files would write to the same document output
+        folder and produce overlapping chunk identifiers.
+    """
+
+    document_id_sources: Dict[str, List[str]] = {}
+
+    for pdf_path in pdf_files:
+        document_id = build_canonical_document_id(pdf_path.stem)
+        document_id_sources.setdefault(document_id, []).append(pdf_path.name)
+
+    duplicated_document_ids = {
+        document_id: file_names
+        for document_id, file_names in document_id_sources.items()
+        if len(file_names) > 1
+    }
+
+    if not duplicated_document_ids:
+        return
+
+    duplicate_descriptions = [
+        f"{document_id}: {', '.join(file_names)}"
+        for document_id, file_names in sorted(duplicated_document_ids.items())
+    ]
+    raise ValueError(
+        "Multiple input PDFs resolve to the same document id. Rename or remove "
+        "duplicates before running the pipeline: "
+        + "; ".join(duplicate_descriptions)
     )
 
 
