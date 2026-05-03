@@ -1,0 +1,41 @@
+{
+  "_meta": {
+    "schema_version": "2.0",
+    "generated_at": "2026-05-03T17:58:44.094977+00:00",
+    "filename": "Despacho nº 4103-2013_RegulamentoDisciplinarEstudantesIPP.pdf",
+    "extraction_info": {
+      "strategy": "hybrid",
+      "total_pages": 2,
+      "total_elements": 3,
+      "total_artigos": 0,
+      "ocr_pages": [
+        1
+      ],
+      "avg_quality": 0.2
+    },
+    "quality_flags": {
+      "has_tables": false,
+      "has_lists": false,
+      "ocr_was_used": true,
+      "low_quality_pages": [
+        1
+      ]
+    }
+  },
+  "_index": {
+    "capitulos": [],
+    "artigos": {},
+    "paginas": {}
+  },
+  "document_info": {
+    "titulo": "| ERROR:             | undefined |       |\n| ------------------ | --------- | ----- |\n| OFFENDING COMMAND: |           | eexec | | /            | quit",
+    "tipo": "Despacho",
+    "numero": "4103-2013",
+    "ano": "",
+    "data": "",
+    "entidade": "",
+    "filename": "Despacho nº 4103-2013_RegulamentoDisciplinarEstudantesIPP.pdf"
+  },
+  "preambulo": "| ERROR:             | undefined |       |\n| ------------------ | --------- | ----- |\n| OFFENDING COMMAND: |           | eexec | | /            | quit |     |\n| ------------ | ---- | --- |\n| -dictionary- |      |     |\n| -mark-       |      |     | ERROR: undefined eexec STACK: /quit",
+  "estrutura": {}
+}

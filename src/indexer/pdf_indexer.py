@@ -1,65 +1,67 @@
 """
-pdf_indexer.py
-Orquestra o processamento de um único PDF: carrega, faz parse e junta metadados.
+pdf_indexer.py  (v2 — integra DocumentBuilder e relatório OCR)
+--------------------------------------------------------------
+Orquestra o processamento de um único PDF: carrega, faz parse,
+extrai metadados e constrói o JSON final navegável.
 
-É o único módulo que conhece todos os colaboradores (loader, parser, extractor).
-Recebe o loader por injecção de dependência — permite trocar PDFLoader (produção)
-por DevLoader (desenvolvimento) sem alterar código.
+Alterações v2:
+  - Usa DocumentBuilder em vez de _build_document inline
+  - Propaga o relatório OCR (se presente no primeiro elemento)
+  - Conta elementos processados para o _meta do JSON
 """
 
+import logging
 import os
 import sys
 from pathlib import Path
 
-# Garante que src/ está no path independentemente de como o módulo é invocado
 _SRC = Path(__file__).resolve().parent.parent
 if str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
 
-from indexer.loader_protocol    import LoaderProtocol
-from indexer.anchor_parser      import AnchorParser
-from indexer.metadata_keys import MetadataExtractor
+from loader_protocol  import LoaderProtocol
+from anchor_parser    import AnchorParser
+from document_builder import DocumentBuilder
+
+logger = logging.getLogger(__name__)
 
 
 class PDFIndexer:
 
     def __init__(self, loader: LoaderProtocol):
-        self._loader = loader
-        self._parser = AnchorParser()
+        self._loader  = loader
+        self._parser  = AnchorParser()
+        self._builder = DocumentBuilder()
 
     def run(self, pdf_path: str) -> dict:
         """
-        Processa um PDF e devolve o documento estruturado completo.
-
-        Lança excepção em caso de erro — é responsabilidade do
-        batch_processor capturá-la e registá-la no relatório.
+        Processa um PDF e devolve o documento JSON estruturado e navegável.
 
         Returns:
-            {
-                "document_info": { … },
-                "preambulo":     str,
-                "estrutura":     { … }
-            }
+            Documento JSON completo (ver document_builder.py para esquema).
+
+        Raises:
+            Exception: em caso de erro grave — capturado pelo batch_processor.
         """
         elements = self._loader.load(pdf_path)
-        parsed   = self._parser.parse(elements)
-        return self._build_document(os.path.basename(pdf_path), parsed)
 
-    # ── privado ───────────────────────────────────────────────────────────────
+        # Extrai o relatório OCR se presente (injectado pelo PDFLoader)
+        ocr_report = elements[0].pop("_ocr_report", None) if elements else None
 
-    @staticmethod
-    def _build_document(filename: str, parsed: dict) -> dict:
-        """
-        Monta o envelope do documento final a partir do resultado do parser.
+        parsed = self._parser.parse(elements)
 
-        Responsabilidade isolada: se a estrutura de saída mudar (ex: novo
-        campo de topo), só este método precisa de ser actualizado.
-        """
-        return {
-            "document_info": MetadataExtractor.extract(
-                filename=filename,
-                preamble=parsed["preambulo"],
-            ),
-            "preambulo": parsed["preambulo"],
-            "estrutura": parsed["estrutura"],
-        }
+        doc = self._builder.build(
+            filename      = os.path.basename(pdf_path),
+            parsed        = parsed,
+            ocr_report    = ocr_report,
+            element_count = len(elements),
+        )
+
+        logger.info(
+            "PDFIndexer: '%s' → %d capítulos, %d artigos",
+            os.path.basename(pdf_path),
+            len(doc.get("estrutura", {})),
+            doc.get("_meta", {}).get("extraction_info", {}).get("total_artigos", 0),
+        )
+
+        return doc

@@ -1,0 +1,49 @@
+{
+  "_meta": {
+    "schema_version": "2.0",
+    "generated_at": "2026-05-03T18:03:17.193686+00:00",
+    "filename": "Resolução nº 2-2024_Tabela de taxas e emolumentos do Instituto Politécnico do Porto.pdf",
+    "extraction_info": {
+      "strategy": "ocr_fallback",
+      "total_pages": 5,
+      "total_elements": 30,
+      "total_artigos": 0,
+      "ocr_pages": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "avg_quality": 0.0
+    },
+    "quality_flags": {
+      "has_tables": false,
+      "has_lists": false,
+      "ocr_was_used": true,
+      "low_quality_pages": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ]
+    }
+  },
+  "_index": {
+    "capitulos": [],
+    "artigos": {},
+    "paginas": {}
+  },
+  "document_info": {
+    "titulo": "N.º 112\n— 12-06-2024\nINSTITUTO POLITECNICO DO PORTO\nResolugao n.° 2/2024\nSumário: Aprova a tabela de taxas e emolumentos do Instituto Politécnico do Porto.",
+    "tipo": "Resolução",
+    "numero": "2-2024",
+    "ano": "2024",
+    "data": "12-06-2024",
+    "entidade": "INSTITUTO POLITECNICO",
+    "filename": "Resolução nº 2-2024_Tabela de taxas e emolumentos do Instituto Politécnico do Porto.pdf"
+  },
+  "preambulo": "N.º 112\n— 12-06-2024\nINSTITUTO POLITECNICO DO PORTO\nResolugao n.° 2/2024\nSumário: Aprova a tabela de taxas e emolumentos do Instituto Politécnico do Porto. O Conselho de Gestão na sua reunião de 25 de março de 2024 deliberou, nos termos da alínea b)\ndo n.º 1 do artigo 29.° dos Estatutos do Instituto Politécnico do Porto (P.PORTO), por força do n.º 2\ndo artigo 95.º do Regime jurídico das instituições de ensino superior (RJIES) fixar as seguintes taxas\ne emolumentos: 1 — Os atos a praticar no âmbito do ensino, no Instituto ou nas suas Escolas, estão sujeitos às\ntaxas e emolumentos constantes do Anexo | à presente resolução; 2 — Os atos a praticar no âmbito das atividades dos Serviços Administrativos e Outros Serviços do\nInstituto ou das suas Escolas e das suas Unidades de Extensão, estão sujeitos às taxas e emolumentos\nconstantes do Anexo Il à presente resolução; 3 — As taxas e emolumentos previstos na presente resolução são pagas na totalidade no momento\nda solicitação do ato; 4 — Os valores constantes das tabelas não incluem o imposto de selo, se este for devido; 5 — À arrecadação destas taxas e emolumentos constitui receita própria do Instituto, nos termos\ndo artigo 115.º do RJIES. É revogada a Resolução P.PORTO/CGEST-01/2020, de 2 de junho. A presente resolução produz efeitos à data da sua publicação no Diário da República. 25 de março de 2024. — O Presidente, Paulo Pereira.",
+  "estrutura": {}
+}

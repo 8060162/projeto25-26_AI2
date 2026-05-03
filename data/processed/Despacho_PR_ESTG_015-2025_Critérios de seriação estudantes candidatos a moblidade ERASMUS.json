@@ -1,0 +1,41 @@
+{
+  "_meta": {
+    "schema_version": "2.0",
+    "generated_at": "2026-05-03T17:59:30.707151+00:00",
+    "filename": "Despacho_PR_ESTG_015-2025_Critérios de seriação estudantes candidatos a moblidade ERASMUS.pdf",
+    "extraction_info": {
+      "strategy": "hybrid",
+      "total_pages": 2,
+      "total_elements": 6,
+      "total_artigos": 0,
+      "ocr_pages": [
+        1
+      ],
+      "avg_quality": 0.2
+    },
+    "quality_flags": {
+      "has_tables": false,
+      "has_lists": false,
+      "ocr_was_used": true,
+      "low_quality_pages": [
+        1
+      ]
+    }
+  },
+  "_index": {
+    "capitulos": [],
+    "artigos": {},
+    "paginas": {}
+  },
+  "document_info": {
+    "titulo": "A necessidade de se proceder a seriação dos estudantes candidatos a mobilidade outgoing, no ano letivo\n2025/2026; 3.",
+    "tipo": "Despacho",
+    "numero": "",
+    "ano": "2025",
+    "data": "",
+    "entidade": "",
+    "filename": "Despacho_PR_ESTG_015-2025_Critérios de seriação estudantes candidatos a moblidade ERASMUS.pdf"
+  },
+  "preambulo": "P. PORTO DE TECNOLOGA Escola Superior de Tecnologia e Gestão\nEGESTAO\nDespacho PR/ESTG- 015/2025\nASSUNTO: Critérios de seriação dos estudantes candidatos a mobilidade Frasmus+ estudos e/ou estágio no\nano letivo 2025/2026\nConsiderando: 1 Que, nos termos da alínea f) do ponto 2 do artigo 22 do Regulamento de Mobilidade Internacional da ESTG,\naprovado pelo Despacho PR/ESTG-013/2022, de 14 de julho, o Gabinete de Relações Internacionais da Escola\npropõe anualmente a Presidência da ESTG os critérios de seriação dos candidatos a mobilidade outgoing, tendo\nem vista a elaboração do Despacho sobre os critérios de seriação, garantindo a equidade de tratamento dos\nparticipantes, divulgação e transparência do processo; e. A necessidade de se proceder a seriação dos estudantes candidatos a mobilidade outgoing, no ano letivo\n2025/2026; 3. Aproposta apresentada pelo Gabinete de Relações Internacionais da ESTG. Determino que:\n1. Aseriação dos estudantes candidatos a mobilidade Erasmus+ de estudos e/ou estágio tem por base a aplicação\nsucessiva dos seguintes critérios:\nA. CANDIDATURA A MOBILIDADE ERASMUS+ ESTUDOS E/OU ESTÁGIO\n1. Média registada até ao momento\n2. Total de unidades de crédito obtidos até ao momento\n3. Participação nas atividades de “Internationalization@home' e | 20\neBuddy\n4. Competência linguística\nCRITÉRIOS DE DESEMPATE\na. Ano de inscrição mais ediantado\nb. Menos número de unidades curriculares em atraso\nc. Maior número de unidades curriculares realizadas\nd. Média registada até ao momento\nESTG-PS06-Mod 029V0 ·\n·\n·\nAssinado por: LUÍS DA COSTA LIMA\nNum. de Identificação: 03601113\nData: 2025.03.06 14:44:41+00'00'",
+  "estrutura": {}
+}

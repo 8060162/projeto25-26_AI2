@@ -1,0 +1,325 @@
+{
+  "_meta": {
+    "schema_version": "2.0",
+    "generated_at": "2026-05-03T18:01:01.162118+00:00",
+    "filename": "Regulamento P.PORTO-P-001-2020 - Regulamento de Bolsas a Estudantes Empreendedores.pdf",
+    "extraction_info": {
+      "strategy": "ocr_fallback",
+      "total_pages": 21,
+      "total_elements": 172,
+      "total_artigos": 17,
+      "ocr_pages": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        15,
+        16,
+        17,
+        18,
+        20,
+        21
+      ],
+      "avg_quality": 0.038
+    },
+    "quality_flags": {
+      "has_tables": true,
+      "has_lists": true,
+      "ocr_was_used": true,
+      "low_quality_pages": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        15,
+        16,
+        17,
+        18,
+        20,
+        21
+      ]
+    }
+  },
+  "_index": {
+    "capitulos": [
+      "__NO_CHAPTER__",
+      "CAP_2",
+      "CAP_3"
+    ],
+    "artigos": {
+      "ART_1": "__NO_CHAPTER__",
+      "ART_2": "__NO_CHAPTER__",
+      "ART_4": "CAP_2",
+      "ART_5": "CAP_2",
+      "ART_7": "CAP_3",
+      "ART_8": "CAP_3",
+      "ART_10": "CAP_3",
+      "ART_11": "CAP_3",
+      "ART_12": "CAP_3",
+      "ART_15": "CAP_3",
+      "ART_16": "CAP_3",
+      "ART_172": "CAP_3",
+      "ART_19": "CAP_3",
+      "ART_20": "CAP_3",
+      "ART_23": "CAP_3",
+      "ART_24": "CAP_3",
+      "ART_25": "CAP_3"
+    },
+    "paginas": {
+      "4": [
+        "ART_1",
+        "ART_2"
+      ],
+      "5": [
+        "ART_4",
+        "ART_5"
+      ],
+      "6": [
+        "ART_7",
+        "ART_8"
+      ],
+      "7": [
+        "ART_10",
+        "ART_11"
+      ],
+      "8": [
+        "ART_12"
+      ],
+      "9": [
+        "ART_15",
+        "ART_16",
+        "ART_172"
+      ],
+      "10": [
+        "ART_19",
+        "ART_20"
+      ],
+      "11": [
+        "ART_23",
+        "ART_24",
+        "ART_25"
+      ]
+    }
+  },
+  "document_info": {
+    "titulo": "Regulamento\nBOLSAS A ESTUDANTES\nEMPREENDEDORES REGULAMENTO P.PORTO/P-001/2021\nBOLSAS A ESTUDANTES EMPREENDEDORES\nÍNDICE\n[O] o) [e 0 PR\nÂmbito de aplicação...",
+    "tipo": "Regulamento",
+    "numero": "",
+    "ano": "2020",
+    "data": "",
+    "entidade": "",
+    "filename": "Regulamento P.PORTO-P-001-2020 - Regulamento de Bolsas a Estudantes Empreendedores.pdf"
+  },
+  "preambulo": "Regulamento\nBOLSAS A ESTUDANTES\nEMPREENDEDORES REGULAMENTO P.PORTO/P-001/2021\nBOLSAS A ESTUDANTES EMPREENDEDORES\nÍNDICE\n[O] o) [e 0 PR\nÂmbito de aplicação... eee 4\nObjeto das 50) 57 | PR\nDJ | AGO PPP\nComponentes das DOISAS ..........ecccsssssssssssssssssesssesssssssssssssssssssssssssssessseceessessesesesssesesssssnssessseeeeesessesssesssssesssnanssessssssssssssesssseensssee D\nCandidatura, avaliação, concessão e renovação de DOISAS.........sssessssssssessssssssssnssessssssesssssssssesssseessnssessssseessseeesneeseeses D\nAbertura de COMCUISOS .......cssssssssssecssssssseccerssesssssesscsceesseseeeeeseccnssneececescencecceceseseeeseeteseeceeeecesststeesnssssserseersmunumnmenssssessesesseseeee D\n[6 po [o Fo O O\nDocumentos de suporte da CANGIMAtUrA ...eeccccssssssssssssssesssusssssssssscccsseccesssssssensssssssscessscecceseccessssessensssssssssecessscesessessees O\nAvaliação das candidaturas ...........cssssssssssssssssssessssssssssssssssssssssssssuenssssssesssssssssssssssseessssuenssessessssessssesssssssesssssnanssesssssssssssessnseeee Lo\nDivulgação dos reSUltacdOs..........sssssssssssssnssceeceeeessessumnseesssssssssseensunssnsssessecesseseeeseeecsnssnseeeeeseeecescesesesseeseeneesesseceeeeeeeeeseneee À\nConcessão de DONSAS....ssssssssssecossssssescesssessessssssssscsseeeeeeeeceenssssccececceceeceececeeecequeenececeeceeeseeeeestunuuumnsnseecessssssssasnssesseseeseeceesene LL\n[OCO gifs 40] [74 [or [o PR O\nRegime e condições financeiras das DOISAS «un... .eeesssssssssesseseessneseeccececesessesstnsuntnensseeeesssssttiessssssseseeseeceseeneensssesssssesesessessees O\nGC [o [E PR\n[= (er: [o [o PR O\nPagamento das componentes da DOISA.........ssssssssssssssssnsseseeesssssstuesnnssscsceesssesconsussssssseeeecceeeeeeeeceeemnenseseesseeseseseeeeeeeeuee D\nSeguro de acidentes PCSSOAIS.u........ececsssssssssessssnssessseeessssssesssesssssssssssnssessseccessessessesssssssssssansseesseeeeesessesessasssssssssanssessssssssesssssee QD\nTermo e cancelamento de DOISAS........csssssssssssceeeccseestesssesessssseseeeeessssssnssseseeessssstiuumneesssssssesseersmunnensenessseesseeseeeeeecemasssenseseesee D\nRelatório final de DOISA...........sssssssssssssssseessessssessesssssessnsssssseesssseessesssussssssseeeeesesseesunessssseseeceessssssscecsnsseeeeeeesesssssseeeeeeesee D\nFalsas COClAraGOS ........sesesssssssscccccscescessensssssssseseeeeseececcccenemneseesseceeseceececsesssssunssseeeeseeeeetummmumessssessseesonsusssssnseceececteseeeseeeeanease D\nCumprimento dos objetivos e cessação da BOIS... ecsssssssssssssssssessssssssssssessessssessssssssssesssssseessssesssssssessssssssssessecssee TO\nNão cumprimento dos ODJEtiVOS.....eecsccssssessssssssssesssssssscsssscccsseccesssssssessssssssseessscesesseccessssessessesssseeesseceessssessesssssssnssseesesee TO\nCancelamento da bolsa......essssssssssssssssssceesnssseseesessssssessecesssunssessnssssssssessessssssesessetmesseseesssussseesesensssmunseessusesseessesssenssssseee TO\nMenção de apoios e divulgação de resultados ....ceessessssssssssssssssssessssssssssssssessssssssssssssssssssssssesssssssssssssssssssssssssssseeeeeee TT\nAcompanhamento e CONONO....cessssssssssssssescssssssssnsssssssssssecccccsssssssssnsssesseecessesssssssscsssssssssssesssesesesssssssssssessssessescassssssssssssses TT\n[6 Efe jo a ES 0 = [I\n2121 REGULAMENTO P.PORTO/P-001/2021\nBOLSAS A ESTUDANTES EMPREENDEDORES\nEntrada em vigor e produção de CFEILOS...sscsssssscsssssessessuuesssssssssscceseccecsssessenssusssssssssssecesecceceesecenrssssssssseessccecsssseeee TT\n3121",
+  "estrutura": {
+    "__NO_CHAPTER__": {
+      "titulo": "Sem Capítulos",
+      "artigos": {
+        "ART_1": {
+          "titulo": "Sem Título",
+          "conteudo": "OBJETO\nO presente regulamento disciplina a seleção, contratação e regime jurídico aplicáveis às Bolsas a Estudantes\nEmpreendedores do Instituto Politécnico do Porto, adiante designado por P.PORTO.",
+          "pagina": 4
+        },
+        "ART_2": {
+          "titulo": "ÂMBITO DE APLICAÇÃO",
+          "conteudo": "artigo 136.º da Portaria n.º 57-A/2015, de 27 de fevereiro, que aprova o “Regulamento Específico do\ndomínio da Competitividade e Internacionalização”, adiante designado por RECI, a estudantes do\nP.PORTO a desenvolver atividades de promoção de espírito empresarial enquadradas em projetos\nfinanciados no âmbito do RECI. 2. As atividades dos estudantes podem ser realizadas em qualquer Unidade, Grupo, Departamento, Área\nCientífica ou outra estrutura do P.PORTO, onde sejam desenvolvidas atividades de promoção de espírito\nempresarial.",
+          "pagina": 4,
+          "listas": [
+            [
+              "O presente Regulamento aplica-se ao financiamento, pelo P.PORTO das bolsas previstas no n.º 7 do"
+            ]
+          ]
+        }
+      }
+    },
+    "CAP_2": {
+      "titulo": "CAPÍTULO 2",
+      "artigos": {
+        "ART_4": {
+          "titulo": "DURAÇÃO",
+          "conteudo": "não renovável, tendo início a partir da data de assinatura do contrato da mesma; e. A duração máxima da bolsa poderá ser condicional à existência de avaliações intercalares ao projeto\nempresarial objeto de apoio, para aferir se a sua implementação alcançou um nível de maturidade\nrazoável que justifique a necessidade de prolongar o seu tempo de vida.",
+          "pagina": 5,
+          "listas": [
+            [
+              "Asbolsas objeto do presente regulamento terão uma duração minima de 3 meses e máxima de 12 meses,"
+            ]
+          ]
+        },
+        "ART_5": {
+          "titulo": "COMPONENTES DAS BOLSAS",
+          "conteudo": "e de acordo com o financiamento aprovado para o efeito; e. Quando a duração da bolsa for superior a 3 meses, o subsídio poderá ser pago em parcelas mensais ou\ntrimestrais: 3. Não são devidos, em qualquer caso, subsídios de alimentação, férias, Natal ou quaisquer outros não\nexpressamente referidos no presente Regulamento ou no RECI.",
+          "pagina": 5,
+          "listas": [
+            [
+              "Abolsaé concretizada através de um subsídio único, cujo montante é determinado no aviso de abertura,"
+            ]
+          ]
+        }
+      }
+    },
+    "CAP_3": {
+      "titulo": "CAPITULO 3",
+      "artigos": {
+        "ART_7": {
+          "titulo": "CANDIDATOS",
+          "conteudo": "inscrição válida, no momento da candidatura, em cursos de licenciatura, mestrado ou outro curso não\nconferente de grau. 2. Oaviso de abertura poderá indicar eventuais restrições adicionais, nomeadamente quando previstas nos\nregulamentos das entidades financiadoras. 3. Em casos devidamente fundamentados, o aviso de abertura poderá permitir também candidaturas de\nestudantes de outras instituições de ensino, superior ou outras, nomeadamente no âmbito de protocolos\ne cursos em colaboração.",
+          "pagina": 6,
+          "listas": [
+            [
+              "Podem candidatar-se as bolsas financiadas pelo P.PORTO todos as/os estudantes do P.PORTO, com"
+            ]
+          ]
+        },
+        "ART_8": {
+          "titulo": "DOCUMENTOS DE SUPORTE DA CANDIDATURA",
+          "conteudo": "obrigados a submeter em candidatura, designadamente para efeitos de avaliação. 2. Nenhum documento que devesse ter sido submetido em sede de candidatura pode ser apresentado após\no prazo fixado para o efeito no aviso de abertura. 6121 REGULAMENTO P.PORTO/P-001/2021\nBOLSAS A ESTUDANTES EMPREENDEDORES\nARTIGO 9º 1. A avaliação das candidaturas é feita de acordo com os parâmetros previstos no aviso de abertura do\nconcurso, de forma a assegurar a transparência na seleção de candidatos. 2. Aavaliação deverá incidir apenas sobre os seguintes critérios: a) mérito do candidato;\nb) mérito da ideia proposta, quando aplicável 3. Seaescolha das ideias inovadoras for independente dos candidatos, a avaliação incidirá apenas sobre o\nmérito do candidato. 4. Aavaliação é sempre fundamentada, de forma clara, concisa e suficiente. 5. Aavaliação de quaisquer parâmetros relativos aos candidatos especificados no aviso de abertura deverá\nestar sempre suportada por documentos submetidos em sede de candidatura. 6. A concessão da bolsa encontra-se dependente do resultado da avaliação, da receção da documentação\nexigida e da disponibilidade orçamental do P.PORTO.",
+          "pagina": 6,
+          "listas": [
+            [
+              "Os avisos de abertura dos concursos especificam toda a documentação que os candidatos estão"
+            ]
+          ]
+        },
+        "ART_10": {
+          "titulo": "DIVULGAÇÃO DOS RESULTADOS",
+          "conteudo": "30 dias úteis após a data limite de submissão de candidaturas. 2. Casoadecisão a tomar seja desfavorável à concessão da bolsa requerida, os candidatos têm um prazo de\n10 dias úteis, após a divulgação referida no número anterior, para se pronunciarem, querendo, em sede de\naudiência prévia, nos termos previstos no Código do Procedimento Administrativo. 3. A decisão final deve ser tomada no prazo máximo de 30 dias úteis após a conclusão da audiência prévia\nde interessados ou da consulta pública. 4. O disposto nos números anteriores não se aplica sempre que o projeto de decisão conduza à concessão\nde bolsa a todos os candidatos, equivalendo neste caso o referido projeto à decisão final. 5. Todas as comunicações previstas no presente artigo decorrerão de forma eletrónica.",
+          "pagina": 7,
+          "listas": [
+            [
+              "O projeto de resultados da avaliação é divulgado no local indicado no aviso de abertura do concurso até"
+            ]
+          ]
+        },
+        "ART_11": {
+          "titulo": "CONCESSÃO DE BOLSAS",
+          "conteudo": "no presente regulamento, assim como no regulamento da entidade financiadora, se aplicável, bem como\nde outros requisitos constantes no aviso de abertura, do resultado da avaliação, e ainda da receção da\ndocumentação exigida nos termos do artigo seguinte. 7121 REGULAMENTO P.PORTO/P-001/2021\nBOLSAS A ESTUDANTES EMPREENDEDORES 2. Aconcessão da bolsa concretiza-se mediante a atribuição de um subsídio, nas condições previstas neste\nRegulamento e no contrato de bolsa a celebrar entre o P.PORTO e 0/a estudante (Anexo ll). 3. Não são concedidas bolsas a quem esteja em situação de incumprimento injustificado dos deveres de\nestudante do P.PORTO.",
+          "pagina": 7,
+          "listas": [
+            [
+              "Aconcessao da bolsa encontra-se dependente do cumprimento dos requisitos de candidatura previstos"
+            ]
+          ]
+        },
+        "ART_12": {
+          "titulo": "CONTRATUALIZAÇÃO",
+          "conteudo": "do Porto; c) Curriculum vitae do/da estudante; e. Depois de recebidos todos os documentos necessários à celebração do contrato, o P.PORTO deve\ncontratualizar a bolsa no prazo de 30 dias úteis, suspendendo-se a contagem do prazo sempre que o\nprocedimento esteja parado por causa que não lhe seja imputável. 3. Nos 15 dias úteis seguintes à data do recebimento do contrato de bolsa, 0/a estudante deve devolvê-lo\nao P.PORTO devidamente assinado. 4. Anão entrega da documentação prevista no n.º1 do presente artigo, no prazo de três meses após a data\nda comunicação da concessão condicional da bolsa, implica a caducidade da referida concessão. REGIME E CONDICOES FINANCEIRAS DAS BOLSAS\nARTIGO 132 A atribuição de bolsa não prejudica a receção, pelo/a estudante, de bolsas de estudo de ação social e respetivos complementos e benefícios, de subsídio social de mobilidade, de bolsas de mérito ou de bolsas de estudo de apoio à realização de períodos de estudos em mobilidade, no país ou no estrangeiro, no âmbito de\nprogramas legalmente reconhecidos, desde que a acumulação seja permitida pelos respetivos regulamentos.\nARTIGO 14º\nENCARGOS 1. Constituem encargos o pagamento de eventuais subsídios de viagem, alojamento e alimentação para\ndeslocações no país, no estrangeiro e ao estrangeiro, autorizadas ou determinadas pelo P.PORTO,\nrelacionadas com a atividade ou o projeto desenvolvido no âmbito da bolsa. gla1 REGULAMENTO P.PORTO/P-001/2021\nBOLSAS A ESTUDANTES EMPREENDEDORES e. Ospagamentos referidos no número anterior são feitos nas condições previstas no regime praticado pelo\nP.PORTO ou, designadamente nas instituições públicas, no regime de abono de ajudas de custo aplicável\naos trabalhadores em funções públicas.",
+          "pagina": 8,
+          "listas": [
+            [
+              "O contrato de bolsa só pode ser celebrado após a receção no serviço de recursos humanos da unidade orgânica que financia a bolsa, de toda a documentação exigível, designadamente: a) Atas do procedimento de atribuição de bolsa; b) Declaração prevista no Artigo 6º do Regulamento de Propriedade Intelectual do Instituto Politécnico"
+            ]
+          ]
+        },
+        "ART_15": {
+          "titulo": "PAGAMENTO DAS COMPONENTES DA BOLSA",
+          "conteudo": "identificada por este/ano processo. 2. O pagamento do subsídio é realizado após receção no serviço de recursos humanos da unidade orgânica\nque financia a bolsa de declaração do responsável do projeto do cumprimento das atividades previstas\npara o período em causa (Anexo III).",
+          "pagina": 9,
+          "listas": [
+            [
+              "Os pagamentos devidos ao/a estudante são efetuados através de transferência bancária, para a conta"
+            ]
+          ]
+        },
+        "ART_16": {
+          "titulo": "SECCAOIII",
+          "conteudo": "SEGURO DE ACIDENTES PESSOAIS\nAs atividades realizadas ao abrigo do presente regulamento enquadram-se no seguro de acidentes pessoais\ndos estudantes do P.PORTO.",
+          "pagina": 9
+        },
+        "ART_172": {
+          "titulo": "RELATORIO FINAL DE BOLSA",
+          "conteudo": "um relatório final das suas atividades onde constem as atividades desenvolvidas e resultados obtidos,\nincluindo os endereços URL das comunicações, publicações e criações resultantes da atividade\ndesenvolvida, acompanhado pela avaliação do responsável do projeto, conforme modelo no Anexo III. 2. Anão observância do disposto no número anterior por facto imputável ao/à estudante implica o não\ncumprimento dos objetivos, nos termos previstos no presente Regulamento. ARTIGO18º |.\nFALSAS DECLARAÇÕES Sem prejuízo do disposto na Lei Penal, a prestação de falsas declarações pelos estudantes sobre matérias relevantes para a concessão da bolsa, ou para apreciação do seu desenvolvimento, implica o respetivo cancelamento.\n9/21",
+          "pagina": 9,
+          "listas": [
+            [
+              "O/aestudante deve apresentar ao P.PORTO, até 30 dias após o termo da bolsa, em formato eletrónico,"
+            ]
+          ]
+        },
+        "ART_19": {
+          "titulo": "CUMPRIMENTO DOS OBJETIVOS E CESSAÇÃO DA BOLSA",
+          "conteudo": "a bolsa cessa com a conclusão do plano de trabalhos contratualizado, bem como com o termo do prazo\npelo qual a bolsa foi concedida. 2. Quando os objetivos da bolsa forem atingidos antes do prazo inicialmente previsto, o pagamento deixa de\nser devido a partir do termo dos trabalhos. 3. Asimportâncias posteriormente recebidas pelo/a estudante devem ser restituídas no prazo máximo de\n30 dias a contar do seu recebimento. 4. Todas as obrigações de caráter pecuniário relativas ao período de execução do contrato devem ser\nexigidas pelo/a estudante ao P.PORTO no prazo de 30 dias úteis após a declaração de cessação da bolsa,\nsem prejuízo das situações de justo impedimento.",
+          "pagina": 10,
+          "listas": [
+            [
+              "Semprejuízo das demais causas de cessação da bolsa previstas no presente Regulamento e no contrato,"
+            ]
+          ]
+        },
+        "ART_20": {
+          "titulo": "NÃO CUMPRIMENTO DOS OBJETIVOS",
+          "conteudo": "0/a estudante que não atinja os objetivos estabelecidos para a bolsa, ou cuja bolsa seja cancelada em virtude de violação grave dos seus deveres por causa que lhe seja imputável, pode ser obrigado/a, consoante as circunstâncias do caso concreto, a restituir a totalidade ou parte das importâncias que tiver recebido.\nARTIGO 21º\nCANCELAMENTO DA BOLSA 1. Abolsapode ser cancelada pelo P.PORTO,na sequência de auditoria promovida pelo P.PORTO, oude uma\navaliação negativa do desempenho do/a estudante realizada pelo responsável do projeto, sempre após\naudição do/a estudante. e. Para além dos motivos expressamente previstos no presente Regulamento, determina o cancelamento\nda bolsa a violação grave ou reiterada dos deveres do/a estudante constantes do presente regulamento,\npodendo ser exigida consoante o caso concreto a restituição da totalidade ou parte das importâncias\natribuídas ao/à estudante. 3. 0/a estudante poderá rescindir unilateralmente o contrato com um aviso prévio de 60 dias no caso de\nbolsas de duração superior ou igual a 6 meses. Em bolsas de duração inferior a 6 meses deverá ser dado\num aviso prévio proporcional à duração da respetiva bolsa no equivalente a 5 dias por cada mês de bolsa,\ndesde que não se verifique nenhuma das alíneas anteriores. 10121 BOLSAS A ESTUDANTES EMPREENDEDORES\nCAPITULO 4: DISPOSIÇÕES FINAIS\nARTIGO 22º . 1. Deve ser expressa a menção de apoio financeiro do P.PORTO e o respetivo programa de financiamento\nem todas as atividades direta ou indiretamente financiadas pelo P.PORTO, assim como em todas as\ncomunicações, publicações e criações, bem como teses, realizadas com os apoios previstos neste\nregulamento. 2. Quando se trate de atividades apoiadas por financiamento comunitário, designadamente FSE ou FEDER,\ndevem serinscritos nos documentos referentes a estas ações as insígnias do programa e da UE, conforme\nas normas gráficas de cada programa operacional. 3. A divulgação de resultados financiados ao abrigo do presente regulamento deve obedecer as normas de\npropriedade intelectual, acesso aberto de dados, publicações e outros resultados em vigor no P.PORTO.",
+          "pagina": 10
+        },
+        "ART_23": {
+          "titulo": "ACOMPANHAMENTO E CONTROLO",
+          "conteudo": "suportam as bolsas. 2. Em todas as bolsas financiadas pelo P.PORTO, e em particular no caso de ações apoiadas por\nfinanciamento externo, poderão ser realizadas ações de acompanhamento e controlo por parte do\nP.PORTO, ou de outros organismos nacionais e comunitários conforme legislação aplicávelnesta matéria,\nexistindo por parte dos estudantes apoiados e responsáveis dos projetos a obrigatoriedade de\ncolaboração e de prestação da informação solicitada, a qual abrange a realização de inquéritos e estudos\nde avaliação nesta área, ainda que a bolsa já tenha cessado.",
+          "pagina": 11,
+          "listas": [
+            [
+              "O acompanhamento das bolsas é feito pelos responsáveis, no P.PORTO, pelos projetos financiados que"
+            ]
+          ]
+        },
+        "ART_24": {
+          "titulo": "Sem Título",
+          "conteudo": "CASOS OMISSOS\nOs casos omissos neste Regulamento são resolvidos pelo Presidente do P.PORTO, tendo em atenção os\nprincípios e as normas constantes na legislação nacional ou comunitária aplicável.",
+          "pagina": 11
+        },
+        "ART_25": {
+          "titulo": "REGULAMENTO P.PORTO/P-001/2021",
+          "conteudo": "ENTRADA EM VIGOR E PRODUÇÃO DE EFEITOS\nO presente Regulamento entra em vigor no dia seguinte ao da sua publicação, aplicando-se a todas as bolsas\ncujos avisos de abertura sejam publicitados a partir dessa data. 11/21 REGULAMENTO P.PORTO/P-001/2021\nBOLSAS A ESTUDANTES EMPREENDEDORES\n12]21 REGULAMENTO P.PORTO/P-001/2021\nBOLSAS A ESTUDANTES EMPREENDEDORES\nANEXOI\nMODELO DE AVISO DE ABERTURA\nANÚNCIO PARA ATRIBUIÇÃO DE __ BOLSA(S) DEESTUDANTE EMPREENDEDOR, Ref. 3: 9\nEncontra-se aberto concurso para a atribuição de __ Bolsa(s) de Estudante Empreendedor no âmbito do\nProjeto/Unidade DE\nfinanciado/apelo Nas Seguintes condições:\nRequisitos gerais\na) Estar inscrito num curso técnico superior profissional, numa licenciatura, num mestrado integrado ou em\ncurso não conferente de grau académico do Instituto Politécnico do Porto;\nb) Ternacionalidade portuguesa ou residir em Portugal;\nc) Ter uma idade compreendida entre os 18 e os 40 anos;\nd) Não possuir outra fonte de rendimento (comprovação através da apresentação de cópia da declaração do\nIRS e respetiva nota de liquidação).\nRequisitos específicos:\na).\nb) ...\nFatores preferenciais:\na).\nb) ..\n13121 ·\n· BOLSAS A ESTUDANTES EMPREENDEDORES\nO método de seleção a utilizar será em conformidade com os seguintes critérios de seleção e respetivas\nvalorações:\na)...\nb)...\nOs candidatos poderão ser excluídos do concurso com os seguintes fundamentos:\na) Por não possuírem os requisitos obrigatórios requeridos no edital do concurso (ponto 2.);\nb) Os candidatos que obtenham valoração inferior a 9,5 em qualquer uma das componentes de avaliação,\nconsideram-se excluídos do procedimento concursal, não sendo avaliados na(s) componente(s) seguinte(s);\nc) A falta de comparência à entrevista por parte do candidato ou ainda a indisponibilidade do mesmo em prestar\nos eventuais esclarecimentos adicionais que lhe forem solicitados, equivale à desistência do concurso.\nComposição do Júri de Seleção:\nPresidentedoJúri-\nVogal Efetivo- que substitui o presidente nas faltas e impedimentos;\nVogalEfetivo-. =\nVogalSuplente-\nOs resultados do concurso serão comunicados aos candidatos eletronicamente, através da plataforma eletrónica\ndisponível em ..., de acordo com os prazos previstos no Regulamento de Bolsas de Estudante Empreendedor do\nP.PORTO.\nO concurso encontra-se aberto no período de dias de de de202 a de de202.\nAs candidaturas devem ser formalizadas obrigatoriamente através do preenchimento do formulário eletrónico de\ncandidatura, que se encontra disponível em... e da respetiva submissão até ao termo do prazo fixado em conjunto\ncom os restantes documentos:\nBOLSAS A ESTUDANTES EMPREENDEDORES\nEmpreendedor do P.PORTO (P.PORTO/P-XXX/2021), aprovado pelo Despacho P.PORTO-P-XXX-2021, e\nque se compromete a cumprir o mesmo;\nNão serão aceites candidaturas enviadas por qualquer outra via eletrónica que não a determinada.\nEscola/Centro\nMorada\nContactos\n__de__ de202 .— O Presidente do Politécnico do Porto, João Rocha.\n16121 REGULAMENTO P.PORTO/P-001/2021\nBOLSAS A ESTUDANTES EMPREENDEDORES\nANEXO II\nMODELO DE CONTRATO DE BOLSA\nENTRE:\nPRIMEIRO: O Instituto Politécnico do Porto (P.PORTO), com sede em Rua Dr. Roberto Frias, nº 712, 4200-\n465, Porto, com o nº. de identificação fiscal 503606251, representado neste ato pelo Professor Doutor João\nManuel Simões da Rocha na qualidade de Presidente, adiante designado por “Primeiro Outorgante”, e\nSEGUNDO: | portador do Cartão de Cidadão / Passaporte nº? edonfde\nidentificação fiscal residenteem adiante designado por “Segundo Outorgante”,\nÉ celebrado de boa-fé, e reciprocamente aceite, o presente contrato de Bolsa de Estudante Empreendedor, ao\nabrigo do Regulamento de Bolsas de Estudante Empreendedor do Instituto Politécnico do Porto, que se rege\npelas seguintes cláusulas:\nCLÁUSULA PRIMEIRA\nO Primeiro Outorgante compromete-se a conceder ao Segundo Outorgante uma Bolsa de Estudante\nEmpreendedor comareferéncia__ no ambitodo Projeto/Unidade_§  cominício\na peloperíodode\nCLÁUSULA SEGUNDA\nO Segundo Outorgante obriga-se a realizar o plano de trabalhos descrito no processo de candidatura, de cujo\nconteúdo declara ter tomado conhecimento integral e aceitar sem reservas, a partir da data de início acima\nreferida.\nCLÁUSULA TERCEIRA\nO Segundo Outorgante realizará os trabalhos no âmbito da atividade do projeto mencionado na cláusula\nprimeira, nas instalações da Unidade/Grupo/Escola o qual tem como responsável\nCLÁUSULA QUARTA\n17121 REGULAMENTO P.PORTO/P-001/2021\nBOLSAS A ESTUDANTES EMPREENDEDORES\nCLÁUSULA QUINTA\nO Primeiro Outorgante poderá rescindir o presente contrato nos casos a seguir indicados:\na) Incumprimento grave e reiterado dos deveres do Segundo Outorgante por causa que lhe seja\nimputável, designadamente não atingir os objetivos estabelecidos no plano de trabalhos aprovado;\nb) Quando se verificar que o Segundo Outorgante prestou falsas declarações;\nc) Noutros casos previstos no Regulamento de Estudante Empreendedor do P.PORTO.\nCLÁUSULA SEXTA Sem prejuízo do disposto na cláusula anterior, este contrato cessa automaticamente com a conclusão do plano de atividades, com o decurso do prazo pelo qual a bolsa é atribuída, com a revogação por mútuo acordo, ou com alteração das circunstâncias. CLÁUSULA SÉTIMA\nÉ subsidiariamente aplicável o Regulamento de Estudante Empreendedor do Instituto Politécnico do Portoem\nvigor na data do contrato, do qual o Segundo Outorgante declara ter conhecimento. 1. O Segundo Outorgante compromete-se a manter confidenciais, durante e após o termo do presente\ncontrato, as informações, estudos e projetos que tenha conhecimento do Primeiro Outorgante, com a\nexceção dos necessários para a execução e disseminação do plano de trabalhos da bolsa, sempre de\nacordo com as indicações do responsável pela bolsa. 2. O Segundo Outorgante declara ter conhecimento e aceitar as disposições e instrumentos previstos no\nRegulamento de Propriedade Intelectual do Instituto Politécnico do Porto, nomeadamente a aceitação do\nprevisto no seu Artigo 6º. Convenciona-se, por acordo entre as partes, que em caso de necessidade e para dirimir todas as questões emergentes do presente contrato será competente o Centro de Arbitragem Administrativa, com expressa renúncia a qualquer outro.\nCLÁUSULA DÉCIMA Qualquer alteração a introduzir no contrato no decurso da sua execução ou eventual renovação do mesmo será objeto de acordo prévio sob forma escrita. Porto, .. de... de... relat | João Rocha\n(Presidente do P.PORTO) | (Nome) |\nNome do/a estudante: eee\nNome do Responsável: E\nReferência Bolsa: eee\nUnidade/Grupo/Projeto: eee\nUnidade Organica: a\nPeríodo de Vigência: de - - a - -\nDescrição das atividades realizadas:\nDesvios em relação ao trabalho planeado:\nLista de Publicações / Outros Trabalhos (incluir URL se disponível): Assinatura do/a estudante Data\nAvaliação do Responsável:\n20121 REGULAMENTO P.PORTO/P-001/2021\nBOLSAS A ESTUDANTES EMPREENDEDORES\nCompetências demonstradas:\nAtitudes e valores:\nCumprimento global dos objetivos:\nAssinatura do Responsável Data\n21/21",
+          "pagina": 11,
+          "tabelas": [
+            "| ---------------------------------- | ------ | MODELO RELATÓRIO INTERCALAR/FINAL"
+          ],
+          "listas": [
+            [
+              "AREACIENTIFICA",
+              "REQUISITOS DE ADMISSÃO"
+            ],
+            [
+              "PLANO DE TRABALHOS"
+            ],
+            [
+              "FORMA DE PUBLICITAÇÃO/NOTIFICAÇÃO DOS RESULTADOS"
+            ],
+            [
+              "PRAZO DE CANDIDATURA E FORMA DE APRESENTAÇÃO DAS CANDIDATURAS"
+            ],
+            [
+              ") Curriculum Vitae; 15121 REGULAMENTO P.PORTO/P-001/2021"
+            ],
+            [
+              ") Declaração, sob compromisso de honra, que tomou conhecimento do Regulamento de Bolsas de Estudante"
+            ],
+            [
+              ") Outros documentos que o candidato considere relevantes."
+            ],
+            [
+              "Ovalordabolsa aatribuirao Segundo Outorganteéde_",
+              "Osubsídio é pago mensalmente /trimestralmente/no fim do período do contrato."
+            ]
+          ]
+        }
+      }
+    }
+  }
+}
