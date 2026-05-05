@@ -337,10 +337,10 @@ class PipelineSettings:
     # - avoids tokenizer dependencies too early
     # - is sufficient for the current stage of experimentation
     # ---------------------------------------------------------------------
-    target_chunk_chars: int = 900
-    hard_max_chunk_chars: int = 1024
-    min_chunk_chars: int = 350
-    overlap_chars: int = 80
+    target_chunk_chars: int = 480
+    hard_max_chunk_chars: int = 650
+    min_chunk_chars: int = 120
+    overlap_chars: int = 120
 
     # ---------------------------------------------------------------------
     # Strategy execution behavior
@@ -462,15 +462,15 @@ class PipelineSettings:
     # Retrieval runtime configuration
     # ---------------------------------------------------------------------
     retrieval_enabled: bool = True
-    retrieval_top_k: int = 8
-    retrieval_candidate_pool_size: int = 8
+    retrieval_top_k: int = 6
+    retrieval_candidate_pool_size: int = 6
     retrieval_query_normalization_enabled: bool = False
     retrieval_query_normalization_strip_formatting_instructions: bool = True
     retrieval_query_normalization_extract_formatting_directives: bool = True
     retrieval_score_filtering_enabled: bool = False
     retrieval_min_similarity_score: float = 0.0
     retrieval_context_max_chunks: int = 4
-    retrieval_context_max_characters: int = 12000
+    retrieval_context_max_characters: int = 6000
     retrieval_context_include_article_number: bool = False
     retrieval_context_include_article_title: bool = False
     retrieval_context_include_parent_structure: bool = False
@@ -485,10 +485,10 @@ class PipelineSettings:
     retrieval_routing_document_inference_enabled: bool = True
     retrieval_routing_document_inference_min_score: float = 3.0
     retrieval_routing_document_inference_min_margin: float = 2.0
-    retrieval_routing_scoped_candidate_pool_size: int = 64
-    retrieval_routing_broad_candidate_pool_size: int = 16
+    retrieval_routing_scoped_candidate_pool_size: int = 8
+    retrieval_routing_broad_candidate_pool_size: int = 6
     retrieval_second_pass_retry_enabled: bool = True
-    retrieval_second_pass_retry_candidate_pool_size: int = 32
+    retrieval_second_pass_retry_candidate_pool_size: int = 8
     retrieval_second_pass_dominant_document_min_share: float = 0.60
     retrieval_evidence_strong_min_score: float = 0.75
     retrieval_evidence_weak_min_score: float = 0.45
@@ -927,20 +927,20 @@ class PipelineSettings:
         )
         self.retrieval_top_k = self._resolve_int_setting(
             current_value=self.retrieval_top_k,
-            default_value=8,
+            default_value=6,
             configured_value=_get_nested_value(
                 retrieval_settings,
                 ["top_k"],
-                8,
+                6,
             ),
         )
         self.retrieval_candidate_pool_size = self._resolve_int_setting(
             current_value=self.retrieval_candidate_pool_size,
-            default_value=8,
+            default_value=6,
             configured_value=_get_nested_value(
                 retrieval_settings,
                 ["candidate_pool_size"],
-                8,
+                6,
             ),
         )
         self.retrieval_query_normalization_enabled = self._resolve_bool_setting(
@@ -998,20 +998,20 @@ class PipelineSettings:
         )
         self.retrieval_context_max_chunks = self._resolve_int_setting(
             current_value=self.retrieval_context_max_chunks,
-            default_value=4,
+            default_value=2,
             configured_value=_get_nested_value(
                 retrieval_context_settings,
                 ["max_chunks"],
-                4,
+                2,
             ),
         )
         self.retrieval_context_max_characters = self._resolve_int_setting(
             current_value=self.retrieval_context_max_characters,
-            default_value=12000,
+            default_value=6000,
             configured_value=_get_nested_value(
                 retrieval_context_settings,
                 ["max_characters"],
-                12000,
+                6000,
             ),
         )
         self.retrieval_context_include_article_number = self._resolve_bool_setting(
@@ -1157,21 +1157,21 @@ class PipelineSettings:
         self.retrieval_routing_scoped_candidate_pool_size = (
             self._resolve_int_setting(
                 current_value=self.retrieval_routing_scoped_candidate_pool_size,
-                default_value=64,
+                default_value=8,
                 configured_value=_get_nested_value(
                     retrieval_routing_settings,
                     ["scoped_candidate_pool_size"],
-                    64,
+                    8,
                 ),
             )
         )
         self.retrieval_routing_broad_candidate_pool_size = self._resolve_int_setting(
             current_value=self.retrieval_routing_broad_candidate_pool_size,
-            default_value=16,
+            default_value=6,
             configured_value=_get_nested_value(
                 retrieval_routing_settings,
                 ["broad_candidate_pool_size"],
-                16,
+                6,
             ),
         )
         self.retrieval_second_pass_retry_enabled = self._resolve_bool_setting(
@@ -1186,11 +1186,11 @@ class PipelineSettings:
         self.retrieval_second_pass_retry_candidate_pool_size = (
             self._resolve_int_setting(
                 current_value=self.retrieval_second_pass_retry_candidate_pool_size,
-                default_value=32,
+                default_value=8,
                 configured_value=_get_nested_value(
                     retrieval_second_pass_retry_settings,
                     ["candidate_pool_size"],
-                    32,
+                    8,
                 ),
             )
         )
