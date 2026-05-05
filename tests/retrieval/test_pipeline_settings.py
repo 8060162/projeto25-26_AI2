@@ -15,7 +15,10 @@ class PipelineSettingsRetrievalExposureTests(unittest.TestCase):
         """Ensure the active appsettings contract is exposed through PipelineSettings."""
         settings = PipelineSettings()
 
-        self.assertEqual(settings.retrieval_candidate_pool_size, 12)
+        self.assertEqual(settings.retrieval_top_k, 6)
+        self.assertEqual(settings.retrieval_candidate_pool_size, 6)
+        self.assertEqual(settings.retrieval_context_max_chunks, 2)
+        self.assertEqual(settings.retrieval_context_max_characters, 6000)
         self.assertTrue(settings.retrieval_query_normalization_enabled)
         self.assertTrue(
             settings.retrieval_query_normalization_strip_formatting_instructions
@@ -36,7 +39,9 @@ class PipelineSettingsRetrievalExposureTests(unittest.TestCase):
         self.assertTrue(settings.metrics_track_context_truncation)
         self.assertTrue(settings.metrics_track_structural_richness)
         self.assertTrue(settings.retrieval_routing_enabled)
-        self.assertEqual(settings.retrieval_routing_broad_candidate_pool_size, 16)
+        self.assertEqual(settings.retrieval_routing_scoped_candidate_pool_size, 8)
+        self.assertEqual(settings.retrieval_routing_broad_candidate_pool_size, 6)
+        self.assertEqual(settings.retrieval_second_pass_retry_candidate_pool_size, 8)
         self.assertEqual(settings.retrieval_evidence_strong_min_score, 0.75)
         self.assertTrue(settings.retrieval_response_policy_cautious_answer_enabled)
         self.assertTrue(settings.retrieval_response_policy_clarification_enabled)
@@ -116,7 +121,7 @@ class PipelineSettingsRetrievalExposureTests(unittest.TestCase):
             settings = PipelineSettings()
 
         self.assertEqual(settings.retrieval_top_k, 5)
-        self.assertEqual(settings.retrieval_candidate_pool_size, 8)
+        self.assertEqual(settings.retrieval_candidate_pool_size, 6)
         self.assertFalse(settings.retrieval_query_normalization_enabled)
         self.assertTrue(
             settings.retrieval_query_normalization_strip_formatting_instructions
@@ -141,7 +146,7 @@ class PipelineSettingsRetrievalExposureTests(unittest.TestCase):
         self.assertTrue(settings.retrieval_routing_document_inference_enabled)
         self.assertEqual(settings.retrieval_routing_document_inference_min_score, 3.0)
         self.assertEqual(settings.retrieval_routing_document_inference_min_margin, 2.0)
-        self.assertEqual(settings.retrieval_routing_scoped_candidate_pool_size, 64)
+        self.assertEqual(settings.retrieval_routing_scoped_candidate_pool_size, 8)
         self.assertEqual(settings.retrieval_evidence_weak_min_score, 0.45)
         self.assertTrue(settings.retrieval_response_policy_cautious_answer_enabled)
         self.assertTrue(settings.retrieval_response_policy_clarification_enabled)
