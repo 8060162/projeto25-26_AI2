@@ -1,3 +1,6 @@
+
+/.ai
+/.venv
 /Chunking/__pycache__
 /Chunking/chunking/__pycache__
 /Chunking/cleaning/__pycache__
@@ -6,17 +9,8 @@
 /Chunking/extraction/__pycache__
 /Chunking/parsing/__pycache__
 /Chunking/utils/__pycache__
-/data/chunks
-AGENTS.md
-/.ai
-AGENTS.md
-AGENTS.md
-/.venv
-/tests/chunking/__pycache__
-/tests/chunking/__pycache__
-/tests/chunking/__pycache__
-/tests/chunking/__pycache__
-/tests/chunking/__pycache__
 /data
-
+/data/chunks
 /rag-api/.env
+/tests/chunking/__pycache__
+AGENTS.md
