@@ -18,3 +18,5 @@ AGENTS.md
 /tests/chunking/__pycache__
 /tests/chunking/__pycache__
 /data
+
+/rag-api/.env
