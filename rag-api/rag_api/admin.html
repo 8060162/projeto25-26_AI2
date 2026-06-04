@@ -61,6 +61,7 @@
   .metric-card{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:18px}
   .metric-label{font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px}
   .metric-value{font-size:28px;font-weight:600;color:var(--text);font-family:var(--mono)}
+  .metric-value.good{color:var(--green)}.metric-value.warn{color:var(--amber)}.metric-value.bad{color:var(--red)}
   .metric-sub{font-size:11px;color:var(--muted);margin-top:4px}
   .answer-block{background:var(--bg3);border-left:3px solid var(--accent);border-radius:0 8px 8px 0;padding:14px 16px;font-size:14px;line-height:1.7;margin-top:12px;display:none}
   .answer-block.visible{display:block}
@@ -72,6 +73,24 @@
   .actions{display:flex;gap:6px}
   .section-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
   .hint-tag{font-family:var(--mono);font-size:11px;background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:2px 6px;color:var(--text)}
+  /* Granularity selector */
+  .gran-selector{display:flex;gap:6px;margin-bottom:0}
+  .gran-btn{background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--muted);font-family:var(--mono);font-size:11px;font-weight:600;padding:6px 14px;cursor:pointer;transition:all .15s}
+  .gran-btn:hover{border-color:var(--accent);color:var(--accent)}
+  .gran-btn.active{background:rgba(79,142,247,.12);border-color:var(--accent);color:var(--accent)}
+  /* Bar chart */
+  .bar-chart{display:flex;align-items:flex-end;gap:4px;height:80px;margin-top:8px}
+  .bar-col{display:flex;flex-direction:column;align-items:center;flex:1;gap:4px}
+  .bar{width:100%;background:var(--accent);border-radius:3px 3px 0 0;opacity:.7;min-height:2px;transition:height .3s}
+  .bar-label{font-family:var(--mono);font-size:9px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:40px;text-align:center}
+  /* Category bars */
+  .cat-row{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+  .cat-name{font-family:var(--mono);font-size:11px;color:var(--text);width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .cat-bar-wrap{flex:1;background:var(--bg3);border-radius:3px;height:10px}
+  .cat-bar{background:var(--accent);border-radius:3px;height:10px;transition:width .4s;opacity:.8}
+  .cat-count{font-family:var(--mono);font-size:11px;color:var(--muted);width:30px;text-align:right}
+  /* Refresh indicator */
+  .last-updated{font-family:var(--mono);font-size:10px;color:var(--muted);margin-left:auto}
 </style>
 </head>
 <body>
@@ -97,6 +116,7 @@
   <div class="nav-item" onclick="showPage('metrics')" id="nav-metrics"><span class="icon">◬</span> Métricas</div>
 </nav>
 <main>
+  <!-- DASHBOARD -->
   <div class="page active" id="page-dashboard">
     <h1>Dashboard</h1><p class="page-desc">Estado geral do sistema RAG.</p>
     <div class="metrics-grid">
@@ -105,10 +125,12 @@
       <div class="metric-card"><div class="metric-label">Total de Consultas</div><div class="metric-value" id="dash-queries">—</div><div class="metric-sub">últimas 24h</div></div>
       <div class="metric-card"><div class="metric-label">Pontuação Média</div><div class="metric-value" id="dash-score">—</div><div class="metric-sub">retrieval score</div></div>
       <div class="metric-card"><div class="metric-label">Latência Média</div><div class="metric-value" id="dash-latency">—</div><div class="metric-sub">milissegundos</div></div>
+      <div class="metric-card"><div class="metric-label">Taxa de Sucesso</div><div class="metric-value" id="dash-success">—</div><div class="metric-sub">% respostas ok</div></div>
     </div>
     <div class="card"><div class="card-title">Acesso Rápido</div><div style="display:flex;gap:10px;flex-wrap:wrap"><button class="btn btn-ghost" onclick="showPage('applications')">⊞ Nova Aplicação</button><button class="btn btn-ghost" onclick="showPage('query')">◎ Testar Consulta</button><button class="btn btn-ghost" onclick="showPage('pipeline')">⊙ Executar Pipeline</button><button class="btn btn-ghost" onclick="refreshDashboard()">↺ Actualizar</button></div></div>
   </div>
 
+  <!-- CONSULTA RAG -->
   <div class="page" id="page-query">
     <h1>Consulta RAG</h1><p class="page-desc">Submeta uma questão ao sistema de recuperação e geração de respostas.</p>
     <div class="card"><div class="card-title">Nova Consulta</div>
@@ -131,6 +153,7 @@
     </div>
   </div>
 
+  <!-- APLICAÇÕES -->
   <div class="page" id="page-applications">
     <h1>Aplicações</h1><p class="page-desc">Gestão das aplicações clientes com acesso ao sistema RAG.</p>
     <div class="card"><div class="card-title">Registar Nova Aplicação</div>
@@ -149,6 +172,7 @@
     </div>
   </div>
 
+  <!-- CHAVES -->
   <div class="page" id="page-keys">
     <h1>Chaves de Acesso</h1><p class="page-desc">Geração, rotação e revogação de chaves de acesso por aplicação.</p>
     <div class="card"><div class="card-title">Seleccionar Aplicação</div>
@@ -161,6 +185,7 @@
     <div class="card"><div class="card-title">Chaves Activas</div><div id="keys-hint-list"><div class="empty-state">Seleccione uma aplicação para ver as chaves</div></div></div>
   </div>
 
+  <!-- PIPELINE -->
   <div class="page" id="page-pipeline">
     <h1>Pipeline de Indexação</h1><p class="page-desc">Executa o pipeline completo de segmentação e indexação de documentos no ChromaDB.</p>
     <div class="card"><div class="card-title">Estado do Pipeline</div>
@@ -170,53 +195,325 @@
     <div class="card" id="pipeline-result" style="display:none"><div class="card-title">Resultado</div><div class="response-box" id="pipeline-output"></div></div>
   </div>
 
+  <!-- MÉTRICAS -->
   <div class="page" id="page-metrics">
     <h1>Métricas</h1><p class="page-desc">Análise de utilização e qualidade das respostas do sistema RAG.</p>
+
+    <!-- Filtros -->
     <div class="card"><div class="card-title">Filtros</div>
-      <div class="form-row">
-        <div class="form-group"><label>De</label><input type="text" id="metrics-from" placeholder="2026-01-01T00:00:00"></div>
-        <div class="form-group"><label>Até</label><input type="text" id="metrics-to" placeholder="2026-12-31T23:59:59"></div>
-        <div class="form-group"><label>Aplicação (opcional)</label><select id="metrics-client"><option value="">Todas as aplicações</option></select></div>
-        <div style="display:flex;align-items:flex-end"><button class="btn btn-primary" onclick="loadMetrics()">Carregar</button></div>
+      <div class="form-row" style="align-items:flex-end">
+        <div class="form-group" style="flex:0 0 auto">
+          <label>Granularidade</label>
+          <div class="gran-selector">
+            <button class="gran-btn active" onclick="setGran('realtime',this)">Tempo real</button>
+            <button class="gran-btn" onclick="setGran('hourly',this)">Hora</button>
+            <button class="gran-btn" onclick="setGran('daily',this)">Dia</button>
+            <button class="gran-btn" onclick="setGran('monthly',this)">Mês</button>
+          </div>
+        </div>
+        <div class="form-group" style="max-width:260px">
+          <label>Aplicação (opcional)</label>
+          <select id="metrics-client"><option value="">Todas as aplicações</option></select>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-primary" onclick="loadMetrics()">Carregar</button>
+          <button class="btn btn-ghost" onclick="forceRefresh()" id="btn-refresh" title="Forçar recomputação do snapshot">↺ Refresh</button>
+        </div>
+        <span class="last-updated" id="metrics-updated"></span>
       </div>
     </div>
+
+    <!-- KPIs principais -->
     <div class="metrics-grid" id="metrics-summary" style="display:none">
       <div class="metric-card"><div class="metric-label">Total de Consultas</div><div class="metric-value" id="m-total">—</div></div>
+      <div class="metric-card"><div class="metric-label">Taxa de Sucesso</div><div class="metric-value" id="m-success">—</div><div class="metric-sub">% respostas ok</div></div>
       <div class="metric-card"><div class="metric-label">Pontuação Média</div><div class="metric-value" id="m-score">—</div></div>
+      <div class="metric-card"><div class="metric-label">Knowledge Gaps</div><div class="metric-value" id="m-lowscore">—</div><div class="metric-sub">% score &lt; 0.6</div></div>
       <div class="metric-card"><div class="metric-label">Latência Média</div><div class="metric-value" id="m-latency">—</div><div class="metric-sub">ms</div></div>
+      <div class="metric-card"><div class="metric-label">Hora de Pico</div><div class="metric-value" id="m-peak">—</div><div class="metric-sub">hora de Lisboa</div></div>
+      <div class="metric-card"><div class="metric-label">Clientes Activos</div><div class="metric-value" id="m-clients">—</div><div class="metric-sub">departamentos</div></div>
       <div class="metric-card"><div class="metric-label">Tokens Entrada</div><div class="metric-value" id="m-tokens-in">—</div></div>
       <div class="metric-card"><div class="metric-label">Tokens Saída</div><div class="metric-value" id="m-tokens-out">—</div></div>
-      <div class="metric-card"><div class="metric-label">Docs Recuperados</div><div class="metric-value" id="m-docs">—</div><div class="metric-sub">média</div></div>
     </div>
-    <div class="card" id="metrics-categories-card" style="display:none"><div class="card-title">Por Categoria</div>
+
+    <!-- Top categorias -->
+    <div class="card" id="metrics-categories-card" style="display:none">
+      <div class="card-title">Regulamentos Mais Consultados</div>
+      <div id="metrics-cat-bars"></div>
+    </div>
+
+    <!-- Distribuição diária -->
+    <div class="card" id="metrics-daily-card" style="display:none">
+      <div class="card-title">Distribuição Diária</div>
+      <div class="bar-chart" id="metrics-daily-chart"></div>
+    </div>
+
+    <!-- Por categoria (cliente seleccionado) -->
+    <div class="card" id="metrics-client-card" style="display:none">
+      <div class="card-title">Por Categoria</div>
       <div class="table-wrap"><table><thead><tr><th>Categoria</th><th>Consultas</th><th>Score Médio</th><th>Latência (ms)</th><th>Feedback ✓</th><th>Feedback ✗</th></tr></thead><tbody id="metrics-tbody"></tbody></table></div>
     </div>
   </div>
 </main>
 </div>
 <script>
-let BASE='http://127.0.0.1:8000',ADMIN_KEY='',APPS=[],LAST_TRACE_ID=null;
+let BASE='http://127.0.0.1:8000', ADMIN_KEY='', APPS=[], LAST_TRACE_ID=null, CURRENT_GRAN='realtime';
+
 function apiUrl(p){return BASE+p}
 function headers(k){const key=k||ADMIN_KEY;return{'Content-Type':'application/json','Authorization':'Bearer '+key}}
 async function api(method,path,body,key){const opts={method,headers:headers(key)};if(body)opts.body=JSON.stringify(body);const r=await fetch(apiUrl(path),opts);const data=await r.json().catch(()=>({}));return{ok:r.ok,status:r.status,data}}
 function fmt(o){return JSON.stringify(o,null,2)}
 function fmtDate(iso){if(!iso)return'—';return new Date(iso).toLocaleDateString('pt-PT',{day:'2-digit',month:'2-digit',year:'numeric'})}
-function showPage(name){document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));document.getElementById('page-'+name).classList.add('active');document.getElementById('nav-'+name).classList.add('active');if(name==='applications')loadApps();if(name==='keys')loadAppsForKeys();if(name==='metrics')loadAppsForMetrics();if(name==='dashboard')refreshDashboard()}
-async function connect(){BASE=document.getElementById('api-url-input').value.replace(/\/$/,'');ADMIN_KEY=document.getElementById('key-input').value.trim();const badge=document.getElementById('status-badge');badge.className='';badge.textContent='...';try{const r=await fetch(apiUrl('/v1/health'));const d=await r.json();badge.className='ok';badge.textContent=d.status+' v'+d.version;refreshDashboard()}catch(e){badge.className='err';badge.textContent='erro'}}
-async function refreshDashboard(){try{const h=await fetch(apiUrl('/v1/health'));const hd=await h.json();document.getElementById('dash-status').innerHTML='<span style="color:var(--green)">● operacional</span>';document.getElementById('dash-version').textContent='v'+hd.version}catch(e){document.getElementById('dash-status').innerHTML='<span style="color:var(--red)">● indisponível</span>'}if(!ADMIN_KEY)return;try{const{data}=await api('GET','/v1/applications');document.getElementById('dash-apps').textContent=data.total??'—'}catch(e){}try{const now=new Date();const from=new Date(now-86400000).toISOString();const{data}=await api('GET',`/v1/metrics/signals?from_dt=${from}&to_dt=${now.toISOString()}`);document.getElementById('dash-queries').textContent=data.total_queries??'—';document.getElementById('dash-score').textContent=data.avg_score!=null?data.avg_score.toFixed(2):'—';document.getElementById('dash-latency').textContent=data.avg_latency_ms!=null?Math.round(data.avg_latency_ms):'—'}catch(e){}}
-async function submitQuery(){const q=document.getElementById('query-question').value.trim();if(!q)return;const btn=document.getElementById('btn-query');const customKey=document.getElementById('query-key').value.trim();const session=document.getElementById('query-session').value.trim();const body={question:q};if(session)body.session_id=session;btn.innerHTML='<span class="loading"></span> A processar...';btn.disabled=true;try{const{ok,data}=await api('POST','/v1/query',body,customKey||ADMIN_KEY);document.getElementById('query-result-card').style.display='block';document.getElementById('query-answer').textContent=data.answer||'';LAST_TRACE_ID=data.trace_id;document.getElementById('query-trace').textContent='trace: '+(data.trace_id||'');const srcs=document.getElementById('query-sources');srcs.innerHTML='';if(data.sources&&data.sources.length){srcs.innerHTML='<div style="font-size:11px;color:var(--muted);margin-bottom:6px;font-family:var(--mono)">FONTES</div>'+data.sources.map(s=>`<span class="hint-tag" style="margin-right:6px;margin-bottom:4px;display:inline-block">${s}</span>`).join('')}if(session)document.getElementById('query-session').value=data.session_id||''}catch(e){document.getElementById('query-result-card').style.display='block';document.getElementById('query-answer').textContent='Erro: '+e.message}btn.innerHTML='Submeter Consulta';btn.disabled=false}
-async function sendFeedback(rating){if(!LAST_TRACE_ID)return;await api('POST','/v1/feedback',{trace_id:LAST_TRACE_ID,rating});const btn=rating==='positive'?document.querySelector('.btn-success.btn-sm'):document.querySelector('.btn-danger.btn-sm');btn.textContent='✓ Registado';setTimeout(()=>{document.querySelector('.btn-success.btn-sm').textContent='✓ Útil';document.querySelector('.btn-danger.btn-sm').textContent='✗ Não útil'},2000)}
-async function loadApps(){const{ok,data}=await api('GET','/v1/applications');if(!ok)return;APPS=data.items||[];const tbody=document.getElementById('apps-tbody');if(!APPS.length){tbody.innerHTML='<tr><td colspan="6" class="empty-state">Nenhuma aplicação registada</td></tr>';return}tbody.innerHTML=APPS.map(a=>`<tr><td><strong>${a.name}</strong>${a.description?`<div style="font-size:11px;color:var(--muted)">${a.description}</div>`:''}</td><td>${a.scopes.map(s=>`<span class="badge badge-blue">${s}</span>`).join(' ')}</td><td><span class="badge badge-amber">${a.rate_limit}/min</span></td><td><span class="badge ${a.active?'badge-green':'badge-red'}">${a.active?'activa':'inactiva'}</span></td><td style="color:var(--muted)">${fmtDate(a.created_at)}</td><td class="actions"><button class="btn btn-ghost btn-sm" onclick="deleteApp('${a.id}','${a.name}')">✕ Remover</button></td></tr>`).join('')}
-async function createApp(){const name=document.getElementById('app-name').value.trim();if(!name)return;const desc=document.getElementById('app-desc').value.trim();const scopes=document.getElementById('app-scopes').value.split(',');const rate=parseInt(document.getElementById('app-rate').value);const body={name,scopes,rate_limit:rate};if(desc)body.description=desc;const{ok,data}=await api('POST','/v1/applications',body);if(ok){document.getElementById('app-name').value='';document.getElementById('app-desc').value='';loadApps()}else{alert('Erro: '+(data.message||'falha ao criar aplicação'))}}
-async function deleteApp(id,name){if(!confirm(`Remover a aplicação "${name}"?`))return;const{ok}=await api('DELETE','/v1/applications/'+id);if(ok)loadApps()}
-async function loadAppsForKeys(){const{ok,data}=await api('GET','/v1/applications');if(!ok)return;APPS=data.items||[];const sel=document.getElementById('keys-app-select');sel.innerHTML='<option value="">— seleccionar —</option>'+APPS.map(a=>`<option value="${a.id}">${a.name}</option>`).join('')}
-async function generateKey(){const appId=document.getElementById('keys-app-select').value;if(!appId)return alert('Seleccione uma aplicação.');const{ok,data}=await api('POST',`/v1/applications/${appId}/keys`);if(ok){const box=document.getElementById('key-reveal-box');document.getElementById('key-reveal-value').textContent=data.key;box.classList.add('visible');loadKeysForApp(appId)}}
-async function loadKeysForApp(appId){if(!appId)return;const list=document.getElementById('keys-hint-list');list.innerHTML=`<div style="color:var(--muted);font-size:12px;padding:8px 0">ID da aplicação: <span class="hint-tag">${appId}</span></div><div style="color:var(--muted);font-size:12px;padding:8px 0">Para ver as chaves activas, utilize os hints apresentados após a geração de cada chave.</div>`}
-document.addEventListener('change',function(e){if(e.target.id==='keys-app-select'){document.getElementById('key-reveal-box').classList.remove('visible');loadKeysForApp(e.target.value)}});
-async function runEmbed(){const btn=document.getElementById('btn-embed');const status=document.getElementById('pipeline-status');btn.innerHTML='<span class="loading"></span> A executar...';btn.disabled=true;status.textContent='Pipeline em execução — pode demorar alguns minutos...';const result=document.getElementById('pipeline-result');const output=document.getElementById('pipeline-output');result.style.display='none';try{const{ok,data}=await api('POST','/v1/embed');result.style.display='block';if(ok){output.className='response-box';output.textContent=fmt(data);status.textContent='✓ Concluído — '+data.embedded_record_count+' registos indexados'}else{output.className='response-box err';output.textContent=fmt(data);status.textContent='✗ Erro na execução'}}catch(e){result.style.display='block';output.className='response-box err';output.textContent=e.message;status.textContent='✗ Erro de ligação'}btn.innerHTML='▶ Executar Pipeline';btn.disabled=false}
-async function loadAppsForMetrics(){const{ok,data}=await api('GET','/v1/applications');if(!ok)return;const sel=document.getElementById('metrics-client');sel.innerHTML='<option value="">Todas as aplicações</option>'+(data.items||[]).map(a=>`<option value="${a.id}">${a.name}</option>`).join('')}
-async function loadMetrics(){const from=document.getElementById('metrics-from').value;const to=document.getElementById('metrics-to').value;const client=document.getElementById('metrics-client').value;let params=[];if(from)params.push('from_dt='+encodeURIComponent(from));if(to)params.push('to_dt='+encodeURIComponent(to));const qs=params.length?'?'+params.join('&'):'';const endpoint=client?`/v1/metrics/signals/${client}${qs}`:`/v1/metrics/signals${qs}`;const{ok,data}=await api('GET',endpoint);if(!ok)return;document.getElementById('metrics-summary').style.display='grid';if(client){document.getElementById('m-total').textContent='—';document.getElementById('m-score').textContent='—';document.getElementById('m-latency').textContent='—';document.getElementById('m-tokens-in').textContent='—';document.getElementById('m-tokens-out').textContent='—';document.getElementById('m-docs').textContent='—';document.getElementById('metrics-categories-card').style.display='block';const tbody=document.getElementById('metrics-tbody');const cats=data.categories||[];tbody.innerHTML=cats.length?cats.map(c=>`<tr><td><span class="badge badge-blue">${c.category}</span></td><td>${c.total_queries}</td><td>${c.avg_score.toFixed(2)}</td><td>${Math.round(c.avg_latency_ms)}</td><td><span class="badge badge-green">${c.positive_feedback}</span></td><td><span class="badge badge-red">${c.negative_feedback}</span></td></tr>`).join(''):'<tr><td colspan="6" class="empty-state">Sem dados para o período seleccionado</td></tr>'}else{document.getElementById('m-total').textContent=data.total_queries??'—';document.getElementById('m-score').textContent=data.avg_score!=null?data.avg_score.toFixed(2):'—';document.getElementById('m-latency').textContent=data.avg_latency_ms!=null?Math.round(data.avg_latency_ms):'—';document.getElementById('m-tokens-in').textContent=data.total_tokens_input??'—';document.getElementById('m-tokens-out').textContent=data.total_tokens_output??'—';document.getElementById('m-docs').textContent=data.avg_docs_retrieved!=null?data.avg_docs_retrieved.toFixed(1):'—';document.getElementById('metrics-categories-card').style.display='none'}}
-document.addEventListener('keydown',function(e){if(e.ctrlKey&&e.key==='Enter'){const active=document.querySelector('.page.active');if(active&&active.id==='page-query')submitQuery()}});
+function fmtPct(v){if(v==null||v==='—')return'—';return(v*100).toFixed(1)+'%'}
+function fmtScore(v){if(v==null||v==='—')return'—';return v.toFixed(2)}
+
+function showPage(name){
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+  document.getElementById('page-'+name).classList.add('active');
+  document.getElementById('nav-'+name).classList.add('active');
+  if(name==='applications')loadApps();
+  if(name==='keys')loadAppsForKeys();
+  if(name==='metrics')loadAppsForMetrics();
+  if(name==='dashboard')refreshDashboard();
+}
+
+function setGran(gran, btn){
+  CURRENT_GRAN=gran;
+  document.querySelectorAll('.gran-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+}
+
+async function connect(){
+  BASE=document.getElementById('api-url-input').value.replace(/\/$/,'');
+  ADMIN_KEY=document.getElementById('key-input').value.trim();
+  const badge=document.getElementById('status-badge');
+  badge.className='';badge.textContent='...';
+  try{
+    const r=await fetch(apiUrl('/v1/health'));
+    const d=await r.json();
+    badge.className='ok';badge.textContent=d.status+' v'+d.version;
+    refreshDashboard();
+  }catch(e){badge.className='err';badge.textContent='erro'}
+}
+
+async function refreshDashboard(){
+  try{
+    const h=await fetch(apiUrl('/v1/health'));
+    const hd=await h.json();
+    document.getElementById('dash-status').innerHTML='<span style="color:var(--green)">● operacional</span>';
+    document.getElementById('dash-version').textContent='v'+hd.version;
+  }catch(e){document.getElementById('dash-status').innerHTML='<span style="color:var(--red)">● indisponível</span>'}
+  if(!ADMIN_KEY)return;
+  try{const{data}=await api('GET','/v1/applications');document.getElementById('dash-apps').textContent=data.total??'—'}catch(e){}
+  try{
+    const{data}=await api('GET','/v1/metrics/signals?granularity=daily');
+    document.getElementById('dash-queries').textContent=data.total_queries??'—';
+    document.getElementById('dash-score').textContent=data.avg_score!=null?data.avg_score.toFixed(2):'—';
+    document.getElementById('dash-latency').textContent=data.avg_latency_ms!=null?Math.round(data.avg_latency_ms):'—';
+    document.getElementById('dash-success').textContent=data.success_rate!=null?fmtPct(data.success_rate):'—';
+  }catch(e){}
+}
+
+async function submitQuery(){
+  const q=document.getElementById('query-question').value.trim();if(!q)return;
+  const btn=document.getElementById('btn-query');
+  const customKey=document.getElementById('query-key').value.trim();
+  const session=document.getElementById('query-session').value.trim();
+  const body={question:q};if(session)body.session_id=session;
+  btn.innerHTML='<span class="loading"></span> A processar...';btn.disabled=true;
+  try{
+    const{ok,data}=await api('POST','/v1/query',body,customKey||ADMIN_KEY);
+    document.getElementById('query-result-card').style.display='block';
+    document.getElementById('query-answer').textContent=data.answer||'';
+    LAST_TRACE_ID=data.trace_id;
+    document.getElementById('query-trace').textContent='trace: '+(data.trace_id||'');
+    const srcs=document.getElementById('query-sources');srcs.innerHTML='';
+    if(data.sources&&data.sources.length){srcs.innerHTML='<div style="font-size:11px;color:var(--muted);margin-bottom:6px;font-family:var(--mono)">FONTES</div>'+data.sources.map(s=>`<span class="hint-tag" style="margin-right:6px;margin-bottom:4px;display:inline-block">${s}</span>`).join('')}
+    if(session)document.getElementById('query-session').value=data.session_id||'';
+  }catch(e){
+    document.getElementById('query-result-card').style.display='block';
+    document.getElementById('query-answer').textContent='Erro: '+e.message;
+  }
+  btn.innerHTML='Submeter Consulta';btn.disabled=false;
+}
+
+async function sendFeedback(rating){
+  if(!LAST_TRACE_ID)return;
+  await api('POST','/v1/feedback',{trace_id:LAST_TRACE_ID,rating});
+  const btn=rating==='positive'?document.querySelector('.btn-success.btn-sm'):document.querySelector('.btn-danger.btn-sm');
+  btn.textContent='✓ Registado';
+  setTimeout(()=>{document.querySelector('.btn-success.btn-sm').textContent='✓ Útil';document.querySelector('.btn-danger.btn-sm').textContent='✗ Não útil'},2000);
+}
+
+async function loadApps(){
+  const{ok,data}=await api('GET','/v1/applications');if(!ok)return;
+  APPS=data.items||[];
+  const tbody=document.getElementById('apps-tbody');
+  if(!APPS.length){tbody.innerHTML='<tr><td colspan="6" class="empty-state">Nenhuma aplicação registada</td></tr>';return}
+  tbody.innerHTML=APPS.map(a=>`<tr><td><strong>${a.name}</strong>${a.description?`<div style="font-size:11px;color:var(--muted)">${a.description}</div>`:''}</td><td>${a.scopes.map(s=>`<span class="badge badge-blue">${s}</span>`).join(' ')}</td><td><span class="badge badge-amber">${a.rate_limit}/min</span></td><td><span class="badge ${a.active?'badge-green':'badge-red'}">${a.active?'activa':'inactiva'}</span></td><td style="color:var(--muted)">${fmtDate(a.created_at)}</td><td class="actions"><button class="btn btn-ghost btn-sm" onclick="deleteApp('${a.id}','${a.name}')">✕ Remover</button></td></tr>`).join('');
+}
+
+async function createApp(){
+  const name=document.getElementById('app-name').value.trim();if(!name)return;
+  const desc=document.getElementById('app-desc').value.trim();
+  const scopes=document.getElementById('app-scopes').value.split(',');
+  const rate=parseInt(document.getElementById('app-rate').value);
+  const body={name,scopes,rate_limit:rate};if(desc)body.description=desc;
+  const{ok,data}=await api('POST','/v1/applications',body);
+  if(ok){document.getElementById('app-name').value='';document.getElementById('app-desc').value='';loadApps();}
+  else{alert('Erro: '+(data.message||'falha ao criar aplicação'));}
+}
+
+async function deleteApp(id,name){
+  if(!confirm(`Remover a aplicação "${name}"?`))return;
+  const{ok}=await api('DELETE','/v1/applications/'+id);if(ok)loadApps();
+}
+
+async function loadAppsForKeys(){
+  const{ok,data}=await api('GET','/v1/applications');if(!ok)return;
+  APPS=data.items||[];
+  const sel=document.getElementById('keys-app-select');
+  sel.innerHTML='<option value="">— seleccionar —</option>'+APPS.map(a=>`<option value="${a.id}">${a.name}</option>`).join('');
+}
+
+async function generateKey(){
+  const appId=document.getElementById('keys-app-select').value;
+  if(!appId)return alert('Seleccione uma aplicação.');
+  const{ok,data}=await api('POST',`/v1/applications/${appId}/keys`);
+  if(ok){
+    const box=document.getElementById('key-reveal-box');
+    document.getElementById('key-reveal-value').textContent=data.key;
+    box.classList.add('visible');loadKeysForApp(appId);
+  }
+}
+
+async function loadKeysForApp(appId){
+  if(!appId)return;
+  const list=document.getElementById('keys-hint-list');
+  list.innerHTML=`<div style="color:var(--muted);font-size:12px;padding:8px 0">ID da aplicação: <span class="hint-tag">${appId}</span></div><div style="color:var(--muted);font-size:12px;padding:8px 0">Para ver as chaves activas, utilize os hints apresentados após a geração de cada chave.</div>`;
+}
+
+document.addEventListener('change',function(e){
+  if(e.target.id==='keys-app-select'){document.getElementById('key-reveal-box').classList.remove('visible');loadKeysForApp(e.target.value);}
+});
+
+async function runEmbed(){
+  const btn=document.getElementById('btn-embed');const status=document.getElementById('pipeline-status');
+  btn.innerHTML='<span class="loading"></span> A executar...';btn.disabled=true;
+  status.textContent='Pipeline em execução — pode demorar alguns minutos...';
+  const result=document.getElementById('pipeline-result');const output=document.getElementById('pipeline-output');result.style.display='none';
+  try{
+    const{ok,data}=await api('POST','/v1/embed');result.style.display='block';
+    if(ok){output.className='response-box';output.textContent=fmt(data);status.textContent='✓ Concluído — '+data.embedded_record_count+' registos indexados';}
+    else{output.className='response-box err';output.textContent=fmt(data);status.textContent='✗ Erro na execução';}
+  }catch(e){result.style.display='block';output.className='response-box err';output.textContent=e.message;status.textContent='✗ Erro de ligação';}
+  btn.innerHTML='▶ Executar Pipeline';btn.disabled=false;
+}
+
+async function loadAppsForMetrics(){
+  const{ok,data}=await api('GET','/v1/applications');if(!ok)return;
+  const sel=document.getElementById('metrics-client');
+  sel.innerHTML='<option value="">Todas as aplicações</option>'+(data.items||[]).map(a=>`<option value="${a.id}">${a.name}</option>`).join('');
+}
+
+async function forceRefresh(){
+  const btn=document.getElementById('btn-refresh');
+  btn.innerHTML='<span class="loading"></span>';btn.disabled=true;
+  await api('POST',`/v1/metrics/refresh?granularity=${CURRENT_GRAN}`);
+  await loadMetrics();
+  btn.innerHTML='↺ Refresh';btn.disabled=false;
+}
+
+function colorForScore(v){if(v>=0.7)return'good';if(v>=0.4)return'warn';return'bad';}
+function colorForSuccess(v){if(v>=0.9)return'good';if(v>=0.6)return'warn';return'bad';}
+function colorForLowScore(v){if(v<=0.1)return'good';if(v<=0.3)return'warn';return'bad';}
+
+async function loadMetrics(){
+  const client=document.getElementById('metrics-client').value;
+  const endpoint=client
+    ?`/v1/metrics/signals/${client}`
+    :`/v1/metrics/signals?granularity=${CURRENT_GRAN}`;
+  const{ok,data}=await api('GET',endpoint);if(!ok)return;
+
+  document.getElementById('metrics-summary').style.display='grid';
+  document.getElementById('metrics-updated').textContent=data.generated_at?'actualizado: '+new Date(data.generated_at).toLocaleTimeString('pt-PT'):'';
+
+  if(client){
+    // Vista por cliente — mostra tabela de categorias
+    ['m-total','m-success','m-score','m-lowscore','m-latency','m-peak','m-clients','m-tokens-in','m-tokens-out'].forEach(id=>document.getElementById(id).textContent='—');
+    document.getElementById('metrics-categories-card').style.display='none';
+    document.getElementById('metrics-daily-card').style.display='none';
+    document.getElementById('metrics-client-card').style.display='block';
+    const cats=data.categories||[];
+    const tbody=document.getElementById('metrics-tbody');
+    tbody.innerHTML=cats.length
+      ?cats.map(c=>`<tr><td><span class="badge badge-blue">${c.category}</span></td><td>${c.total_queries}</td><td>${c.avg_score.toFixed(2)}</td><td>${Math.round(c.avg_latency_ms)}</td><td><span class="badge badge-green">${c.positive_feedback}</span></td><td><span class="badge badge-red">${c.negative_feedback}</span></td></tr>`).join('')
+      :'<tr><td colspan="6" class="empty-state">Sem dados para o período seleccionado</td></tr>';
+  } else {
+    // Vista global — mostra KPIs + categorias + distribuição diária
+    document.getElementById('metrics-client-card').style.display='none';
+
+    const total = data.total_queries??0;
+    const successRate = data.success_rate;
+    const score = data.avg_score;
+    const lowScore = data.low_score_rate;
+    const latency = data.avg_latency_ms;
+    const peak = data.peak_hour_lisbon;
+    const clients = data.active_clients;
+
+    document.getElementById('m-total').textContent=total;
+    const elSuccess=document.getElementById('m-success');
+    elSuccess.textContent=fmtPct(successRate);
+    elSuccess.className='metric-value '+(successRate!=null?colorForSuccess(successRate):'');
+    const elScore=document.getElementById('m-score');
+    elScore.textContent=fmtScore(score);
+    elScore.className='metric-value '+(score!=null?colorForScore(score):'');
+    const elLow=document.getElementById('m-lowscore');
+    elLow.textContent=fmtPct(lowScore);
+    elLow.className='metric-value '+(lowScore!=null?colorForLowScore(lowScore):'');
+    document.getElementById('m-latency').textContent=latency!=null?Math.round(latency):'—';
+    document.getElementById('m-peak').textContent=peak!=null?peak+'h':'—';
+    document.getElementById('m-clients').textContent=clients??'—';
+    document.getElementById('m-tokens-in').textContent=data.total_tokens_input??'—';
+    document.getElementById('m-tokens-out').textContent=data.total_tokens_output??'—';
+
+    // Top categorias — barras horizontais
+    const cats=data.top_categories||[];
+    const catCard=document.getElementById('metrics-categories-card');
+    if(cats.length){
+      catCard.style.display='block';
+      const maxCount=Math.max(...cats.map(c=>c.count),1);
+      document.getElementById('metrics-cat-bars').innerHTML=cats.map(c=>`
+        <div class="cat-row">
+          <div class="cat-name">${c.category}</div>
+          <div class="cat-bar-wrap"><div class="cat-bar" style="width:${(c.count/maxCount*100).toFixed(1)}%"></div></div>
+          <div class="cat-count">${c.count}</div>
+        </div>`).join('');
+    } else {catCard.style.display='none';}
+
+    // Distribuição diária — barras verticais (só daily e monthly)
+    const daily=data.queries_by_day||{};
+    const dailyCard=document.getElementById('metrics-daily-card');
+    const keys=Object.keys(daily).sort();
+    if(keys.length&&(CURRENT_GRAN==='daily'||CURRENT_GRAN==='monthly')){
+      dailyCard.style.display='block';
+      const maxVal=Math.max(...Object.values(daily),1);
+      document.getElementById('metrics-daily-chart').innerHTML=keys.map(k=>`
+        <div class="bar-col">
+          <div class="bar" style="height:${(daily[k]/maxVal*70).toFixed(0)}px" title="${k}: ${daily[k]}"></div>
+          <div class="bar-label">${k.slice(5)}</div>
+        </div>`).join('');
+    } else {dailyCard.style.display='none';}
+  }
+}
+
+document.addEventListener('keydown',function(e){
+  if(e.ctrlKey&&e.key==='Enter'){
+    const active=document.querySelector('.page.active');
+    if(active&&active.id==='page-query')submitQuery();
+  }
+});
 </script>
 </body>
 </html>

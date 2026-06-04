@@ -4,9 +4,9 @@ from datetime import datetime
 
 class QueryResponse(BaseModel):
     answer:     str
-    sources:    list[str]   # referências dos documentos usados
+    sources:    list[str]
     trace_id:   str
-    session_id: str         # criado ou confirmado — para memória curta
+    session_id: str
 
 
 class FeedbackResponse(BaseModel):
@@ -15,14 +15,13 @@ class FeedbackResponse(BaseModel):
 
 
 class HealthResponse(BaseModel):
-    status:  str            # "ok"
+    status:  str
     version: str
 
 
-# Formato de erro uniforme em toda a API — acordado no módulo 2
 class ErrorResponse(BaseModel):
-    error:    str           # código máquina
-    message:  str           # descrição legível
+    error:    str
+    message:  str
     trace_id: str
 
 
@@ -37,15 +36,27 @@ class CategoryMetrics(BaseModel):
     negative_feedback: int
 
 
+class TopCategory(BaseModel):
+    category: str
+    count:    int
+
+
 class GlobalMetricsSummary(BaseModel):
-    from_dt:             datetime
-    to_dt:               datetime
-    total_queries:       int
-    avg_score:           float
-    avg_latency_ms:      float
-    avg_docs_retrieved:  float
-    total_tokens_input:  int
-    total_tokens_output: int
+    from_dt:              datetime
+    to_dt:                datetime
+    generated_at:         datetime | None = None
+    total_queries:        int
+    success_rate:         float | None = None
+    avg_score:            float
+    avg_latency_ms:       float
+    avg_docs_retrieved:   float
+    total_tokens_input:   int
+    total_tokens_output:  int
+    low_score_rate:       float | None = None
+    active_clients:       int | None = None
+    top_categories:       list[TopCategory] = []
+    peak_hour_lisbon:     int | None = None
+    queries_by_day:       dict[str, int] = {}
 
 
 class ClientMetricsResponse(BaseModel):

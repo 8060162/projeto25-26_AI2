@@ -37,6 +37,10 @@ from rag_api.auth.store import MongoKeyRepository, init_indexes
 from rag_api.auth.strategies import APIKeyAuthStrategy
 from rag_api.config.settings import get_settings
 from rag_api.rag import create_rag_controller
+from rag_api.reporting import (
+    MongoSnapshotAggregator, RedisSchedulerLock,
+    create_scheduler, SchedulerConfig,
+)
 from rag_api.schemas.responses import HealthResponse
 from rag_api.signals.init_collection import init_signals_collection
 from rag_api.signals.store import MongoSignalStore
@@ -50,11 +54,6 @@ def _register_pipeline_path() -> None:
     O rag-api está em:   PROJETO25-26_AI2/rag-api/rag_api/api/main.py
     A raiz do projecto:  PROJETO25-26_AI2/
     Calculado como:      __file__ subindo 4 níveis (main.py → api → rag_api → rag-api → raiz)
-
-    Desta forma os imports do pipeline funcionam directamente:
-        from retrieval.service import ...
-        from embedding.indexer import ...
-        from Chunking.pipeline import ...
     """
     this_file    = pathlib.Path(__file__).resolve()
     project_root = this_file.parents[3]
@@ -129,15 +128,34 @@ def create_app() -> FastAPI:
         cache    = RedisAuthCache(redis)
         strategy = APIKeyAuthStrategy(key_repo, cache)
 
-        app.state.mongo_client     = mongo_client
-        app.state.auth_strategy    = strategy
-        app.state.key_repo         = key_repo
-        app.state.application_repo = app_repo
-        app.state.rate_limiter     = RateLimiter(redis)
+        app.state.mongo_client      = mongo_client
+        app.state.auth_strategy     = strategy
+        app.state.key_repo          = key_repo
+        app.state.application_repo  = app_repo
+        app.state.rate_limiter      = RateLimiter(redis)
 
         # Wiring — signals
-        app.state.signal_store  = MongoSignalStore(db)
+        app.state.signal_store   = MongoSignalStore(db)
         app.state.metrics_reader = MongoMetricsReader(db)
+
+        # Wiring — reporting
+        aggregator = MongoSnapshotAggregator(db)
+        lock       = RedisSchedulerLock(redis, settings.snapshot_lock_ttl_seconds)
+        config     = SchedulerConfig(
+            realtime_minutes = settings.snapshot_realtime_minutes,
+            hourly_minutes   = settings.snapshot_hourly_minutes,
+            daily_hour       = settings.snapshot_daily_hour,
+            daily_minute     = settings.snapshot_daily_minute,
+            monthly_day      = settings.snapshot_monthly_day,
+            monthly_hour     = settings.snapshot_monthly_hour,
+            purge_hour       = settings.snapshot_purge_hour,
+            timezone         = settings.snapshot_timezone,
+        )
+        scheduler = create_scheduler(aggregator, lock, config)
+        scheduler.start()
+
+        app.state.snapshot_aggregator = aggregator
+        app.state.scheduler           = scheduler
 
         # RAG Controller — real se o pipeline estiver disponível
         app.state.rag_controller = create_rag_controller()
@@ -150,6 +168,8 @@ def create_app() -> FastAPI:
 
     @app.on_event("shutdown")
     async def shutdown():
+        if hasattr(app.state, "scheduler"):
+            app.state.scheduler.shutdown(wait=False)
         if hasattr(app.state, "mongo_client"):
             app.state.mongo_client.close()
 
