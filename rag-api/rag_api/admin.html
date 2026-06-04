@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RAG API — Painel de Administração</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap');
+  :root{--bg:#0f1117;--bg2:#161922;--bg3:#1e2330;--border:#2a3040;--accent:#4f8ef7;--accent2:#7c5cbf;--green:#3ecf8e;--red:#f76f6f;--amber:#f7c948;--text:#e2e8f0;--muted:#64748b;--mono:'IBM Plex Mono',monospace;--sans:'IBM Plex Sans',sans-serif}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14px;min-height:100vh;display:flex;flex-direction:column}
+  header{background:var(--bg2);border-bottom:1px solid var(--border);padding:0 24px;height:56px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100}
+  .logo{font-family:var(--mono);font-size:13px;font-weight:600;letter-spacing:.08em;color:var(--accent);display:flex;align-items:center;gap:10px}
+  .logo::before{content:'';width:8px;height:8px;background:var(--green);border-radius:50%;animation:pulse 2s infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+  .header-right{display:flex;align-items:center;gap:12px}
+  #api-url-input,#key-input{background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--mono);font-size:11px;padding:6px 10px;outline:none;transition:border-color .2s}
+  #api-url-input{width:220px}#key-input{width:260px}
+  #api-url-input:focus,#key-input:focus{border-color:var(--accent)}
+  .btn-connect{background:var(--accent);color:#fff;border:none;border-radius:6px;padding:6px 14px;font-family:var(--mono);font-size:11px;font-weight:600;cursor:pointer;transition:opacity .2s}
+  .btn-connect:hover{opacity:.85}
+  #status-badge{font-family:var(--mono);font-size:11px;padding:4px 10px;border-radius:20px;background:var(--bg3);border:1px solid var(--border);color:var(--muted)}
+  #status-badge.ok{color:var(--green);border-color:var(--green)}#status-badge.err{color:var(--red);border-color:var(--red)}
+  .layout{display:flex;flex:1}
+  nav{width:200px;background:var(--bg2);border-right:1px solid var(--border);padding:20px 0;flex-shrink:0}
+  .nav-section{padding:0 16px 8px;font-family:var(--mono);font-size:10px;font-weight:600;letter-spacing:.12em;color:var(--muted);text-transform:uppercase}
+  .nav-item{display:flex;align-items:center;gap:10px;padding:9px 20px;cursor:pointer;color:var(--muted);font-size:13px;font-weight:400;transition:all .15s;border-left:2px solid transparent;user-select:none}
+  .nav-item:hover{color:var(--text);background:var(--bg3)}.nav-item.active{color:var(--accent);border-left-color:var(--accent);background:rgba(79,142,247,.07)}
+  .nav-item .icon{font-size:15px;width:18px;text-align:center}
+  main{flex:1;padding:28px;overflow-y:auto}
+  .page{display:none}.page.active{display:block}
+  h1{font-size:18px;font-weight:600;margin-bottom:6px;color:var(--text)}
+  .page-desc{color:var(--muted);font-size:13px;margin-bottom:24px}
+  .card{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:20px;margin-bottom:16px}
+  .card-title{font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:16px}
+  .form-row{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+  .form-group{display:flex;flex-direction:column;gap:6px;flex:1;min-width:160px}
+  label{font-size:12px;color:var(--muted);font-weight:500}
+  input[type=text],input[type=number],select,textarea{background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--sans);font-size:13px;padding:8px 12px;outline:none;transition:border-color .2s;width:100%}
+  input:focus,select:focus,textarea:focus{border-color:var(--accent)}
+  textarea{resize:vertical;min-height:80px;font-family:var(--mono);font-size:12px}
+  .btn{padding:8px 16px;border-radius:6px;border:none;font-family:var(--sans);font-size:13px;font-weight:500;cursor:pointer;transition:all .15s;display:inline-flex;align-items:center;gap:6px}
+  .btn-primary{background:var(--accent);color:#fff}.btn-primary:hover{opacity:.85}
+  .btn-success{background:var(--green);color:#0f1117}.btn-success:hover{opacity:.85}
+  .btn-danger{background:var(--red);color:#fff}.btn-danger:hover{opacity:.85}
+  .btn-ghost{background:var(--bg3);border:1px solid var(--border);color:var(--text)}.btn-ghost:hover{border-color:var(--accent);color:var(--accent)}
+  .btn-sm{padding:5px 10px;font-size:12px}.btn:disabled{opacity:.4;cursor:not-allowed}
+  .table-wrap{overflow-x:auto}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{text-align:left;padding:10px 12px;font-family:var(--mono);font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--border)}
+  td{padding:12px 12px;border-bottom:1px solid rgba(42,48,64,.6);vertical-align:middle}
+  tr:last-child td{border-bottom:none}tr:hover td{background:rgba(255,255,255,.02)}
+  .badge{display:inline-block;padding:2px 8px;border-radius:20px;font-family:var(--mono);font-size:10px;font-weight:600}
+  .badge-green{background:rgba(62,207,142,.15);color:var(--green)}.badge-red{background:rgba(247,111,111,.15);color:var(--red)}
+  .badge-blue{background:rgba(79,142,247,.15);color:var(--accent)}.badge-amber{background:rgba(247,201,72,.15);color:var(--amber)}
+  .response-box{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:14px;font-family:var(--mono);font-size:12px;line-height:1.6;color:var(--green);min-height:80px;max-height:320px;overflow-y:auto;white-space:pre-wrap;word-break:break-all}
+  .response-box.err{color:var(--red)}.response-box.empty{color:var(--muted);font-style:italic}
+  .key-reveal{background:rgba(247,201,72,.08);border:1px solid rgba(247,201,72,.3);border-radius:8px;padding:14px 16px;font-family:var(--mono);font-size:12px;color:var(--amber);display:none;margin-top:12px;word-break:break-all}
+  .key-reveal.visible{display:block}.key-reveal strong{display:block;font-size:10px;margin-bottom:6px;opacity:.7;letter-spacing:.08em;text-transform:uppercase}
+  .metrics-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;margin-bottom:20px}
+  .metric-card{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:18px}
+  .metric-label{font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px}
+  .metric-value{font-size:28px;font-weight:600;color:var(--text);font-family:var(--mono)}
+  .metric-sub{font-size:11px;color:var(--muted);margin-top:4px}
+  .answer-block{background:var(--bg3);border-left:3px solid var(--accent);border-radius:0 8px 8px 0;padding:14px 16px;font-size:14px;line-height:1.7;margin-top:12px;display:none}
+  .answer-block.visible{display:block}
+  .loading{display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,.2);border-top-color:#fff;border-radius:50%;animation:spin .6s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .divider{height:1px;background:var(--border);margin:20px 0}
+  .empty-state{text-align:center;padding:40px;color:var(--muted);font-size:13px}
+  .trace-id{font-family:var(--mono);font-size:11px;color:var(--muted)}
+  .actions{display:flex;gap:6px}
+  .section-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
+  .hint-tag{font-family:var(--mono);font-size:11px;background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:2px 6px;color:var(--text)}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">RAG ADMIN</div>
+  <div class="header-right">
+    <input id="api-url-input" type="text" placeholder="http://127.0.0.1:8000" value="http://127.0.0.1:8000">
+    <input id="key-input" type="text" placeholder="Chave de administração (rag_...)">
+    <button class="btn-connect" onclick="connect()">Ligar</button>
+    <span id="status-badge">desligado</span>
+  </div>
+</header>
+<div class="layout">
+<nav>
+  <div class="nav-section" style="margin-bottom:8px">Sistema</div>
+  <div class="nav-item active" onclick="showPage('dashboard')" id="nav-dashboard"><span class="icon">◈</span> Dashboard</div>
+  <div class="nav-item" onclick="showPage('query')" id="nav-query"><span class="icon">◎</span> Consulta RAG</div>
+  <div class="nav-section" style="margin-top:20px;margin-bottom:8px">Gestão</div>
+  <div class="nav-item" onclick="showPage('applications')" id="nav-applications"><span class="icon">⊞</span> Aplicações</div>
+  <div class="nav-item" onclick="showPage('keys')" id="nav-keys"><span class="icon">⊛</span> Chaves</div>
+  <div class="nav-section" style="margin-top:20px;margin-bottom:8px">Operações</div>
+  <div class="nav-item" onclick="showPage('pipeline')" id="nav-pipeline"><span class="icon">⊙</span> Pipeline</div>
+  <div class="nav-item" onclick="showPage('metrics')" id="nav-metrics"><span class="icon">◬</span> Métricas</div>
+</nav>
+<main>
+  <div class="page active" id="page-dashboard">
+    <h1>Dashboard</h1><p class="page-desc">Estado geral do sistema RAG.</p>
+    <div class="metrics-grid">
+      <div class="metric-card"><div class="metric-label">Estado</div><div class="metric-value" id="dash-status" style="font-size:16px;padding-top:4px">—</div><div class="metric-sub" id="dash-version">—</div></div>
+      <div class="metric-card"><div class="metric-label">Aplicações</div><div class="metric-value" id="dash-apps">—</div><div class="metric-sub">registadas</div></div>
+      <div class="metric-card"><div class="metric-label">Total de Consultas</div><div class="metric-value" id="dash-queries">—</div><div class="metric-sub">últimas 24h</div></div>
+      <div class="metric-card"><div class="metric-label">Pontuação Média</div><div class="metric-value" id="dash-score">—</div><div class="metric-sub">retrieval score</div></div>
+      <div class="metric-card"><div class="metric-label">Latência Média</div><div class="metric-value" id="dash-latency">—</div><div class="metric-sub">milissegundos</div></div>
+    </div>
+    <div class="card"><div class="card-title">Acesso Rápido</div><div style="display:flex;gap:10px;flex-wrap:wrap"><button class="btn btn-ghost" onclick="showPage('applications')">⊞ Nova Aplicação</button><button class="btn btn-ghost" onclick="showPage('query')">◎ Testar Consulta</button><button class="btn btn-ghost" onclick="showPage('pipeline')">⊙ Executar Pipeline</button><button class="btn btn-ghost" onclick="refreshDashboard()">↺ Actualizar</button></div></div>
+  </div>
+
+  <div class="page" id="page-query">
+    <h1>Consulta RAG</h1><p class="page-desc">Submeta uma questão ao sistema de recuperação e geração de respostas.</p>
+    <div class="card"><div class="card-title">Nova Consulta</div>
+      <div class="form-group" style="margin-bottom:12px"><label>Questão</label><textarea id="query-question" placeholder="Ex: Qual o prazo de matrícula?"></textarea></div>
+      <div class="form-row">
+        <div class="form-group"><label>Chave de Acesso (deixar vazio para usar a chave admin)</label><input type="text" id="query-key" placeholder="rag_... (opcional)"></div>
+        <div class="form-group" style="max-width:200px"><label>ID de Sessão (opcional)</label><input type="text" id="query-session" placeholder="para memória curta"></div>
+      </div>
+      <button class="btn btn-primary" onclick="submitQuery()" id="btn-query">Submeter Consulta</button>
+    </div>
+    <div class="card" id="query-result-card" style="display:none">
+      <div class="card-title">Resposta</div>
+      <div class="answer-block visible" id="query-answer"></div>
+      <div id="query-sources" style="margin-top:12px"></div>
+      <div class="divider"></div>
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <span class="trace-id" id="query-trace"></span>
+        <div style="display:flex;gap:8px"><button class="btn btn-success btn-sm" onclick="sendFeedback('positive')">✓ Útil</button><button class="btn btn-danger btn-sm" onclick="sendFeedback('negative')">✗ Não útil</button></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="page" id="page-applications">
+    <h1>Aplicações</h1><p class="page-desc">Gestão das aplicações clientes com acesso ao sistema RAG.</p>
+    <div class="card"><div class="card-title">Registar Nova Aplicação</div>
+      <div class="form-row">
+        <div class="form-group"><label>Nome</label><input type="text" id="app-name" placeholder="Ex: Portal Académico"></div>
+        <div class="form-group"><label>Descrição (opcional)</label><input type="text" id="app-desc" placeholder="Breve descrição"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Âmbitos</label><select id="app-scopes"><option value="rag:query">rag:query — consulta</option><option value="rag:query,rag:ingest">rag:query + rag:ingest</option><option value="rag:query,rag:admin">rag:query + rag:admin</option></select></div>
+        <div class="form-group" style="max-width:160px"><label>Limite (pedidos/min)</label><input type="number" id="app-rate" value="100" min="1" max="10000"></div>
+      </div>
+      <button class="btn btn-primary" onclick="createApp()">Registar Aplicação</button>
+    </div>
+    <div class="card"><div class="section-header"><div class="card-title" style="margin:0">Aplicações Registadas</div><button class="btn btn-ghost btn-sm" onclick="loadApps()">↺ Actualizar</button></div>
+      <div class="table-wrap"><table><thead><tr><th>Nome</th><th>Âmbitos</th><th>Limite</th><th>Estado</th><th>Criada em</th><th>Acções</th></tr></thead><tbody id="apps-tbody"><tr><td colspan="6" class="empty-state">Carregue para ver as aplicações</td></tr></tbody></table></div>
+    </div>
+  </div>
+
+  <div class="page" id="page-keys">
+    <h1>Chaves de Acesso</h1><p class="page-desc">Geração, rotação e revogação de chaves de acesso por aplicação.</p>
+    <div class="card"><div class="card-title">Seleccionar Aplicação</div>
+      <div class="form-row">
+        <div class="form-group"><label>Aplicação</label><select id="keys-app-select"><option value="">— seleccionar —</option></select></div>
+        <div style="display:flex;align-items:flex-end"><button class="btn btn-primary" onclick="generateKey()">Gerar Nova Chave</button></div>
+      </div>
+      <div class="key-reveal" id="key-reveal-box"><strong>⚠ Chave gerada — guarde imediatamente. Não será mostrada novamente.</strong><span id="key-reveal-value"></span></div>
+    </div>
+    <div class="card"><div class="card-title">Chaves Activas</div><div id="keys-hint-list"><div class="empty-state">Seleccione uma aplicação para ver as chaves</div></div></div>
+  </div>
+
+  <div class="page" id="page-pipeline">
+    <h1>Pipeline de Indexação</h1><p class="page-desc">Executa o pipeline completo de segmentação e indexação de documentos no ChromaDB.</p>
+    <div class="card"><div class="card-title">Estado do Pipeline</div>
+      <p style="color:var(--muted);font-size:13px;margin-bottom:16px">Este processo executa sequencialmente: segmentação dos documentos PDF → geração de embeddings → indexação no ChromaDB.</p>
+      <div style="display:flex;gap:10px;align-items:center"><button class="btn btn-success" onclick="runEmbed()" id="btn-embed">▶ Executar Pipeline</button><span id="pipeline-status" style="font-family:var(--mono);font-size:12px;color:var(--muted)"></span></div>
+    </div>
+    <div class="card" id="pipeline-result" style="display:none"><div class="card-title">Resultado</div><div class="response-box" id="pipeline-output"></div></div>
+  </div>
+
+  <div class="page" id="page-metrics">
+    <h1>Métricas</h1><p class="page-desc">Análise de utilização e qualidade das respostas do sistema RAG.</p>
+    <div class="card"><div class="card-title">Filtros</div>
+      <div class="form-row">
+        <div class="form-group"><label>De</label><input type="text" id="metrics-from" placeholder="2026-01-01T00:00:00"></div>
+        <div class="form-group"><label>Até</label><input type="text" id="metrics-to" placeholder="2026-12-31T23:59:59"></div>
+        <div class="form-group"><label>Aplicação (opcional)</label><select id="metrics-client"><option value="">Todas as aplicações</option></select></div>
+        <div style="display:flex;align-items:flex-end"><button class="btn btn-primary" onclick="loadMetrics()">Carregar</button></div>
+      </div>
+    </div>
+    <div class="metrics-grid" id="metrics-summary" style="display:none">
+      <div class="metric-card"><div class="metric-label">Total de Consultas</div><div class="metric-value" id="m-total">—</div></div>
+      <div class="metric-card"><div class="metric-label">Pontuação Média</div><div class="metric-value" id="m-score">—</div></div>
+      <div class="metric-card"><div class="metric-label">Latência Média</div><div class="metric-value" id="m-latency">—</div><div class="metric-sub">ms</div></div>
+      <div class="metric-card"><div class="metric-label">Tokens Entrada</div><div class="metric-value" id="m-tokens-in">—</div></div>
+      <div class="metric-card"><div class="metric-label">Tokens Saída</div><div class="metric-value" id="m-tokens-out">—</div></div>
+      <div class="metric-card"><div class="metric-label">Docs Recuperados</div><div class="metric-value" id="m-docs">—</div><div class="metric-sub">média</div></div>
+    </div>
+    <div class="card" id="metrics-categories-card" style="display:none"><div class="card-title">Por Categoria</div>
+      <div class="table-wrap"><table><thead><tr><th>Categoria</th><th>Consultas</th><th>Score Médio</th><th>Latência (ms)</th><th>Feedback ✓</th><th>Feedback ✗</th></tr></thead><tbody id="metrics-tbody"></tbody></table></div>
+    </div>
+  </div>
+</main>
+</div>
+<script>
+let BASE='http://127.0.0.1:8000',ADMIN_KEY='',APPS=[],LAST_TRACE_ID=null;
+function apiUrl(p){return BASE+p}
+function headers(k){const key=k||ADMIN_KEY;return{'Content-Type':'application/json','Authorization':'Bearer '+key}}
+async function api(method,path,body,key){const opts={method,headers:headers(key)};if(body)opts.body=JSON.stringify(body);const r=await fetch(apiUrl(path),opts);const data=await r.json().catch(()=>({}));return{ok:r.ok,status:r.status,data}}
+function fmt(o){return JSON.stringify(o,null,2)}
+function fmtDate(iso){if(!iso)return'—';return new Date(iso).toLocaleDateString('pt-PT',{day:'2-digit',month:'2-digit',year:'numeric'})}
+function showPage(name){document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));document.getElementById('page-'+name).classList.add('active');document.getElementById('nav-'+name).classList.add('active');if(name==='applications')loadApps();if(name==='keys')loadAppsForKeys();if(name==='metrics')loadAppsForMetrics();if(name==='dashboard')refreshDashboard()}
+async function connect(){BASE=document.getElementById('api-url-input').value.replace(/\/$/,'');ADMIN_KEY=document.getElementById('key-input').value.trim();const badge=document.getElementById('status-badge');badge.className='';badge.textContent='...';try{const r=await fetch(apiUrl('/v1/health'));const d=await r.json();badge.className='ok';badge.textContent=d.status+' v'+d.version;refreshDashboard()}catch(e){badge.className='err';badge.textContent='erro'}}
+async function refreshDashboard(){try{const h=await fetch(apiUrl('/v1/health'));const hd=await h.json();document.getElementById('dash-status').innerHTML='<span style="color:var(--green)">● operacional</span>';document.getElementById('dash-version').textContent='v'+hd.version}catch(e){document.getElementById('dash-status').innerHTML='<span style="color:var(--red)">● indisponível</span>'}if(!ADMIN_KEY)return;try{const{data}=await api('GET','/v1/applications');document.getElementById('dash-apps').textContent=data.total??'—'}catch(e){}try{const now=new Date();const from=new Date(now-86400000).toISOString();const{data}=await api('GET',`/v1/metrics/signals?from_dt=${from}&to_dt=${now.toISOString()}`);document.getElementById('dash-queries').textContent=data.total_queries??'—';document.getElementById('dash-score').textContent=data.avg_score!=null?data.avg_score.toFixed(2):'—';document.getElementById('dash-latency').textContent=data.avg_latency_ms!=null?Math.round(data.avg_latency_ms):'—'}catch(e){}}
+async function submitQuery(){const q=document.getElementById('query-question').value.trim();if(!q)return;const btn=document.getElementById('btn-query');const customKey=document.getElementById('query-key').value.trim();const session=document.getElementById('query-session').value.trim();const body={question:q};if(session)body.session_id=session;btn.innerHTML='<span class="loading"></span> A processar...';btn.disabled=true;try{const{ok,data}=await api('POST','/v1/query',body,customKey||ADMIN_KEY);document.getElementById('query-result-card').style.display='block';document.getElementById('query-answer').textContent=data.answer||'';LAST_TRACE_ID=data.trace_id;document.getElementById('query-trace').textContent='trace: '+(data.trace_id||'');const srcs=document.getElementById('query-sources');srcs.innerHTML='';if(data.sources&&data.sources.length){srcs.innerHTML='<div style="font-size:11px;color:var(--muted);margin-bottom:6px;font-family:var(--mono)">FONTES</div>'+data.sources.map(s=>`<span class="hint-tag" style="margin-right:6px;margin-bottom:4px;display:inline-block">${s}</span>`).join('')}if(session)document.getElementById('query-session').value=data.session_id||''}catch(e){document.getElementById('query-result-card').style.display='block';document.getElementById('query-answer').textContent='Erro: '+e.message}btn.innerHTML='Submeter Consulta';btn.disabled=false}
+async function sendFeedback(rating){if(!LAST_TRACE_ID)return;await api('POST','/v1/feedback',{trace_id:LAST_TRACE_ID,rating});const btn=rating==='positive'?document.querySelector('.btn-success.btn-sm'):document.querySelector('.btn-danger.btn-sm');btn.textContent='✓ Registado';setTimeout(()=>{document.querySelector('.btn-success.btn-sm').textContent='✓ Útil';document.querySelector('.btn-danger.btn-sm').textContent='✗ Não útil'},2000)}
+async function loadApps(){const{ok,data}=await api('GET','/v1/applications');if(!ok)return;APPS=data.items||[];const tbody=document.getElementById('apps-tbody');if(!APPS.length){tbody.innerHTML='<tr><td colspan="6" class="empty-state">Nenhuma aplicação registada</td></tr>';return}tbody.innerHTML=APPS.map(a=>`<tr><td><strong>${a.name}</strong>${a.description?`<div style="font-size:11px;color:var(--muted)">${a.description}</div>`:''}</td><td>${a.scopes.map(s=>`<span class="badge badge-blue">${s}</span>`).join(' ')}</td><td><span class="badge badge-amber">${a.rate_limit}/min</span></td><td><span class="badge ${a.active?'badge-green':'badge-red'}">${a.active?'activa':'inactiva'}</span></td><td style="color:var(--muted)">${fmtDate(a.created_at)}</td><td class="actions"><button class="btn btn-ghost btn-sm" onclick="deleteApp('${a.id}','${a.name}')">✕ Remover</button></td></tr>`).join('')}
+async function createApp(){const name=document.getElementById('app-name').value.trim();if(!name)return;const desc=document.getElementById('app-desc').value.trim();const scopes=document.getElementById('app-scopes').value.split(',');const rate=parseInt(document.getElementById('app-rate').value);const body={name,scopes,rate_limit:rate};if(desc)body.description=desc;const{ok,data}=await api('POST','/v1/applications',body);if(ok){document.getElementById('app-name').value='';document.getElementById('app-desc').value='';loadApps()}else{alert('Erro: '+(data.message||'falha ao criar aplicação'))}}
+async function deleteApp(id,name){if(!confirm(`Remover a aplicação "${name}"?`))return;const{ok}=await api('DELETE','/v1/applications/'+id);if(ok)loadApps()}
+async function loadAppsForKeys(){const{ok,data}=await api('GET','/v1/applications');if(!ok)return;APPS=data.items||[];const sel=document.getElementById('keys-app-select');sel.innerHTML='<option value="">— seleccionar —</option>'+APPS.map(a=>`<option value="${a.id}">${a.name}</option>`).join('')}
+async function generateKey(){const appId=document.getElementById('keys-app-select').value;if(!appId)return alert('Seleccione uma aplicação.');const{ok,data}=await api('POST',`/v1/applications/${appId}/keys`);if(ok){const box=document.getElementById('key-reveal-box');document.getElementById('key-reveal-value').textContent=data.key;box.classList.add('visible');loadKeysForApp(appId)}}
+async function loadKeysForApp(appId){if(!appId)return;const list=document.getElementById('keys-hint-list');list.innerHTML=`<div style="color:var(--muted);font-size:12px;padding:8px 0">ID da aplicação: <span class="hint-tag">${appId}</span></div><div style="color:var(--muted);font-size:12px;padding:8px 0">Para ver as chaves activas, utilize os hints apresentados após a geração de cada chave.</div>`}
+document.addEventListener('change',function(e){if(e.target.id==='keys-app-select'){document.getElementById('key-reveal-box').classList.remove('visible');loadKeysForApp(e.target.value)}});
+async function runEmbed(){const btn=document.getElementById('btn-embed');const status=document.getElementById('pipeline-status');btn.innerHTML='<span class="loading"></span> A executar...';btn.disabled=true;status.textContent='Pipeline em execução — pode demorar alguns minutos...';const result=document.getElementById('pipeline-result');const output=document.getElementById('pipeline-output');result.style.display='none';try{const{ok,data}=await api('POST','/v1/embed');result.style.display='block';if(ok){output.className='response-box';output.textContent=fmt(data);status.textContent='✓ Concluído — '+data.embedded_record_count+' registos indexados'}else{output.className='response-box err';output.textContent=fmt(data);status.textContent='✗ Erro na execução'}}catch(e){result.style.display='block';output.className='response-box err';output.textContent=e.message;status.textContent='✗ Erro de ligação'}btn.innerHTML='▶ Executar Pipeline';btn.disabled=false}
+async function loadAppsForMetrics(){const{ok,data}=await api('GET','/v1/applications');if(!ok)return;const sel=document.getElementById('metrics-client');sel.innerHTML='<option value="">Todas as aplicações</option>'+(data.items||[]).map(a=>`<option value="${a.id}">${a.name}</option>`).join('')}
+async function loadMetrics(){const from=document.getElementById('metrics-from').value;const to=document.getElementById('metrics-to').value;const client=document.getElementById('metrics-client').value;let params=[];if(from)params.push('from_dt='+encodeURIComponent(from));if(to)params.push('to_dt='+encodeURIComponent(to));const qs=params.length?'?'+params.join('&'):'';const endpoint=client?`/v1/metrics/signals/${client}${qs}`:`/v1/metrics/signals${qs}`;const{ok,data}=await api('GET',endpoint);if(!ok)return;document.getElementById('metrics-summary').style.display='grid';if(client){document.getElementById('m-total').textContent='—';document.getElementById('m-score').textContent='—';document.getElementById('m-latency').textContent='—';document.getElementById('m-tokens-in').textContent='—';document.getElementById('m-tokens-out').textContent='—';document.getElementById('m-docs').textContent='—';document.getElementById('metrics-categories-card').style.display='block';const tbody=document.getElementById('metrics-tbody');const cats=data.categories||[];tbody.innerHTML=cats.length?cats.map(c=>`<tr><td><span class="badge badge-blue">${c.category}</span></td><td>${c.total_queries}</td><td>${c.avg_score.toFixed(2)}</td><td>${Math.round(c.avg_latency_ms)}</td><td><span class="badge badge-green">${c.positive_feedback}</span></td><td><span class="badge badge-red">${c.negative_feedback}</span></td></tr>`).join(''):'<tr><td colspan="6" class="empty-state">Sem dados para o período seleccionado</td></tr>'}else{document.getElementById('m-total').textContent=data.total_queries??'—';document.getElementById('m-score').textContent=data.avg_score!=null?data.avg_score.toFixed(2):'—';document.getElementById('m-latency').textContent=data.avg_latency_ms!=null?Math.round(data.avg_latency_ms):'—';document.getElementById('m-tokens-in').textContent=data.total_tokens_input??'—';document.getElementById('m-tokens-out').textContent=data.total_tokens_output??'—';document.getElementById('m-docs').textContent=data.avg_docs_retrieved!=null?data.avg_docs_retrieved.toFixed(1):'—';document.getElementById('metrics-categories-card').style.display='none'}}
+document.addEventListener('keydown',function(e){if(e.ctrlKey&&e.key==='Enter'){const active=document.querySelector('.page.active');if(active&&active.id==='page-query')submitQuery()}});
+</script>
+</body>
+</html>

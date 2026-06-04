@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RAG IPP — Consulta de Regulamentos</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@300;400;500&display=swap');
+  :root{--bg:#f8f7f4;--bg2:#ffffff;--bg3:#f1efe9;--border:#e2ddd6;--accent:#1a4f8a;--accent2:#2563b0;--text:#1a1a1a;--muted:#6b6560;--green:#1a6b4a;--red:#b91c1c;--serif:'Lora',Georgia,serif;--sans:'Inter',sans-serif;--mono:'IBM Plex Mono',monospace}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:15px;min-height:100vh;display:flex;flex-direction:column}
+  header{background:var(--accent);padding:0 40px;height:60px;display:flex;align-items:center;justify-content:space-between}
+  .logo{font-family:var(--serif);font-size:16px;font-weight:600;color:#fff;letter-spacing:.02em}
+  .logo span{font-weight:400;opacity:.7;font-size:13px;margin-left:12px;font-family:var(--sans)}
+  #conn-status{font-family:var(--mono);font-size:11px;color:rgba(255,255,255,.6);display:flex;align-items:center;gap:6px}
+  #conn-dot{width:7px;height:7px;border-radius:50%;background:rgba(255,255,255,.3)}
+  #conn-dot.ok{background:#4ade80}#conn-dot.err{background:#f87171}
+  .config-bar{background:var(--bg2);border-bottom:1px solid var(--border);padding:12px 40px;display:flex;gap:12px;align-items:center}
+  .config-bar input{background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--mono);font-size:11px;padding:7px 12px;outline:none;transition:border-color .2s}
+  .config-bar input:focus{border-color:var(--accent)}
+  #cfg-url{width:200px}#cfg-key{width:280px}
+  .btn-cfg{background:var(--accent);color:#fff;border:none;border-radius:6px;padding:7px 16px;font-size:12px;font-weight:500;cursor:pointer;transition:opacity .2s;font-family:var(--sans)}
+  .btn-cfg:hover{opacity:.85}
+  main{flex:1;max-width:780px;width:100%;margin:0 auto;padding:40px 24px}
+  .intro{text-align:center;margin-bottom:36px}
+  .intro h1{font-family:var(--serif);font-size:26px;font-weight:600;color:var(--accent);margin-bottom:8px}
+  .intro p{color:var(--muted);font-size:14px;max-width:520px;margin:0 auto;line-height:1.6}
+  .search-wrap{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:24px;box-shadow:0 2px 12px rgba(0,0,0,.04)}
+  .search-wrap label{display:block;font-size:12px;font-weight:500;color:var(--muted);margin-bottom:8px;letter-spacing:.04em;text-transform:uppercase}
+  textarea#question{width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:var(--sans);font-size:15px;padding:12px 14px;outline:none;resize:vertical;min-height:80px;transition:border-color .2s;line-height:1.5}
+  textarea#question:focus{border-color:var(--accent)}
+  .search-footer{display:flex;align-items:center;justify-content:space-between;margin-top:12px}
+  .btn-submit{background:var(--accent);color:#fff;border:none;border-radius:8px;padding:10px 24px;font-size:14px;font-weight:500;cursor:pointer;transition:all .2s;font-family:var(--sans);display:inline-flex;align-items:center;gap:8px}
+  .btn-submit:hover{background:var(--accent2)}.btn-submit:disabled{opacity:.5;cursor:not-allowed}
+  .btn-clear{background:none;border:none;color:var(--muted);font-size:12px;cursor:pointer;font-family:var(--sans);padding:4px 8px;border-radius:4px;transition:color .2s}
+  .btn-clear:hover{color:var(--red)}
+  .suggestions{margin-bottom:28px}
+  .suggestions-label{font-size:11px;font-weight:500;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px}
+  .suggestions-list{display:flex;flex-wrap:wrap;gap:8px}
+  .suggestion-pill{background:var(--bg2);border:1px solid var(--border);border-radius:20px;padding:6px 14px;font-size:13px;color:var(--muted);cursor:pointer;transition:all .15s;font-family:var(--sans)}
+  .suggestion-pill:hover{border-color:var(--accent);color:var(--accent);background:rgba(26,79,138,.04)}
+  .exchange{margin-bottom:20px;animation:fadeIn .3s ease}
+  @keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+  .q-bubble{background:var(--accent);color:#fff;border-radius:12px 12px 4px 12px;padding:12px 16px;font-size:14px;line-height:1.5;margin-bottom:10px;max-width:85%;margin-left:auto}
+  .a-wrap{background:var(--bg2);border:1px solid var(--border);border-radius:4px 12px 12px 12px;overflow:hidden}
+  .a-body{padding:16px 18px;font-size:14px;line-height:1.7;color:var(--text);font-family:var(--sans)}
+  .a-body.loading{color:var(--muted);font-style:italic;display:flex;align-items:center;gap:10px}
+  .a-body.error{color:var(--red)}
+  .a-footer{border-top:1px solid var(--border);padding:10px 18px;display:flex;align-items:center;justify-content:space-between;background:var(--bg3)}
+  .sources{display:flex;flex-wrap:wrap;gap:6px;flex:1}
+  .source-tag{font-family:var(--mono);font-size:10px;background:rgba(26,79,138,.08);color:var(--accent);border-radius:4px;padding:2px 7px;border:1px solid rgba(26,79,138,.15)}
+  .feedback-btns{display:flex;gap:6px;flex-shrink:0}
+  .fb-btn{background:none;border:1px solid var(--border);border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;transition:all .15s;font-family:var(--sans);color:var(--muted)}
+  .fb-btn:hover{border-color:var(--accent);color:var(--accent)}.fb-btn.voted{opacity:.5;cursor:default}
+  .trace-tag{font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:6px;padding:0 18px 10px}
+  .spinner{width:16px;height:16px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .6s linear infinite;flex-shrink:0}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .empty-hint{text-align:center;padding:40px 20px;color:var(--muted)}
+  .empty-hint .icon{font-size:32px;margin-bottom:12px;opacity:.4}
+  .empty-hint p{font-size:13px;line-height:1.6}
+  footer{text-align:center;padding:20px;font-size:11px;color:var(--muted);border-top:1px solid var(--border);font-family:var(--mono)}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">Instituto Politécnico do Porto<span>Sistema de Consulta de Regulamentos</span></div>
+  <div id="conn-status"><div id="conn-dot"></div><span id="conn-text">desligado</span></div>
+</header>
+<div class="config-bar">
+  <input id="cfg-url" type="text" value="http://127.0.0.1:8000" placeholder="URL da API">
+  <input id="cfg-key" type="password" placeholder="Chave de acesso (rag_...)">
+  <button class="btn-cfg" onclick="connect()">Ligar</button>
+</div>
+<main>
+  <div class="intro">
+    <h1>Consulta de Regulamentos</h1>
+    <p>Coloque a sua questão sobre regulamentos académicos do IPP. O sistema irá recuperar a informação relevante e gerar uma resposta fundamentada.</p>
+  </div>
+  <div class="search-wrap">
+    <label>A sua questão</label>
+    <textarea id="question" placeholder="Ex: Qual o prazo de matrícula para o 1.º ano?"></textarea>
+    <div class="search-footer">
+      <button class="btn-clear" onclick="clearAll()">↺ Nova sessão</button>
+      <button class="btn-submit" onclick="submitQuery()" id="btn-submit">Submeter</button>
+    </div>
+  </div>
+  <div class="suggestions">
+    <div class="suggestions-label">Questões frequentes</div>
+    <div class="suggestions-list">
+      <span class="suggestion-pill" onclick="useSuggestion(this)">Qual o prazo de matrícula?</span>
+      <span class="suggestion-pill" onclick="useSuggestion(this)">Como funciona a avaliação por exame?</span>
+      <span class="suggestion-pill" onclick="useSuggestion(this)">Quais os valores das propinas?</span>
+      <span class="suggestion-pill" onclick="useSuggestion(this)">Como posso pedir equivalências?</span>
+      <span class="suggestion-pill" onclick="useSuggestion(this)">Qual o regime de faltas?</span>
+      <span class="suggestion-pill" onclick="useSuggestion(this)">Como solicitar certidões?</span>
+    </div>
+  </div>
+  <div class="history" id="history">
+    <div class="empty-hint" id="empty-hint">
+      <div class="icon">◎</div>
+      <p>As suas consultas aparecerão aqui.<br>A sessão mantém o contexto das trocas anteriores.</p>
+    </div>
+  </div>
+</main>
+<footer>RAG IPP · Sistema de Consulta de Regulamentos Académicos</footer>
+<script>
+let BASE='http://127.0.0.1:8000',KEY='',SESSION_ID=null,exchanges=[];
+async function connect(){BASE=document.getElementById('cfg-url').value.replace(/\/$/,'');KEY=document.getElementById('cfg-key').value.trim();const dot=document.getElementById('conn-dot');const text=document.getElementById('conn-text');dot.className='';text.textContent='...';try{const r=await fetch(BASE+'/v1/health');const d=await r.json();dot.className='ok';text.textContent='ligado · '+d.version}catch(e){dot.className='err';text.textContent='erro de ligação'}}
+function useSuggestion(el){document.getElementById('question').value=el.textContent;document.getElementById('question').focus()}
+function clearAll(){SESSION_ID=null;exchanges=[];document.getElementById('question').value='';renderHistory()}
+async function submitQuery(){const q=document.getElementById('question').value.trim();if(!q||!KEY){if(!KEY)alert('Introduza a chave de acesso.');return}const btn=document.getElementById('btn-submit');btn.innerHTML='<span class="spinner"></span> A processar...';btn.disabled=true;const idx=exchanges.length;exchanges.push({question:q,answer:null,sources:[],traceId:null,loading:true});document.getElementById('question').value='';renderHistory();try{const body={question:q};if(SESSION_ID)body.session_id=SESSION_ID;const r=await fetch(BASE+'/v1/query',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+KEY},body:JSON.stringify(body)});const data=await r.json();if(r.ok){SESSION_ID=data.session_id;exchanges[idx]={question:q,answer:data.answer,sources:data.sources||[],traceId:data.trace_id,loading:false,error:false,voted:null}}else{exchanges[idx]={question:q,answer:data.message||'Erro desconhecido.',sources:[],traceId:null,loading:false,error:true}}}catch(e){exchanges[idx]={question:q,answer:'Não foi possível contactar o servidor.',sources:[],traceId:null,loading:false,error:true}}renderHistory();btn.innerHTML='Submeter';btn.disabled=false}
+async function vote(idx,rating){const ex=exchanges[idx];if(!ex||!ex.traceId||ex.voted)return;try{await fetch(BASE+'/v1/feedback',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+KEY},body:JSON.stringify({trace_id:ex.traceId,rating})})}catch(e){}exchanges[idx].voted=rating;renderHistory()}
+function renderHistory(){const container=document.getElementById('history');const empty=document.getElementById('empty-hint');if(!exchanges.length){empty.style.display='block';container.querySelectorAll('.exchange').forEach(e=>e.remove());return}empty.style.display='none';container.querySelectorAll('.exchange').forEach(e=>e.remove());exchanges.forEach((ex,idx)=>{const div=document.createElement('div');div.className='exchange';if(ex.loading){div.innerHTML=`<div class="q-bubble">${esc(ex.question)}</div><div class="a-wrap"><div class="a-body loading"><span class="spinner"></span>A recuperar informação relevante...</div></div>`}else{const sourcesHtml=ex.sources.length?ex.sources.map(s=>`<span class="source-tag">${esc(s)}</span>`).join(''):'<span style="font-size:11px;color:var(--muted);font-family:var(--mono)">sem fontes</span>';const feedbackHtml=!ex.error?`<div class="feedback-btns"><button class="fb-btn ${ex.voted==='positive'?'voted':''}" onclick="vote(${idx},'positive')" ${ex.voted?'disabled':''}>${ex.voted==='positive'?'✓ Útil':'↑ Útil'}</button><button class="fb-btn ${ex.voted==='negative'?'voted':''}" onclick="vote(${idx},'negative')" ${ex.voted?'disabled':''}>${ex.voted==='negative'?'✗ Assinalado':'↓ Não útil'}</button></div>`:'';div.innerHTML=`<div class="q-bubble">${esc(ex.question)}</div><div class="a-wrap"><div class="a-body ${ex.error?'error':''}">${esc(ex.answer)}</div><div class="a-footer"><div class="sources">${sourcesHtml}</div>${feedbackHtml}</div>${ex.traceId?`<div class="trace-tag">ref: ${ex.traceId}</div>`:''}</div>`}container.appendChild(div)});const last=container.querySelectorAll('.exchange');if(last.length)last[last.length-1].scrollIntoView({behavior:'smooth',block:'start'})}
+function esc(str){if(!str)return'';return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>')}
+document.getElementById('question').addEventListener('keydown',function(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();submitQuery()}});
+</script>
+</body>
+</html>
