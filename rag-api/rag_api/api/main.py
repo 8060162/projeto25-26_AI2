@@ -36,6 +36,12 @@ from rag_api.auth.cache import RedisAuthCache
 from rag_api.auth.store import MongoKeyRepository, init_indexes
 from rag_api.auth.strategies import APIKeyAuthStrategy
 from rag_api.config.settings import get_settings
+from rag_api.memory import MongoMemoryRepository, init_memory_indexes, memory_router
+from rag_api.memory_reporting import (
+    MongoMemoryAggregator, MongoMemoryReportReader,
+    create_memory_scheduler, MemorySchedulerConfig,
+    memory_reports_router,
+)
 from rag_api.rag import create_rag_controller
 from rag_api.reporting import (
     MongoSnapshotAggregator, RedisSchedulerLock,
@@ -72,6 +78,13 @@ _register_pipeline_path()
 def create_app() -> FastAPI:
     settings = get_settings()
 
+    # Fail-fast: pepper obrigatório em produção — sem ele a memória não arranca
+    if not settings.memory_hmac_pepper:
+        raise RuntimeError(
+            "MEMORY_HMAC_PEPPER não configurado. "
+            "Gerar com: python -c \"import secrets; print(secrets.token_hex(32))\""
+        )
+
     if settings.openai_api_key:
         os.environ.setdefault("OPENAI_API_KEY", settings.openai_api_key)
     if settings.chroma_api_key:
@@ -99,6 +112,8 @@ def create_app() -> FastAPI:
     app.include_router(applications_router)
     app.include_router(pipeline_router)
     app.include_router(metrics_router)
+    app.include_router(memory_router)
+    app.include_router(memory_reports_router)
 
     @app.get("/v1/health", response_model=HealthResponse, tags=["infra"])
     async def health():
@@ -116,6 +131,7 @@ def create_app() -> FastAPI:
         await init_indexes(db)
         await init_application_indexes(db)
         await init_signals_collection(db)
+        await init_memory_indexes(db)
 
         # Redis
         redis = await redis_from_url(
@@ -138,7 +154,29 @@ def create_app() -> FastAPI:
         app.state.signal_store   = MongoSignalStore(db)
         app.state.metrics_reader = MongoMetricsReader(db)
 
-        # Wiring — reporting
+        # Wiring — memory (Módulo 4)
+        app.state.memory_repo        = MongoMemoryRepository(db)
+        app.state.memory_hmac_pepper = settings.memory_hmac_pepper
+        app.state.memory_ttl_days    = settings.memory_ttl_days
+
+        # Wiring — memory reporting
+        memory_aggregator = MongoMemoryAggregator(db)
+        memory_lock       = RedisSchedulerLock(redis, settings.snapshot_lock_ttl_seconds)
+        memory_config     = MemorySchedulerConfig(
+            daily_hour   = settings.memory_report_daily_hour,
+            daily_minute = settings.memory_report_daily_minute,
+            purge_hour   = settings.memory_report_purge_hour,
+            purge_days   = settings.memory_report_purge_days,
+            timezone     = settings.snapshot_timezone,
+        )
+        memory_scheduler = create_memory_scheduler(memory_aggregator, memory_lock, memory_config)
+        memory_scheduler.start()
+
+        app.state.memory_report_reader    = MongoMemoryReportReader(db)
+        app.state.memory_aggregator       = memory_aggregator
+        app.state.memory_scheduler        = memory_scheduler
+
+        # Wiring — reporting (signals)
         aggregator = MongoSnapshotAggregator(db)
         lock       = RedisSchedulerLock(redis, settings.snapshot_lock_ttl_seconds)
         config     = SchedulerConfig(
@@ -168,6 +206,8 @@ def create_app() -> FastAPI:
 
     @app.on_event("shutdown")
     async def shutdown():
+        if hasattr(app.state, "memory_scheduler"):
+            app.state.memory_scheduler.shutdown(wait=False)
         if hasattr(app.state, "scheduler"):
             app.state.scheduler.shutdown(wait=False)
         if hasattr(app.state, "mongo_client"):

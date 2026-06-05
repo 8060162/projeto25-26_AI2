@@ -19,6 +19,7 @@ LISBON              = ZoneInfo("Europe/Lisbon")
 class SnapshotAggregator(Protocol):
     async def compute_and_store(self, window: SnapshotWindow) -> dict: ...
     async def get_snapshot(self, granularity: Granularity, period: str) -> dict | None: ...
+    async def purge_before(self, granularity: Granularity, cutoff: datetime) -> None: ...
 
 
 def _window_for(granularity: Granularity) -> SnapshotWindow:
@@ -51,7 +52,6 @@ class MongoSnapshotAggregator:
         )
 
     async def purge_before(self, granularity: Granularity, cutoff: datetime) -> None:
-        """Interface limpa para purge — sem acesso a atributos internos do exterior."""
         try:
             result = await self._snapshots.delete_many({
                 "granularity":  granularity,
@@ -72,18 +72,33 @@ class MongoSnapshotAggregator:
         main = await self._signals.aggregate([
             {"$match": base_match},
             {"$group": {
-                "_id":                 None,
-                "total_queries":       {"$sum": 1},
-                "successful":          {"$sum": {"$cond": ["$success", 1, 0]}},
-                "avg_latency_ms":      {"$avg": "$latency_ms"},
-                "avg_retrieval_score": {"$avg": "$retrieval_score"},
-                "avg_question_chars":  {"$avg": "$question_chars"},
-                "total_tokens_in":     {"$sum": "$tokens_input"},
-                "total_tokens_out":    {"$sum": "$tokens_output"},
-                "low_score_count":     {"$sum": {
+                "_id":                  None,
+                "total_queries":        {"$sum": 1},
+                "successful":           {"$sum": {"$cond": ["$success", 1, 0]}},
+                "grounded_count":       {"$sum": {"$cond": ["$grounded", 1, 0]}},
+                "avg_latency_ms":       {"$avg": "$latency_ms"},
+                "avg_retrieval_score":  {"$avg": "$retrieval_score"},
+                "avg_question_chars":   {"$avg": "$question_chars"},
+                "total_tokens_in":      {"$sum": "$tokens_input"},
+                "total_tokens_out":     {"$sum": "$tokens_output"},
+                "low_score_count":      {"$sum": {
                     "$cond": [{"$lt": ["$retrieval_score", LOW_SCORE_THRESHOLD]}, 1, 0]
                 }},
-                "unique_clients":      {"$addToSet": "$metadata.client_id"},
+                "unique_clients":       {"$addToSet": "$metadata.client_id"},
+                # evidence_strength — contagem por valor
+                "strong_evidence":      {"$sum": {
+                    "$cond": [{"$eq": ["$evidence_strength", "strong"]}, 1, 0]
+                }},
+                "weak_evidence":        {"$sum": {
+                    "$cond": [{"$eq": ["$evidence_strength", "weak"]}, 1, 0]
+                }},
+                # grounding_status — contagem por valor
+                "strong_alignment":     {"$sum": {
+                    "$cond": [{"$eq": ["$grounding_status", "strong_alignment"]}, 1, 0]
+                }},
+                "grounding_mismatch":   {"$sum": {
+                    "$cond": [{"$eq": ["$grounding_status", "mismatch"]}, 1, 0]
+                }},
             }},
         ]).to_list(1)
 
@@ -94,7 +109,6 @@ class MongoSnapshotAggregator:
             {"$limit": 10},
         ]).to_list(10)
 
-        # peak_hour calculado em Europe/Lisbon — relevante para o IPP
         peak = await self._signals.aggregate([
             {"$match": base_match},
             {"$group": {
@@ -131,28 +145,39 @@ class MongoSnapshotAggregator:
         total      = raw.get("total_queries", 0)
         successful = raw.get("successful", 0)
         low_score  = raw.get("low_score_count", 0)
+        grounded   = raw.get("grounded_count", 0)
 
         return {
-            "period":              window.period,
-            "granularity":         window.granularity,
-            "generated_at":        datetime.now(timezone.utc),
-            "from_dt":             window.from_dt,
-            "to_dt":               window.to_dt,
-            "total_queries":       total,
-            "success_rate":        round(successful / total, 4) if total else 0.0,
-            "avg_latency_ms":      round(raw.get("avg_latency_ms") or 0.0, 2),
-            "avg_retrieval_score": round(raw.get("avg_retrieval_score") or 0.0, 4),
-            "avg_question_chars":  round(raw.get("avg_question_chars") or 0.0, 1),
-            "total_tokens_input":  raw.get("total_tokens_in", 0),
-            "total_tokens_output": raw.get("total_tokens_out", 0),
-            "low_score_rate":      round(low_score / total, 4) if total else 0.0,
-            "active_clients":      len(raw.get("unique_clients") or []),
-            "top_categories":      [
+            "period":               window.period,
+            "granularity":          window.granularity,
+            "generated_at":         datetime.now(timezone.utc),
+            "from_dt":              window.from_dt,
+            "to_dt":                window.to_dt,
+            "total_queries":        total,
+            "success_rate":         round(successful / total, 4) if total else 0.0,
+            "grounded_rate":        round(grounded / total, 4) if total else 0.0,
+            "avg_latency_ms":       round(raw.get("avg_latency_ms") or 0.0, 2),
+            "avg_retrieval_score":  round(raw.get("avg_retrieval_score") or 0.0, 4),
+            "avg_question_chars":   round(raw.get("avg_question_chars") or 0.0, 1),
+            "total_tokens_input":   raw.get("total_tokens_in", 0),
+            "total_tokens_output":  raw.get("total_tokens_out", 0),
+            "low_score_rate":       round(low_score / total, 4) if total else 0.0,
+            "active_clients":       len(raw.get("unique_clients") or []),
+            "top_categories":       [
                 {"category": c["_id"] or "uncategorized", "count": c["count"]}
                 for c in categories
             ],
-            "peak_hour_lisbon":    peak[0]["_id"] if peak else None,
-            "queries_by_day":      daily_dist,
+            "peak_hour_lisbon":     peak[0]["_id"] if peak else None,
+            "queries_by_day":       daily_dist,
+            # Distribuições de qualidade — úteis para relatórios académicos
+            "evidence_distribution": {
+                "strong": raw.get("strong_evidence", 0),
+                "weak":   raw.get("weak_evidence", 0),
+            },
+            "grounding_distribution": {
+                "strong_alignment": raw.get("strong_alignment", 0),
+                "mismatch":         raw.get("grounding_mismatch", 0),
+            },
         }
 
     async def _upsert(self, snapshot: dict) -> None:

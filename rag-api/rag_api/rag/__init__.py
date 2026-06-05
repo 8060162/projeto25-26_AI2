@@ -32,12 +32,39 @@ class RAGController:
         result = await loop.run_in_executor(
             None, self._service.answer_question, request.question
         )
-        return QueryResponse(
+
+        meta      = result.answer_metadata or {}
+        quality   = meta.get("retrieval_quality", {})
+        q_meta    = quality.get("metadata", {})
+        evidence  = meta.get("route_metadata", {}).get("evidence_quality", {})
+        grounding = meta.get("route_metadata", {}).get("grounding_verification") or {}
+        usage     = meta.get("usage", {})
+
+        # query_category derivado dos legal_intent_signals classificados pelo pipeline
+        # Usa o primeiro intent detectado — "uncategorized" se nenhum disponível
+        legal_intents = meta.get("query_metadata", {}).get("legal_intent_signals", [])
+        query_category = legal_intents[0] if legal_intents else "uncategorized"
+
+        response = QueryResponse(
             answer=result.answer_text or "",
-            sources=[str(c) for c in (result.answer_metadata or {}).get("retrieved_chunk_ids", [])],
+            sources=[str(c) for c in q_meta.get("selected_chunk_ids", [])],
             trace_id=trace_id,
             session_id=request.session_id or str(uuid.uuid4()),
         )
+
+        # Transporta métricas enriquecidas para consumo no finally da route
+        object.__setattr__(response, "_signal_meta", {
+            "docs_retrieved":   quality.get("context_chunk_count", 0),
+            "retrieval_score":  float(q_meta.get("primary_anchor_score") or 0.0),
+            "query_category":   query_category,
+            "grounded":         meta.get("grounded", False),
+            "evidence_strength": evidence.get("strength", "unknown"),
+            "grounding_status": grounding.get("status", "unknown"),
+            "tokens_input":     usage.get("prompt_tokens", 0),
+            "tokens_output":    usage.get("completion_tokens", 0),
+        })
+
+        return response
 
 
 def create_rag_controller():

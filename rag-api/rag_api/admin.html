@@ -73,24 +73,46 @@
   .actions{display:flex;gap:6px}
   .section-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
   .hint-tag{font-family:var(--mono);font-size:11px;background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:2px 6px;color:var(--text)}
-  /* Granularity selector */
   .gran-selector{display:flex;gap:6px;margin-bottom:0}
   .gran-btn{background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--muted);font-family:var(--mono);font-size:11px;font-weight:600;padding:6px 14px;cursor:pointer;transition:all .15s}
   .gran-btn:hover{border-color:var(--accent);color:var(--accent)}
   .gran-btn.active{background:rgba(79,142,247,.12);border-color:var(--accent);color:var(--accent)}
-  /* Bar chart */
   .bar-chart{display:flex;align-items:flex-end;gap:4px;height:80px;margin-top:8px}
   .bar-col{display:flex;flex-direction:column;align-items:center;flex:1;gap:4px}
   .bar{width:100%;background:var(--accent);border-radius:3px 3px 0 0;opacity:.7;min-height:2px;transition:height .3s}
   .bar-label{font-family:var(--mono);font-size:9px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:40px;text-align:center}
-  /* Category bars */
   .cat-row{display:flex;align-items:center;gap:10px;margin-bottom:8px}
   .cat-name{font-family:var(--mono);font-size:11px;color:var(--text);width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .cat-bar-wrap{flex:1;background:var(--bg3);border-radius:3px;height:10px}
   .cat-bar{background:var(--accent);border-radius:3px;height:10px;transition:width .4s;opacity:.8}
   .cat-count{font-family:var(--mono);font-size:11px;color:var(--muted);width:30px;text-align:right}
-  /* Refresh indicator */
   .last-updated{font-family:var(--mono);font-size:10px;color:var(--muted);margin-left:auto}
+  /* Distribuição qualidade */
+  .dist-row{display:flex;align-items:center;gap:10px;margin-bottom:6px}
+  .dist-label{font-family:var(--mono);font-size:11px;color:var(--muted);width:140px}
+  .dist-bar-wrap{flex:1;background:var(--bg3);border-radius:3px;height:8px}
+  .dist-bar-green{background:var(--green);border-radius:3px;height:8px;transition:width .4s;opacity:.8}
+  .dist-bar-amber{background:var(--amber);border-radius:3px;height:8px;transition:width .4s;opacity:.8}
+  .dist-bar-red{background:var(--red);border-radius:3px;height:8px;transition:width .4s;opacity:.8}
+  .dist-count{font-family:var(--mono);font-size:11px;color:var(--muted);width:30px;text-align:right}
+  .quality-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+
+  /* Timeline tópicos */
+  .timeline-wrap{overflow-x:auto;padding-bottom:8px}
+  .timeline-grid{display:grid;gap:2px;min-width:600px}
+  .tl-row{display:flex;align-items:center;gap:6px;margin-bottom:4px}
+  .tl-label{font-family:var(--mono);font-size:10px;color:var(--text);width:130px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .tl-cells{display:flex;gap:2px;flex:1}
+  .tl-cell{height:18px;border-radius:2px;flex:1;min-width:12px;position:relative;cursor:default;transition:opacity .15s}
+  .tl-cell:hover{opacity:.75}
+  .tl-week{font-family:var(--mono);font-size:9px;color:var(--muted);text-align:center;flex:1;min-width:12px}
+  /* Clarification badge */
+  .badge-clarified{background:rgba(62,207,142,.15);color:var(--green)}
+  .badge-partial{background:rgba(247,201,72,.15);color:var(--amber)}
+  .badge-weak-clar{background:rgba(247,111,111,.15);color:var(--red)}
+  /* uncategorized card */
+  .uncat-row{display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid rgba(42,48,64,.4)}
+  .uncat-row:last-child{border-bottom:none}
 </style>
 </head>
 <body>
@@ -114,6 +136,7 @@
   <div class="nav-section" style="margin-top:20px;margin-bottom:8px">Operações</div>
   <div class="nav-item" onclick="showPage('pipeline')" id="nav-pipeline"><span class="icon">⊙</span> Pipeline</div>
   <div class="nav-item" onclick="showPage('metrics')" id="nav-metrics"><span class="icon">◬</span> Métricas</div>
+  <div class="nav-item" onclick="showPage('memory')" id="nav-memory"><span class="icon">◈</span> Memória</div>
 </nav>
 <main>
   <!-- DASHBOARD -->
@@ -227,6 +250,7 @@
     <div class="metrics-grid" id="metrics-summary" style="display:none">
       <div class="metric-card"><div class="metric-label">Total de Consultas</div><div class="metric-value" id="m-total">—</div></div>
       <div class="metric-card"><div class="metric-label">Taxa de Sucesso</div><div class="metric-value" id="m-success">—</div><div class="metric-sub">% respostas ok</div></div>
+      <div class="metric-card"><div class="metric-label">Taxa Fundamentada</div><div class="metric-value" id="m-grounded">—</div><div class="metric-sub">% grounded</div></div>
       <div class="metric-card"><div class="metric-label">Pontuação Média</div><div class="metric-value" id="m-score">—</div></div>
       <div class="metric-card"><div class="metric-label">Knowledge Gaps</div><div class="metric-value" id="m-lowscore">—</div><div class="metric-sub">% score &lt; 0.6</div></div>
       <div class="metric-card"><div class="metric-label">Latência Média</div><div class="metric-value" id="m-latency">—</div><div class="metric-sub">ms</div></div>
@@ -234,6 +258,21 @@
       <div class="metric-card"><div class="metric-label">Clientes Activos</div><div class="metric-value" id="m-clients">—</div><div class="metric-sub">departamentos</div></div>
       <div class="metric-card"><div class="metric-label">Tokens Entrada</div><div class="metric-value" id="m-tokens-in">—</div></div>
       <div class="metric-card"><div class="metric-label">Tokens Saída</div><div class="metric-value" id="m-tokens-out">—</div></div>
+    </div>
+
+    <!-- Qualidade — evidence + grounding -->
+    <div class="card" id="metrics-quality-card" style="display:none">
+      <div class="card-title">Qualidade das Respostas</div>
+      <div class="quality-grid">
+        <div>
+          <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:10px;text-transform:uppercase;letter-spacing:.06em">Evidência</div>
+          <div id="metrics-evidence-bars"></div>
+        </div>
+        <div>
+          <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:10px;text-transform:uppercase;letter-spacing:.06em">Grounding</div>
+          <div id="metrics-grounding-bars"></div>
+        </div>
+      </div>
     </div>
 
     <!-- Top categorias -->
@@ -252,6 +291,79 @@
     <div class="card" id="metrics-client-card" style="display:none">
       <div class="card-title">Por Categoria</div>
       <div class="table-wrap"><table><thead><tr><th>Categoria</th><th>Consultas</th><th>Score Médio</th><th>Latência (ms)</th><th>Feedback ✓</th><th>Feedback ✗</th></tr></thead><tbody id="metrics-tbody"></tbody></table></div>
+    </div>
+  </div>
+
+  <!-- MEMÓRIA -->
+  <div class="page" id="page-memory">
+    <h1>Memória Longa</h1><p class="page-desc">Eficácia do sistema no esclarecimento de dúvidas académicas — sem identificação de utilizadores.</p>
+
+    <div class="card"><div class="card-title">Janela Temporal</div>
+      <div class="form-row" style="align-items:flex-end">
+        <div class="form-group" style="max-width:160px"><label>Data início</label><input type="text" id="mem-from" placeholder="YYYY-MM-DD"></div>
+        <div class="form-group" style="max-width:160px"><label>Data fim</label><input type="text" id="mem-to" placeholder="YYYY-MM-DD"></div>
+        <div style="display:flex;gap:8px;align-items:flex-end">
+          <button class="btn btn-primary" onclick="loadMemoryRange()">Carregar</button>
+          <button class="btn btn-ghost" onclick="loadMemoryYesterday()">Ontem</button>
+          <button class="btn btn-ghost" onclick="setMemPreset(7)">7 dias</button>
+          <button class="btn btn-ghost" onclick="setMemPreset(30)">30 dias</button>
+          <button class="btn btn-ghost" onclick="forceMemoryRefresh()" id="btn-mem-refresh">↺ Refresh</button>
+        </div>
+        <span class="last-updated" id="mem-updated"></span>
+      </div>
+    </div>
+
+    <div class="metrics-grid" id="mem-summary" style="display:none">
+      <div class="metric-card"><div class="metric-label">Interacções</div><div class="metric-value" id="mem-total">—</div><div class="metric-sub">total no período</div></div>
+      <div class="metric-card"><div class="metric-label">Autenticadas</div><div class="metric-value" id="mem-auth">—</div><div class="metric-sub">com login</div></div>
+      <div class="metric-card"><div class="metric-label">Anónimas</div><div class="metric-value" id="mem-anon">—</div><div class="metric-sub">sem login</div></div>
+      <div class="metric-card"><div class="metric-label">Alunos únicos</div><div class="metric-value" id="mem-users">—</div></div>
+      <div class="metric-card"><div class="metric-label">Importância Média</div><div class="metric-value" id="mem-importance">—</div><div class="metric-sub">qualidade 0–10</div></div>
+      <div class="metric-card"><div class="metric-label">Gaps de Conteúdo</div><div class="metric-value" id="mem-gaps">—</div><div class="metric-sub">% respostas fracas</div></div>
+      <div class="metric-card"><div class="metric-label">Sem Fontes</div><div class="metric-value" id="mem-nosrc">—</div><div class="metric-sub">% sem documentos</div></div>
+      <div class="metric-card"><div class="metric-label">Não Classificadas</div><div class="metric-value" id="mem-uncat">—</div><div class="metric-sub" id="mem-uncat-rate">perguntas sem tópico</div></div>
+    </div>
+
+    <!-- Tópicos com clarification_rate -->
+    <div class="card" id="mem-topics-card" style="display:none">
+      <div class="card-title">Tópicos — Volume e Taxa de Esclarecimento</div>
+      <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:12px">
+        Taxa de esclarecimento = % de interacções com resposta fundamentada (fontes + qualidade alta)
+      </div>
+      <div id="mem-topics-list"></div>
+    </div>
+
+    <!-- Timeline semanal por tópico -->
+    <div class="card" id="mem-timeline-card" style="display:none">
+      <div class="card-title">Evolução Temporal por Tópico</div>
+      <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:12px">
+        Volume semanal — permite identificar sazonalidade (épocas de matrículas, exames, propinas)
+      </div>
+      <div class="timeline-wrap" id="mem-timeline"></div>
+    </div>
+
+    <!-- Gaps de conteúdo -->
+    <div class="card" id="mem-weak-card" style="display:none">
+      <div class="card-title">Gaps de Conteúdo — Tópicos Mal Cobertos pelo Corpus</div>
+      <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:12px">
+        Tópicos com volume significativo mas respostas consistentemente fracas — indicam lacunas nos regulamentos indexados
+      </div>
+      <div id="mem-weak-list"></div>
+    </div>
+
+    <!-- Documentos -->
+    <div class="card" id="mem-sources-card" style="display:none">
+      <div class="card-title">Regulamentos Mais Consultados</div>
+      <div id="mem-sources-list"></div>
+    </div>
+
+    <!-- Breakdown diário -->
+    <div class="card" id="mem-daily-card" style="display:none">
+      <div class="card-title">Detalhe por Dia</div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Data</th><th>Total</th><th>Autenticadas</th><th>Anónimas</th><th>Importância Média</th></tr></thead>
+        <tbody id="mem-daily-tbody"></tbody>
+      </table></div>
     </div>
   </div>
 </main>
@@ -276,9 +388,10 @@ function showPage(name){
   if(name==='keys')loadAppsForKeys();
   if(name==='metrics')loadAppsForMetrics();
   if(name==='dashboard')refreshDashboard();
+  if(name==='memory'){initMemoryPage();}
 }
 
-function setGran(gran, btn){
+function setGran(gran,btn){
   CURRENT_GRAN=gran;
   document.querySelectorAll('.gran-btn').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active');
@@ -428,6 +541,17 @@ async function forceRefresh(){
 function colorForScore(v){if(v>=0.7)return'good';if(v>=0.4)return'warn';return'bad';}
 function colorForSuccess(v){if(v>=0.9)return'good';if(v>=0.6)return'warn';return'bad';}
 function colorForLowScore(v){if(v<=0.1)return'good';if(v<=0.3)return'warn';return'bad';}
+function colorForGrounded(v){if(v>=0.8)return'good';if(v>=0.5)return'warn';return'bad';}
+
+function renderDistBars(containerId, rows){
+  const total = rows.reduce((s,r)=>s+r.count,0)||1;
+  document.getElementById(containerId).innerHTML = rows.map(r=>`
+    <div class="dist-row">
+      <div class="dist-label">${r.label}</div>
+      <div class="dist-bar-wrap"><div class="${r.cls}" style="width:${(r.count/total*100).toFixed(1)}%"></div></div>
+      <div class="dist-count">${r.count}</div>
+    </div>`).join('');
+}
 
 async function loadMetrics(){
   const client=document.getElementById('metrics-client').value;
@@ -440,8 +564,8 @@ async function loadMetrics(){
   document.getElementById('metrics-updated').textContent=data.generated_at?'actualizado: '+new Date(data.generated_at).toLocaleTimeString('pt-PT'):'';
 
   if(client){
-    // Vista por cliente — mostra tabela de categorias
-    ['m-total','m-success','m-score','m-lowscore','m-latency','m-peak','m-clients','m-tokens-in','m-tokens-out'].forEach(id=>document.getElementById(id).textContent='—');
+    ['m-total','m-success','m-grounded','m-score','m-lowscore','m-latency','m-peak','m-clients','m-tokens-in','m-tokens-out'].forEach(id=>document.getElementById(id).textContent='—');
+    document.getElementById('metrics-quality-card').style.display='none';
     document.getElementById('metrics-categories-card').style.display='none';
     document.getElementById('metrics-daily-card').style.display='none';
     document.getElementById('metrics-client-card').style.display='block';
@@ -451,34 +575,53 @@ async function loadMetrics(){
       ?cats.map(c=>`<tr><td><span class="badge badge-blue">${c.category}</span></td><td>${c.total_queries}</td><td>${c.avg_score.toFixed(2)}</td><td>${Math.round(c.avg_latency_ms)}</td><td><span class="badge badge-green">${c.positive_feedback}</span></td><td><span class="badge badge-red">${c.negative_feedback}</span></td></tr>`).join('')
       :'<tr><td colspan="6" class="empty-state">Sem dados para o período seleccionado</td></tr>';
   } else {
-    // Vista global — mostra KPIs + categorias + distribuição diária
     document.getElementById('metrics-client-card').style.display='none';
 
-    const total = data.total_queries??0;
-    const successRate = data.success_rate;
-    const score = data.avg_score;
-    const lowScore = data.low_score_rate;
-    const latency = data.avg_latency_ms;
-    const peak = data.peak_hour_lisbon;
-    const clients = data.active_clients;
+    document.getElementById('m-total').textContent=data.total_queries??0;
 
-    document.getElementById('m-total').textContent=total;
     const elSuccess=document.getElementById('m-success');
-    elSuccess.textContent=fmtPct(successRate);
-    elSuccess.className='metric-value '+(successRate!=null?colorForSuccess(successRate):'');
+    elSuccess.textContent=fmtPct(data.success_rate);
+    elSuccess.className='metric-value '+(data.success_rate!=null?colorForSuccess(data.success_rate):'');
+
+    const elGrounded=document.getElementById('m-grounded');
+    elGrounded.textContent=fmtPct(data.grounded_rate);
+    elGrounded.className='metric-value '+(data.grounded_rate!=null?colorForGrounded(data.grounded_rate):'');
+
     const elScore=document.getElementById('m-score');
-    elScore.textContent=fmtScore(score);
-    elScore.className='metric-value '+(score!=null?colorForScore(score):'');
+    elScore.textContent=fmtScore(data.avg_score);
+    elScore.className='metric-value '+(data.avg_score!=null?colorForScore(data.avg_score):'');
+
     const elLow=document.getElementById('m-lowscore');
-    elLow.textContent=fmtPct(lowScore);
-    elLow.className='metric-value '+(lowScore!=null?colorForLowScore(lowScore):'');
-    document.getElementById('m-latency').textContent=latency!=null?Math.round(latency):'—';
-    document.getElementById('m-peak').textContent=peak!=null?peak+'h':'—';
-    document.getElementById('m-clients').textContent=clients??'—';
+    elLow.textContent=fmtPct(data.low_score_rate);
+    elLow.className='metric-value '+(data.low_score_rate!=null?colorForLowScore(data.low_score_rate):'');
+
+    document.getElementById('m-latency').textContent=data.avg_latency_ms!=null?Math.round(data.avg_latency_ms):'—';
+    document.getElementById('m-peak').textContent=data.peak_hour_lisbon!=null?data.peak_hour_lisbon+'h':'—';
+    document.getElementById('m-clients').textContent=data.active_clients??'—';
     document.getElementById('m-tokens-in').textContent=data.total_tokens_input??'—';
     document.getElementById('m-tokens-out').textContent=data.total_tokens_output??'—';
 
-    // Top categorias — barras horizontais
+    // Qualidade — evidence + grounding
+    const ev=data.evidence_distribution;
+    const gr=data.grounding_distribution;
+    const qualityCard=document.getElementById('metrics-quality-card');
+    if(ev||gr){
+      qualityCard.style.display='block';
+      if(ev){
+        renderDistBars('metrics-evidence-bars',[
+          {label:'Forte',    count:ev.strong||0, cls:'dist-bar-green'},
+          {label:'Fraca',    count:ev.weak||0,   cls:'dist-bar-amber'},
+        ]);
+      }
+      if(gr){
+        renderDistBars('metrics-grounding-bars',[
+          {label:'Alinhado', count:gr.strong_alignment||0, cls:'dist-bar-green'},
+          {label:'Mismatch', count:gr.mismatch||0,         cls:'dist-bar-red'},
+        ]);
+      }
+    } else {qualityCard.style.display='none';}
+
+    // Top categorias
     const cats=data.top_categories||[];
     const catCard=document.getElementById('metrics-categories-card');
     if(cats.length){
@@ -492,7 +635,7 @@ async function loadMetrics(){
         </div>`).join('');
     } else {catCard.style.display='none';}
 
-    // Distribuição diária — barras verticais (só daily e monthly)
+    // Distribuição diária
     const daily=data.queries_by_day||{};
     const dailyCard=document.getElementById('metrics-daily-card');
     const keys=Object.keys(daily).sort();
@@ -506,6 +649,202 @@ async function loadMetrics(){
         </div>`).join('');
     } else {dailyCard.style.display='none';}
   }
+}
+
+
+// ── Memória Longa ─────────────────────────────────────────────────────────────
+
+function todayStr(){return new Date().toISOString().slice(0,10)}
+function daysAgoStr(n){const d=new Date();d.setDate(d.getDate()-n);return d.toISOString().slice(0,10)}
+
+// Carregar intervalo por period string — simples e determinístico
+async function loadMemoryRange(){
+  const from=document.getElementById('mem-from').value.trim();
+  const to=document.getElementById('mem-to').value.trim();
+  if(!from||!to){alert('Preencha as datas.');return;}
+  const{ok,data}=await api('GET',`/v1/memory-reports/range?from_dt=${encodeURIComponent(from+'T00:00:00Z')}&to_dt=${encodeURIComponent(to+'T23:59:59Z')}`);
+  if(!ok||!data){document.getElementById('mem-updated').textContent='erro ao carregar';return;}
+  renderMemoryReport(data, from!==to);
+  document.getElementById('mem-updated').textContent=from===to?'dia: '+from:from+' → '+to;
+}
+
+// Ontem — snapshot do dia anterior
+async function loadMemoryYesterday(){
+  const period=daysAgoStr(1);
+  document.getElementById('mem-from').value=period;
+  document.getElementById('mem-to').value=period;
+  await loadMemoryRange();
+}
+
+// Preset N dias — inclui hoje
+function setMemPreset(days){
+  document.getElementById('mem-from').value=daysAgoStr(days);
+  document.getElementById('mem-to').value=todayStr();
+  loadMemoryRange();
+}
+
+// Refresh — recomputa hoje e mostra
+async function forceMemoryRefresh(){
+  const btn=document.getElementById('btn-mem-refresh');
+  btn.innerHTML='<span class="loading"></span>';btn.disabled=true;
+  await api('POST','/v1/memory-reports/refresh');
+  document.getElementById('mem-from').value=todayStr();
+  document.getElementById('mem-to').value=todayStr();
+  await loadMemoryRange();
+  btn.innerHTML='↺ Refresh';btn.disabled=false;
+}
+
+// Ao abrir a página — mostra hoje (com refresh automático se não houver snapshot)
+async function initMemoryPage(){
+  const today=todayStr();
+  document.getElementById('mem-from').value=today;
+  document.getElementById('mem-to').value=today;
+  const{ok,data}=await api('GET',`/v1/memory-reports/daily/${today}`);
+  if(ok && data && data.total_interactions>0){
+    renderMemoryReport(data,false);
+    document.getElementById('mem-updated').textContent='dia: '+today+' (dados parciais)';
+  } else {
+    // Sem snapshot de hoje — recomputa automaticamente
+    document.getElementById('mem-updated').textContent='a calcular...';
+    await api('POST','/v1/memory-reports/refresh');
+    const r2=await api('GET',`/v1/memory-reports/daily/${today}`);
+    if(r2.ok && r2.data && r2.data.total_interactions>0){
+      renderMemoryReport(r2.data,false);
+      document.getElementById('mem-updated').textContent='dia: '+today+' (dados parciais)';
+    } else {
+      document.getElementById('mem-updated').textContent='sem dados ainda hoje';
+    }
+  }
+}
+
+function clarBadge(rate){
+  if(rate>=0.7)return`<span class="badge badge-clarified">${fmtPct(rate)}</span>`;
+  if(rate>=0.4)return`<span class="badge badge-partial">${fmtPct(rate)}</span>`;
+  return`<span class="badge badge-weak-clar">${fmtPct(rate)}</span>`;
+}
+
+function renderMemoryReport(data, showTimeline){
+  const total=data.total_interactions||0;
+  document.getElementById('mem-summary').style.display='grid';
+  document.getElementById('mem-total').textContent=total;
+  document.getElementById('mem-auth').textContent=data.authenticated_count??'—';
+  document.getElementById('mem-anon').textContent=data.anonymous_count??'—';
+  document.getElementById('mem-users').textContent=data.unique_users??'—';
+
+  const imp=data.avg_importance;
+  const elImp=document.getElementById('mem-importance');
+  elImp.textContent=imp!=null?imp.toFixed(1):'—';
+  elImp.className='metric-value '+(imp!=null?(imp>=6?'good':imp>=4?'warn':'bad'):'');
+
+  const elGap=document.getElementById('mem-gaps');
+  const gapR=data.low_importance_rate;
+  elGap.textContent=gapR!=null?fmtPct(gapR):'—';
+  elGap.className='metric-value '+(gapR!=null?(gapR<=0.1?'good':gapR<=0.3?'warn':'bad'):'');
+
+  const elNosrc=document.getElementById('mem-nosrc');
+  const nosrcR=data.no_sources_rate;
+  elNosrc.textContent=nosrcR!=null?fmtPct(nosrcR):'—';
+  elNosrc.className='metric-value '+(nosrcR!=null?(nosrcR<=0.05?'good':nosrcR<=0.15?'warn':'bad'):'');
+
+  // Não classificadas
+  const uncat=data.uncategorized_count||0;
+  const elUncat=document.getElementById('mem-uncat');
+  elUncat.textContent=uncat;
+  elUncat.className='metric-value '+(uncat===0?'good':uncat<=10?'warn':'bad');
+  document.getElementById('mem-uncat-rate').textContent=total?fmtPct(data.uncategorized_rate||0)+' do total':'perguntas sem tópico';
+
+  // ── Tópicos com clarification_rate ────────────────────────────────────────
+  const topics=data.top_topics||[];
+  const topCard=document.getElementById('mem-topics-card');
+  if(topics.length){
+    topCard.style.display='block';
+    const maxCount=Math.max(...topics.map(t=>t.count),1);
+    document.getElementById('mem-topics-list').innerHTML=`
+      <div style="display:grid;grid-template-columns:160px 1fr 60px 100px;gap:8px;align-items:center;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--border)">
+        <div style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase">Tópico</div>
+        <div style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase">Volume</div>
+        <div style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;text-align:right">Qtd</div>
+        <div style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;text-align:center">Esclarecimento</div>
+      </div>`+
+    topics.map(t=>`
+      <div style="display:grid;grid-template-columns:160px 1fr 60px 100px;gap:8px;align-items:center;margin-bottom:8px">
+        <div class="cat-name" title="${t.topic}" style="width:auto">${t.topic}</div>
+        <div class="cat-bar-wrap"><div class="cat-bar" style="width:${(t.count/maxCount*100).toFixed(1)}%"></div></div>
+        <div class="cat-count" style="width:auto">${t.count}</div>
+        <div style="text-align:center">${clarBadge(t.clarification_rate)}</div>
+      </div>`).join('');
+  } else {topCard.style.display='none';}
+
+  // ── Timeline semanal ───────────────────────────────────────────────────────
+  const timeline=data.topic_timeline||[];
+  const tlCard=document.getElementById('mem-timeline-card');
+  if(showTimeline && timeline.length){
+    tlCard.style.display='block';
+    // Organizar por tópico e semana
+    const topicsInTL=[...new Set(timeline.map(r=>r.topic))];
+    const weeksInTL=[...new Set(timeline.map(r=>r.week))].sort();
+    const tlMap={};
+    timeline.forEach(r=>{if(!tlMap[r.topic])tlMap[r.topic]={};tlMap[r.topic][r.week]=r.count;});
+    const maxVal=Math.max(...timeline.map(r=>r.count),1);
+
+    const weekHeaders='<div class="tl-row"><div class="tl-label"></div><div class="tl-cells">'+
+      weeksInTL.map(w=>`<div class="tl-week">${w.slice(5)}</div>`).join('')+'</div></div>';
+
+    const rows=topicsInTL.map(topic=>{
+      const cells=weeksInTL.map(week=>{
+        const v=tlMap[topic][week]||0;
+        const opacity=v?0.15+0.85*(v/maxVal):0.05;
+        const bg=v?`rgba(79,142,247,${opacity.toFixed(2)})`:'var(--bg3)';
+        return`<div class="tl-cell" style="background:${bg}" title="${topic} — ${week}: ${v} interacções"></div>`;
+      }).join('');
+      return`<div class="tl-row"><div class="tl-label" title="${topic}">${topic}</div><div class="tl-cells">${cells}</div></div>`;
+    }).join('');
+
+    document.getElementById('mem-timeline').innerHTML=weekHeaders+rows;
+  } else {tlCard.style.display='none';}
+
+  // ── Gaps de conteúdo ───────────────────────────────────────────────────────
+  const weak=data.weak_topics||[];
+  const weakCard=document.getElementById('mem-weak-card');
+  if(weak.length){
+    weakCard.style.display='block';
+    document.getElementById('mem-weak-list').innerHTML=weak.map(t=>`
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+        <div class="cat-name" style="width:auto;min-width:150px" title="${t.topic}">${t.topic}</div>
+        <div class="cat-bar-wrap"><div class="cat-bar" style="width:${(t.avg_importance/10*100).toFixed(1)}%;background:var(--amber)"></div></div>
+        <span class="badge badge-amber">${t.avg_importance.toFixed(1)}</span>
+        <span style="font-family:var(--mono);font-size:11px;color:var(--muted)">${t.count} interacções</span>
+      </div>`).join('');
+  } else {weakCard.style.display='none';}
+
+  // ── Fontes ────────────────────────────────────────────────────────────────
+  const sources=data.top_sources||[];
+  const srcCard=document.getElementById('mem-sources-card');
+  if(sources.length){
+    srcCard.style.display='block';
+    const maxSrc=Math.max(...sources.map(s=>s.count),1);
+    document.getElementById('mem-sources-list').innerHTML=sources.map(s=>`
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+        <div class="cat-name" style="width:280px" title="${s.source}">${s.source}</div>
+        <div class="cat-bar-wrap"><div class="cat-bar" style="width:${(s.count/maxSrc*100).toFixed(1)}%;background:var(--accent2)"></div></div>
+        <div class="cat-count">${s.count}</div>
+      </div>`).join('');
+  } else {srcCard.style.display='none';}
+
+  // ── Breakdown diário ──────────────────────────────────────────────────────
+  const breakdown=data.daily_breakdown||[];
+  const dailyCard=document.getElementById('mem-daily-card');
+  if(breakdown.length>1){
+    dailyCard.style.display='block';
+    document.getElementById('mem-daily-tbody').innerHTML=breakdown.map(d=>`
+      <tr>
+        <td style="font-family:var(--mono);font-size:12px">${d.period}</td>
+        <td>${d.total_interactions}</td>
+        <td><span class="badge badge-blue">${d.authenticated_count}</span></td>
+        <td><span class="badge badge-amber">${d.anonymous_count}</span></td>
+        <td style="font-family:var(--mono)">${d.avg_importance.toFixed(1)}</td>
+      </tr>`).join('');
+  } else {dailyCard.style.display='none';}
 }
 
 document.addEventListener('keydown',function(e){

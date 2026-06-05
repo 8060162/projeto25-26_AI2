@@ -1,12 +1,14 @@
 from datetime import datetime, timezone, timedelta
 
 import structlog
-from fastapi import APIRouter, Request, Query, HTTPException
+from fastapi import APIRouter, Depends, Request, Query, HTTPException
 
+from rag_api.api.middleware.rate_limit import rate_limit
 from rag_api.auth.middleware import require_scope
 from rag_api.reporting import SnapshotAggregator, Granularity
 from rag_api.reporting.aggregator import _window_for
 from rag_api.reporting.models import period_key
+from rag_api.schemas.identity import ClientIdentity
 from rag_api.schemas.responses import GlobalMetricsSummary, ClientMetricsResponse
 from rag_api.signals.reader import MetricsReader
 
@@ -19,7 +21,8 @@ async def get_global_metrics(
     request:     Request,
     granularity: Granularity = Query(default=Granularity.REALTIME),
     period:      str | None  = Query(default=None),
-    _identity=require_scope("rag:admin"),
+    _identity:   ClientIdentity = Depends(require_scope("rag:admin")),
+    _ratelimit:  ClientIdentity = Depends(rate_limit()),
 ) -> GlobalMetricsSummary:
     """
     Lê snapshot pré-computado pelo scheduler.
@@ -38,9 +41,10 @@ async def get_global_metrics(
 
 @router.post("/refresh", status_code=200)
 async def refresh_metrics(
-    request:     Request,
+    request:    Request,
     granularity: Granularity = Query(default=Granularity.REALTIME),
-    _identity=require_scope("rag:admin"),
+    _identity:  ClientIdentity = Depends(require_scope("rag:admin")),
+    _ratelimit: ClientIdentity = Depends(rate_limit()),
 ) -> GlobalMetricsSummary:
     """
     Força recomputação imediata do snapshot — independente do scheduler.
@@ -54,16 +58,17 @@ async def refresh_metrics(
 
 @router.get("/signals/{client_id}", response_model=ClientMetricsResponse)
 async def get_client_metrics(
-    client_id: str,
-    request:   Request,
-    from_dt:   datetime | None = Query(default=None),
-    to_dt:     datetime | None = Query(default=None),
-    _identity=require_scope("rag:admin"),
+    client_id:  str,
+    request:    Request,
+    from_dt:    datetime | None = Query(default=None),
+    to_dt:      datetime | None = Query(default=None),
+    _identity:  ClientIdentity = Depends(require_scope("rag:admin")),
+    _ratelimit: ClientIdentity = Depends(rate_limit()),
 ) -> ClientMetricsResponse:
     """
     Dados históricos por cliente — query directa ao query_signals.
     """
-    now    = datetime.now(timezone.utc)
+    now     = datetime.now(timezone.utc)
     from_dt = from_dt or now - timedelta(hours=24)
     to_dt   = to_dt   or now
 
@@ -95,12 +100,16 @@ async def get_client_metrics(
 
 def _to_response(snapshot: dict) -> GlobalMetricsSummary:
     """Mapeia snapshot MongoDB para o contrato da API."""
+    raw_evidence  = snapshot.get("evidence_distribution")
+    raw_grounding = snapshot.get("grounding_distribution")
+
     return GlobalMetricsSummary(
         from_dt=snapshot.get("from_dt", datetime.now(timezone.utc)),
         to_dt=snapshot.get("to_dt", datetime.now(timezone.utc)),
         generated_at=snapshot.get("generated_at"),
         total_queries=snapshot.get("total_queries", 0),
         success_rate=snapshot.get("success_rate"),
+        grounded_rate=snapshot.get("grounded_rate"),
         avg_score=snapshot.get("avg_retrieval_score", 0.0),
         avg_latency_ms=snapshot.get("avg_latency_ms", 0.0),
         avg_docs_retrieved=0.0,
@@ -111,4 +120,6 @@ def _to_response(snapshot: dict) -> GlobalMetricsSummary:
         top_categories=snapshot.get("top_categories", []),
         peak_hour_lisbon=snapshot.get("peak_hour_lisbon"),
         queries_by_day=snapshot.get("queries_by_day", {}),
+        evidence_distribution=raw_evidence,
+        grounding_distribution=raw_grounding,
     )

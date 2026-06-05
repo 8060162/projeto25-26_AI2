@@ -18,12 +18,16 @@ class Settings(BaseSettings):
     api_key_entropy_bytes: int = 32
     default_rate_limit:    int = 100
 
+    # Memory (Módulo 4)
+    memory_ttl_days:    int = 90
+    memory_hmac_pepper: str = ""   # obrigatório em produção — guard na startup
+
     # Pipeline — lidas pelo appsettings.json via env vars
     openai_api_key:         str = ""
     chroma_api_key:         str = ""
     external_gpt4o_api_key: str = ""
 
-    # Reporting — Scheduler
+    # Reporting — Scheduler (signals)
     snapshot_realtime_minutes: int = 15
     snapshot_hourly_minutes:   int = 60
     snapshot_daily_hour:       int = 0
@@ -34,8 +38,14 @@ class Settings(BaseSettings):
     snapshot_lock_ttl_seconds: int = 60
     snapshot_timezone:         str = "Europe/Lisbon"
 
+    # Memory Reporting — Scheduler
+    memory_report_daily_hour:   int = 1      # 01:00 — após o snapshot de signals
+    memory_report_daily_minute: int = 0
+    memory_report_purge_hour:   int = 3      # 03:00 — limpeza de snapshots antigos
+    memory_report_purge_days:   int = 548    # ~18 meses — consistente com reporting
+
     class Config:
-        env_file = ".env"
+        env_file       = ".env"
         case_sensitive = False
 
 

@@ -16,3 +16,4 @@
 /tests/chunking/__pycache__
 AGENTS.md
 config/appsettings.json
+retrieval/service.py
