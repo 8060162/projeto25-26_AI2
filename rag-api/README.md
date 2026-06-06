@@ -6,10 +6,10 @@ Camada de entrada protegida para o sistema de Retrieval-Augmented Generation (RA
 
 ## Pré-requisitos
 
-- Python 3.10 ou superior
-- MongoDB Atlas (plano gratuito suficiente para a fase de desenvolvimento)
-- Redis (instalação local)
-- Repositório PROJETO25-26_AI2 na pasta imediatamente superior
+* Python 3.10 ou superior
+* MongoDB Atlas (plano gratuito suficiente para a fase de desenvolvimento)
+* Redis (instalação local)
+* Repositório PROJETO25-26_AI2 na pasta imediatamente superior
 
 ---
 
@@ -49,9 +49,17 @@ DEFAULT_RATE_LIMIT=100
 # Pipeline
 CHROMA_API_KEY=           # solicitar ao responsável pelo ChromaDB
 EXTERNAL_GPT4O_API_KEY=   # chave de acesso ao endpoint iaedu.pt
+
+# Memória Longa (Módulo 4)
+MEMORY_HMAC_PEPPER=       # solicitar ao responsável do projecto — não gerar um novo
+MEMORY_TTL_DAYS=90
+MEMORY_REPORT_DAILY_HOUR=1
+MEMORY_REPORT_PURGE_DAYS=548
 ```
 
 > **Importante:** o ficheiro `.env` encontra-se listado no `.gitignore` e não deve ser incluído no repositório em nenhuma circunstância.
+
+> **`MEMORY_HMAC_PEPPER`:** após ser gerado, este valor não deve ser alterado. A sua alteração invalida todos os `user_key` existentes na colecção `long_memory`.
 
 > **Palavras-passe com caracteres especiais:** caso a palavra-passe do MongoDB contenha os caracteres `@`, `#` ou `!`, deverá ser codificada previamente com o seguinte comando: `python3 -c "from urllib.parse import quote_plus; print(quote_plus('a_palavra_passe'))"`.
 
@@ -81,30 +89,37 @@ O registo de arranque confirma o estado do sistema:
 
 ### Acesso público (sem autenticação)
 
-| Método | Endpoint | Descrição |
-|--------|----------|-----------|
-| GET | `/v1/health` | Verifica a disponibilidade do servidor |
+| Método | Endpoint       | Descrição                            |
+| ------- | -------------- | -------------------------------------- |
+| GET     | `/v1/health` | Verifica a disponibilidade do servidor |
 
 ### Utilizador autenticado (`rag:query`)
 
-| Método | Endpoint | Descrição |
-|--------|----------|-----------|
-| POST | `/v1/query` | Submete uma questão ao sistema RAG |
-| POST | `/v1/feedback` | Regista uma avaliação sobre uma resposta obtida |
+| Método | Endpoint                           | Descrição                                       |
+| ------- | ---------------------------------- | ------------------------------------------------- |
+| POST    | `/v1/query`                      | Submete uma questão ao sistema RAG               |
+| POST    | `/v1/feedback`                   | Regista uma avaliação sobre uma resposta obtida |
+| POST    | `/v1/memory`                     | Cria uma entrada de memória longa                |
+| GET     | `/v1/memory/{user_key}`          | Lista memórias activas de um utilizador          |
+| PATCH   | `/v1/memory/{user_key}/{mem_id}` | Actualiza uma entrada de memória                 |
+| DELETE  | `/v1/memory/{user_key}/{mem_id}` | Remove uma entrada de memória                    |
 
 ### Administrador (`rag:admin`)
 
-| Método | Endpoint | Descrição |
-|--------|----------|-----------|
-| GET | `/v1/applications` | Lista todas as aplicações registadas |
-| POST | `/v1/applications` | Regista uma nova aplicação |
-| GET | `/v1/applications/{id}` | Obtém os dados de uma aplicação |
-| PATCH | `/v1/applications/{id}` | Actualiza os dados de uma aplicação |
-| DELETE | `/v1/applications/{id}` | Remove uma aplicação |
-| POST | `/v1/applications/{id}/keys` | Gera uma chave de acesso para uma aplicação |
-| POST | `/v1/applications/{id}/keys/{hint}/rotate` | Efectua a rotação de uma chave de acesso |
-| DELETE | `/v1/applications/{id}/keys/{hint}` | Revoga uma chave de acesso |
-| POST | `/v1/embed` | Executa o pipeline de segmentação e indexação de documentos |
+| Método | Endpoint                                     | Descrição                                                     |
+| ------- | -------------------------------------------- | --------------------------------------------------------------- |
+| GET     | `/v1/applications`                         | Lista todas as aplicações registadas                          |
+| POST    | `/v1/applications`                         | Regista uma nova aplicação                                    |
+| GET     | `/v1/applications/{id}`                    | Obtém os dados de uma aplicação                              |
+| PATCH   | `/v1/applications/{id}`                    | Actualiza os dados de uma aplicação                           |
+| DELETE  | `/v1/applications/{id}`                    | Remove uma aplicação                                          |
+| POST    | `/v1/applications/{id}/keys`               | Gera uma chave de acesso para uma aplicação                   |
+| POST    | `/v1/applications/{id}/keys/{hint}/rotate` | Efectua a rotação de uma chave de acesso                      |
+| DELETE  | `/v1/applications/{id}/keys/{hint}`        | Revoga uma chave de acesso                                      |
+| POST    | `/v1/embed`                                | Executa o pipeline de segmentação e indexação de documentos |
+| GET     | `/v1/memory-reports/daily/{period}`        | Relatório de memória de um dia (`YYYY-MM-DD`)               |
+| POST    | `/v1/memory-reports/refresh`               | Força recomputação do relatório do dia actual               |
+| GET     | `/v1/memory-reports/range`                 | Relatório agregado de um intervalo (`from_dt`,`to_dt`)     |
 
 ---
 
@@ -116,11 +131,11 @@ Todos os pedidos autenticados requerem o seguinte cabeçalho HTTP:
 Authorization: Bearer rag_xxxxxxxxxxxx
 ```
 
-O sistema implementa controlo de acesso baseado em âmbitos de permissão (*scopes*):
+O sistema implementa controlo de acesso baseado em âmbitos de permissão ( *scopes* ):
 
-| Âmbito | Permissões associadas |
-|--------|----------------------|
-| `rag:query` | Submeter questões ao RAG e registar avaliações de respostas |
+| Âmbito       | Permissões associadas                                                    |
+| ------------- | ------------------------------------------------------------------------- |
+| `rag:query` | Submeter questões ao RAG e registar avaliações de respostas            |
 | `rag:admin` | Gerir aplicações, chaves de acesso e executar o pipeline de indexação |
 
 ---
@@ -129,9 +144,9 @@ O sistema implementa controlo de acesso baseado em âmbitos de permissão (*scop
 
 ### Conceito
 
-Uma **Aplicação** (*Application*) representa um cliente registado no sistema — por exemplo, o Portal Académico ou um serviço interno da instituição. Cada aplicação possui um conjunto de âmbitos de permissão e um limite máximo de pedidos por minuto.
+Uma **Aplicação** ( *Application* ) representa um cliente registado no sistema — por exemplo, o Portal Académico ou um serviço interno da instituição. Cada aplicação possui um conjunto de âmbitos de permissão e um limite máximo de pedidos por minuto.
 
-Uma **Chave de Acesso** (*API Key*) é a credencial de autenticação da aplicação. Uma aplicação pode ter várias chaves activas em simultâneo, o que permite a rotação de credenciais sem interrupção do serviço.
+Uma **Chave de Acesso** ( *API Key* ) é a credencial de autenticação da aplicação. Uma aplicação pode ter várias chaves activas em simultâneo, o que permite a rotação de credenciais sem interrupção do serviço.
 
 ```
 Administrador
@@ -159,6 +174,7 @@ curl -X POST http://127.0.0.1:8000/v1/applications \
 ```
 
 Resposta:
+
 ```json
 {
   "id": "671d90c8-7183-424d-aa34-cbf31b20bfaa",
@@ -179,6 +195,7 @@ curl -X POST http://127.0.0.1:8000/v1/applications/671d90c8-.../keys \
 ```
 
 Resposta:
+
 ```json
 {
   "key": "rag_xK9mR...",
@@ -200,6 +217,7 @@ curl -X POST http://127.0.0.1:8000/v1/query \
 ```
 
 Resposta:
+
 ```json
 {
   "answer": "O prazo de matrícula...",
@@ -227,13 +245,55 @@ curl -X DELETE http://127.0.0.1:8000/v1/applications/671d90c8-.../keys/rag_xK9mR
 
 ---
 
+## Módulo 4 — Memória Longa
+
+Cada questão submetida ao `POST /v1/query` é automaticamente persistida na colecção `long_memory` do MongoDB em dois canais:
+
+**Canal autenticado** — `user_token` presente no body. A memória fica associada ao utilizador, permitindo recuperar o contexto de interacções anteriores.
+
+```bash
+curl -X POST http://127.0.0.1:8000/v1/query \
+  -H "Authorization: Bearer rag_xK9mR..." \
+  -H "Content-Type: application/json" \
+  -d '{"question": "Qual o prazo de matrícula?", "user_token": "id_opaco_do_aluno"}'
+```
+
+**Canal anónimo** — `user_token` ausente. A memória fica associada apenas à aplicação, para métricas e análise de qualidade.
+
+```bash
+curl -X POST http://127.0.0.1:8000/v1/query \
+  -H "Authorization: Bearer rag_xK9mR..." \
+  -H "Content-Type: application/json" \
+  -d '{"question": "Qual o prazo de matrícula?"}'
+```
+
+> O `user_token` é um identificador opaco do utilizador — nunca é armazenado. O sistema deriva internamente um `user_key` via HMAC-SHA256 que não permite recuperar o valor original.
+
+### Relatórios de memória
+
+Os relatórios são computados diariamente e ficam disponíveis na colecção `memory_snapshots`. O administrador pode consultar qualquer intervalo temporal.
+
+```bash
+# Forçar recomputação do dia actual
+curl -X POST "http://127.0.0.1:8000/v1/memory-reports/refresh" \
+  -H "Authorization: Bearer CHAVE_ADMIN"
+
+# Relatório de um intervalo
+curl "http://127.0.0.1:8000/v1/memory-reports/range?from_dt=2026-09-01T00:00:00Z&to_dt=2026-01-31T23:59:59Z" \
+  -H "Authorization: Bearer CHAVE_ADMIN"
+```
+
+Os relatórios incluem: total de interacções por modo, importância média, taxa de esclarecimento por tópico, documentos mais referenciados, tópicos com cobertura fraca e evolução semanal por tópico.
+
+---
+
 ## Considerações de segurança
 
-- As chaves de acesso são geradas com 256 bits de entropia criptográfica — nunca são armazenadas em claro, apenas o respectivo resumo criptográfico (SHA-256).
-- Cada pedido é validado antes de qualquer execução — autenticação, âmbito de permissão e limite de taxa.
-- O cabeçalho `Authorization` nunca é registado nos ficheiros de log.
-- A revogação de uma chave produz efeito imediato, incluindo a invalidação da entrada em cache Redis.
-- Em caso de comprometimento de uma chave, deverá ser revogada e substituída — o serviço não é interrompido durante este processo.
+* As chaves de acesso são geradas com 256 bits de entropia criptográfica — nunca são armazenadas em claro, apenas o respectivo resumo criptográfico (SHA-256).
+* Cada pedido é validado antes de qualquer execução — autenticação, âmbito de permissão e limite de taxa.
+* O cabeçalho `Authorization` nunca é registado nos ficheiros de log.
+* A revogação de uma chave produz efeito imediato, incluindo a invalidação da entrada em cache Redis.
+* Em caso de comprometimento de uma chave, deverá ser revogada e substituída — o serviço não é interrompido durante este processo.
 
 ---
 
@@ -276,11 +336,11 @@ print('HINT:  ', hint)
 
 ## Resolução de problemas frequentes
 
-| Erro | Causa provável | Resolução |
-|------|----------------|-----------|
-| `bad auth: authentication failed` | Palavra-passe do MongoDB incorrecta ou com caracteres especiais não codificados | Codificar a palavra-passe com `quote_plus` |
-| `Connection refused` (Redis) | Serviço Redis não está em execução | `brew services start redis` |
-| `invalid_key` (401) | Chave incorrecta ou resumo criptográfico errado no Atlas | Verificar o hash com `hashlib.sha256` |
-| `insufficient_scope` (403) | Chave sem permissão para o endpoint solicitado | Verificar os âmbitos da Aplicação |
-| `CHROMA_API_KEY required` | Variável de ambiente não definida no ficheiro `.env` | Solicitar a chave ao responsável pelo ChromaDB |
-| `Model not found` (HuggingFace) | Modelo de embedding não se encontra em cache local | `python3 -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')"` |
+| Erro                                | Causa provável                                                                  | Resolução                                                                                                     |
+| ----------------------------------- | -------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `bad auth: authentication failed` | Palavra-passe do MongoDB incorrecta ou com caracteres especiais não codificados | Codificar a palavra-passe com `quote_plus`                                                                    |
+| `Connection refused`(Redis)       | Serviço Redis não está em execução                                          | `brew services start redis`                                                                                   |
+| `invalid_key`(401)                | Chave incorrecta ou resumo criptográfico errado no Atlas                        | Verificar o hash com `hashlib.sha256`                                                                         |
+| `insufficient_scope`(403)         | Chave sem permissão para o endpoint solicitado                                  | Verificar os âmbitos da Aplicação                                                                            |
+| `CHROMA_API_KEY required`         | Variável de ambiente não definida no ficheiro `.env`                         | Solicitar a chave ao responsável pelo ChromaDB                                                                 |
+| `Model not found`(HuggingFace)    | Modelo de embedding não se encontra em cache local                              | `python3 -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')"` |
