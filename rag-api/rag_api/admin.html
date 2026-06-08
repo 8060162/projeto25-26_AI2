@@ -135,6 +135,8 @@
   <div class="nav-item" onclick="showPage('keys')" id="nav-keys"><span class="icon">⊛</span> Chaves</div>
   <div class="nav-section" style="margin-top:20px;margin-bottom:8px">Operações</div>
   <div class="nav-item" onclick="showPage('pipeline')" id="nav-pipeline"><span class="icon">⊙</span> Pipeline</div>
+  <div class="nav-item" onclick="showPage('documents')" id="nav-documents"><span class="icon">⊟</span> Documentos</div>
+  <div class="nav-item" onclick="showPage('audit')" id="nav-audit"><span class="icon">⊕</span> Auditoria</div>
   <div class="nav-item" onclick="showPage('metrics')" id="nav-metrics"><span class="icon">◬</span> Métricas</div>
   <div class="nav-item" onclick="showPage('memory')" id="nav-memory"><span class="icon">◈</span> Memória</div>
 </nav>
@@ -211,11 +213,138 @@
   <!-- PIPELINE -->
   <div class="page" id="page-pipeline">
     <h1>Pipeline de Indexação</h1><p class="page-desc">Executa o pipeline completo de segmentação e indexação de documentos no ChromaDB.</p>
-    <div class="card"><div class="card-title">Estado do Pipeline</div>
-      <p style="color:var(--muted);font-size:13px;margin-bottom:16px">Este processo executa sequencialmente: segmentação dos documentos PDF → geração de embeddings → indexação no ChromaDB.</p>
-      <div style="display:flex;gap:10px;align-items:center"><button class="btn btn-success" onclick="runEmbed()" id="btn-embed">▶ Executar Pipeline</button><span id="pipeline-status" style="font-family:var(--mono);font-size:12px;color:var(--muted)"></span></div>
+    <div class="metrics-grid" style="grid-template-columns:repeat(5,1fr);margin-bottom:20px" id="pipeline-stats-grid" style="display:none">
+      <div class="metric-card"><div class="metric-label">Total</div><div class="metric-value" id="ps-total">—</div><div class="metric-sub">documentos</div></div>
+      <div class="metric-card"><div class="metric-label">Indexados</div><div class="metric-value good" id="ps-indexed">—</div></div>
+      <div class="metric-card"><div class="metric-label">A processar</div><div class="metric-value warn" id="ps-processing">—</div></div>
+      <div class="metric-card"><div class="metric-label">Pendentes</div><div class="metric-value" id="ps-pending">—</div></div>
+      <div class="metric-card"><div class="metric-label">Erro</div><div class="metric-value bad" id="ps-error">—</div></div>
+    </div>
+    <div class="card"><div class="card-title">Re-indexação Global</div>
+      <p style="color:var(--muted);font-size:13px;margin-bottom:16px">Executa sequencialmente sobre todos os documentos: segmentação → embeddings → ChromaDB.</p>
+      <div style="display:flex;gap:10px;align-items:center">
+        <button class="btn btn-success" onclick="runEmbed()" id="btn-embed">▶ Executar Pipeline</button>
+        <button class="btn btn-ghost" onclick="loadPipelineStatus()">↺ Estado</button>
+        <span id="pipeline-status" style="font-family:var(--mono);font-size:12px;color:var(--muted)"></span>
+      </div>
     </div>
     <div class="card" id="pipeline-result" style="display:none"><div class="card-title">Resultado</div><div class="response-box" id="pipeline-output"></div></div>
+  </div>
+
+  <!-- DOCUMENTOS -->
+  <div class="page" id="page-documents">
+    <h1>Documentos PDF</h1><p class="page-desc">Gestão do ciclo de vida dos documentos PDF — upload, indexação, preview e remoção.</p>
+
+    <!-- Upload -->
+    <div class="card">
+      <div class="card-title">Adicionar Documento</div>
+      <div class="form-row" style="align-items:flex-end">
+        <div class="form-group">
+          <label>Ficheiro PDF</label>
+          <input type="file" id="doc-file-input" accept=".pdf" style="background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;padding:8px 12px;width:100%">
+        </div>
+        <div><button class="btn btn-primary" onclick="uploadDocument()" id="btn-upload">⬆ Fazer Upload</button></div>
+      </div>
+      <div id="upload-feedback" style="margin-top:10px;font-family:var(--mono);font-size:12px;display:none"></div>
+    </div>
+
+    <!-- Lista de documentos -->
+    <div class="card">
+      <div class="section-header">
+        <div class="card-title" style="margin:0">Documentos Registados</div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <select id="doc-status-filter" style="background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;padding:5px 10px;font-family:var(--mono)">
+            <option value="">Todos os estados</option>
+            <option value="indexed">indexed</option>
+            <option value="pending">pending</option>
+            <option value="processing">processing</option>
+            <option value="error">error</option>
+          </select>
+          <button class="btn btn-ghost btn-sm" onclick="loadDocuments()">↺ Actualizar</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Ficheiro</th><th>Estado</th><th>Versão</th><th>Chunks</th><th>Páginas</th><th>Tamanho</th><th>Indexado em</th><th>Acções</th></tr></thead>
+          <tbody id="docs-tbody"><tr><td colspan="8" class="empty-state">Carregue para ver os documentos</td></tr></tbody>
+        </table>
+      </div>
+      <div id="docs-pagination" style="display:flex;gap:8px;align-items:center;margin-top:14px;font-family:var(--mono);font-size:12px;color:var(--muted)"></div>
+    </div>
+
+    <!-- Preview modal -->
+    <div id="preview-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:999;display:none;align-items:center;justify-content:center;flex-direction:column;gap:12px">
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:16px;max-width:90vw;max-height:90vh;overflow:auto">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+          <span id="preview-title" style="font-family:var(--mono);font-size:12px;color:var(--muted)"></span>
+          <div style="display:flex;gap:8px;align-items:center">
+            <button class="btn btn-ghost btn-sm" onclick="changePage(-1)">◀</button>
+            <span id="preview-page-info" style="font-family:var(--mono);font-size:12px"></span>
+            <button class="btn btn-ghost btn-sm" onclick="changePage(1)">▶</button>
+            <select id="preview-dpi" onchange="loadPreview()" style="background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:11px;padding:4px 8px;font-family:var(--mono)">
+              <option value="72">72 dpi</option>
+              <option value="150" selected>150 dpi</option>
+              <option value="300">300 dpi</option>
+            </select>
+            <button class="btn btn-ghost btn-sm" onclick="closePreview()">✕ Fechar</button>
+          </div>
+        </div>
+        <div id="preview-container" style="text-align:center;min-width:400px;min-height:200px;display:flex;align-items:center;justify-content:center">
+          <span style="color:var(--muted)">A carregar...</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- AUDITORIA -->
+  <div class="page" id="page-audit">
+    <h1>Log de Auditoria</h1><p class="page-desc">Registo imutável de todas as operações sobre documentos PDF.</p>
+    <div class="card">
+      <div class="section-header" style="margin-bottom:12px">
+        <div class="card-title" style="margin:0">Filtros</div>
+      </div>
+      <div class="form-row" style="align-items:flex-end">
+        <div class="form-group" style="max-width:200px">
+          <label>Acção</label>
+          <select id="audit-action-filter" style="font-family:var(--mono);font-size:12px">
+            <option value="">Todas</option>
+            <option value="upload">upload</option>
+            <option value="delete">delete</option>
+            <option value="replace">replace</option>
+            <option value="reindex">reindex</option>
+            <option value="preview">preview</option>
+            <option value="list">list</option>
+            <option value="get">get</option>
+          </select>
+        </div>
+        <div class="form-group" style="max-width:200px">
+          <label>Resultado</label>
+          <select id="audit-outcome-filter" style="font-family:var(--mono);font-size:12px">
+            <option value="">Todos</option>
+            <option value="success">success</option>
+            <option value="error">error</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>doc_id (opcional)</label>
+          <input type="text" id="audit-docid-filter" placeholder="UUID do documento">
+        </div>
+        <div><button class="btn btn-primary" onclick="loadAuditLogs()">Filtrar</button></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="section-header">
+        <div class="card-title" style="margin:0">Eventos</div>
+        <button class="btn btn-ghost btn-sm" onclick="loadAuditLogs()">↺ Actualizar</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Timestamp</th><th>Acção</th><th>Resultado</th><th>Documento</th><th>Realizado por</th><th>HTTP</th><th>Detalhe</th></tr></thead>
+          <tbody id="audit-tbody"><tr><td colspan="7" class="empty-state">Carregue para ver o log</td></tr></tbody>
+        </table>
+      </div>
+      <div id="audit-pagination" style="display:flex;gap:8px;align-items:center;margin-top:14px;font-family:var(--mono);font-size:12px;color:var(--muted)"></div>
+    </div>
   </div>
 
   <!-- MÉTRICAS -->
@@ -517,11 +646,180 @@ async function runEmbed(){
   status.textContent='Pipeline em execução — pode demorar alguns minutos...';
   const result=document.getElementById('pipeline-result');const output=document.getElementById('pipeline-output');result.style.display='none';
   try{
-    const{ok,data}=await api('POST','/v1/embed');result.style.display='block';
+    const{ok,data}=await api('POST','/v1/pipeline/embed');result.style.display='block';
     if(ok){output.className='response-box';output.textContent=fmt(data);status.textContent='✓ Concluído — '+data.embedded_record_count+' registos indexados';}
     else{output.className='response-box err';output.textContent=fmt(data);status.textContent='✗ Erro na execução';}
   }catch(e){result.style.display='block';output.className='response-box err';output.textContent=e.message;status.textContent='✗ Erro de ligação';}
   btn.innerHTML='▶ Executar Pipeline';btn.disabled=false;
+}
+
+// ── Pipeline status ────────────────────────────────────────────────────────
+async function loadPipelineStatus(){
+  const{ok,data}=await api('GET','/v1/pipeline/status');if(!ok)return;
+  document.getElementById('pipeline-stats-grid').style.display='grid';
+  document.getElementById('ps-total').textContent=data.total_documents??'—';
+  const iv=data.indexed??0;
+  document.getElementById('ps-indexed').textContent=iv;
+  document.getElementById('ps-indexed').className='metric-value'+(iv>0?' good':'');
+  const pv=data.processing??0;
+  document.getElementById('ps-processing').textContent=pv;
+  document.getElementById('ps-processing').className='metric-value'+(pv>0?' warn':'');
+  document.getElementById('ps-pending').textContent=data.pending??0;
+  const ev=data.error??0;
+  document.getElementById('ps-error').textContent=ev;
+  document.getElementById('ps-error').className='metric-value'+(ev>0?' bad':'');
+}
+
+// ── Documentos ────────────────────────────────────────────────────────────
+let DOC_PAGE=1;
+const DOC_PAGE_SIZE=20;
+
+function statusBadge(s){
+  const map={indexed:'badge-green',pending:'badge-amber',processing:'badge-blue',error:'badge-red',deleted:'badge-red'};
+  return`<span class="badge ${map[s]||'badge-blue'}">${s}</span>`;
+}
+function fmtBytes(b){if(!b)return'—';if(b<1024)return b+'B';if(b<1048576)return(b/1024).toFixed(1)+'KB';return(b/1048576).toFixed(1)+'MB';}
+
+async function loadDocuments(){
+  const status=document.getElementById('doc-status-filter').value;
+  const qs=new URLSearchParams({page:DOC_PAGE,page_size:DOC_PAGE_SIZE});
+  if(status)qs.set('status',status);
+  const{ok,data}=await api('GET','/v1/pipeline/documents?'+qs);
+  if(!ok)return;
+  const tbody=document.getElementById('docs-tbody');
+  const items=data.items||[];
+  if(!items.length){tbody.innerHTML='<tr><td colspan="8" class="empty-state">Nenhum documento encontrado</td></tr>';return;}
+  tbody.innerHTML=items.map(d=>`
+    <tr>
+      <td><strong style="font-size:13px">${d.filename}</strong><div class="trace-id" style="margin-top:2px">${d.doc_id}</div></td>
+      <td>${statusBadge(d.status)}${d.error_detail?`<div style="font-size:10px;color:var(--red);margin-top:3px">${d.error_detail.substring(0,60)}</div>`:''}</td>
+      <td><span class="badge badge-blue">v${d.version}</span></td>
+      <td style="font-family:var(--mono)">${d.chunk_count??'—'}</td>
+      <td style="font-family:var(--mono)">${d.page_count??'—'}</td>
+      <td style="font-family:var(--mono);color:var(--muted)">${fmtBytes(d.file_size)}</td>
+      <td style="color:var(--muted)">${d.indexed_at?fmtDate(d.indexed_at):'—'}</td>
+      <td class="actions">
+        ${d.status==='indexed'?`<button class="btn btn-ghost btn-sm" onclick="openPreview('${d.doc_id}','${d.filename}',${d.page_count||1})">👁 Preview</button>`:''}
+        <button class="btn btn-ghost btn-sm" onclick="reindexDocument('${d.doc_id}','${d.filename}')">↺ Re-indexar</button>
+        ${d.status!=='deleted'?`<button class="btn btn-danger btn-sm" onclick="deleteDocument('${d.doc_id}','${d.filename}')">✕</button>`:''}
+      </td>
+    </tr>`).join('');
+  // Paginação
+  const total=data.total||0;
+  const pages=Math.ceil(total/DOC_PAGE_SIZE);
+  const pag=document.getElementById('docs-pagination');
+  pag.innerHTML=`<span>${total} documentos</span>`+
+    (DOC_PAGE>1?`<button class="btn btn-ghost btn-sm" onclick="DOC_PAGE--;loadDocuments()">◀</button>`:'<button class="btn btn-ghost btn-sm" disabled>◀</button>')+
+    `<span>Pág. ${DOC_PAGE}/${pages||1}</span>`+
+    (DOC_PAGE<pages?`<button class="btn btn-ghost btn-sm" onclick="DOC_PAGE++;loadDocuments()">▶</button>`:'<button class="btn btn-ghost btn-sm" disabled>▶</button>');
+}
+
+async function uploadDocument(){
+  const input=document.getElementById('doc-file-input');
+  const fb=document.getElementById('upload-feedback');
+  if(!input.files||!input.files[0])return alert('Seleccione um ficheiro PDF.');
+  const file=input.files[0];
+  const btn=document.getElementById('btn-upload');
+  btn.innerHTML='<span class="loading"></span> A enviar...';btn.disabled=true;
+  fb.style.display='block';fb.style.color='var(--muted)';fb.textContent='A enviar e a iniciar indexação...';
+  const formData=new FormData();formData.append('file',file);
+  try{
+    const r=await fetch(apiUrl('/v1/pipeline/documents'),{method:'POST',headers:{Authorization:'Bearer '+ADMIN_KEY},body:formData});
+    const d=await r.json();
+    if(r.ok){
+      fb.style.color='var(--green)';fb.textContent='✓ Upload aceite — doc_id: '+d.doc_id+' (indexação em curso)';
+      input.value='';DOC_PAGE=1;loadDocuments();
+    }else{fb.style.color='var(--red)';fb.textContent='✗ Erro: '+(d.detail||JSON.stringify(d));}
+  }catch(e){fb.style.color='var(--red)';fb.textContent='✗ Erro de ligação: '+e.message;}
+  btn.innerHTML='⬆ Fazer Upload';btn.disabled=false;
+}
+
+async function deleteDocument(docId,filename){
+  if(!confirm(`Remover "${filename}" e todos os chunks do ChromaDB?`))return;
+  const{ok,data}=await api('DELETE','/v1/pipeline/documents/'+docId);
+  if(ok){loadDocuments();loadPipelineStatus();}
+  else alert('Erro: '+(data.detail||'falha ao remover'));
+}
+
+async function reindexDocument(docId,filename){
+  if(!confirm(`Re-indexar "${filename}"? Os chunks actuais serão substituídos.`))return;
+  const{ok,data}=await api('POST','/v1/pipeline/documents/'+docId+'/reindex');
+  if(ok){loadDocuments();}
+  else alert('Erro: '+(data.detail||'falha ao re-indexar'));
+}
+
+// ── Preview ───────────────────────────────────────────────────────────────
+let PREVIEW_DOC_ID='';let PREVIEW_FILENAME='';let PREVIEW_PAGE=1;let PREVIEW_PAGE_COUNT=1;
+
+function openPreview(docId,filename,pageCount){
+  PREVIEW_DOC_ID=docId;PREVIEW_FILENAME=filename;PREVIEW_PAGE=1;PREVIEW_PAGE_COUNT=pageCount||1;
+  document.getElementById('preview-modal').style.display='flex';
+  loadPreview();
+}
+function closePreview(){document.getElementById('preview-modal').style.display='none';}
+function changePage(delta){
+  PREVIEW_PAGE=Math.max(1,Math.min(PREVIEW_PAGE_COUNT,PREVIEW_PAGE+delta));loadPreview();
+}
+async function loadPreview(){
+  const dpi=document.getElementById('preview-dpi').value;
+  document.getElementById('preview-title').textContent=PREVIEW_FILENAME;
+  document.getElementById('preview-page-info').textContent=`Pág. ${PREVIEW_PAGE} / ${PREVIEW_PAGE_COUNT}`;
+  const container=document.getElementById('preview-container');
+  container.innerHTML='<span style="color:var(--muted)">A carregar...</span>';
+  try{
+    const r=await fetch(apiUrl(`/v1/pipeline/documents/${PREVIEW_DOC_ID}/pages/${PREVIEW_PAGE}/preview?dpi=${dpi}`),
+      {headers:{Authorization:'Bearer '+ADMIN_KEY}});
+    if(!r.ok){container.innerHTML='<span style="color:var(--red)">Erro ao carregar página</span>';return;}
+    const blob=await r.blob();
+    const url=URL.createObjectURL(blob);
+    container.innerHTML=`<img src="${url}" style="max-width:100%;border-radius:4px;box-shadow:0 4px 20px rgba(0,0,0,.5)" alt="Página ${PREVIEW_PAGE}">`;
+  }catch(e){container.innerHTML='<span style="color:var(--red)">Erro: '+e.message+'</span>';}
+}
+
+// ── Auditoria ─────────────────────────────────────────────────────────────
+let AUDIT_PAGE=1;
+const AUDIT_PAGE_SIZE=50;
+
+function auditActionBadge(a){
+  const map={upload:'badge-green',delete:'badge-red',replace:'badge-amber',reindex:'badge-blue',preview:'badge-blue',list:'',get:''};
+  return`<span class="badge ${map[a]||''}">${a}</span>`;
+}
+function auditOutcomeBadge(o){
+  return o==='success'
+    ?'<span class="badge badge-green">success</span>'
+    :'<span class="badge badge-red">error</span>';
+}
+
+async function loadAuditLogs(){
+  const action=document.getElementById('audit-action-filter').value;
+  const outcome=document.getElementById('audit-outcome-filter').value;
+  const docId=document.getElementById('audit-docid-filter').value.trim();
+  const qs=new URLSearchParams({page:AUDIT_PAGE,page_size:AUDIT_PAGE_SIZE});
+  if(action)qs.set('action',action);
+  if(outcome)qs.set('outcome',outcome);
+  if(docId)qs.set('doc_id',docId);
+  const{ok,data}=await api('GET','/v1/pipeline/audit?'+qs);
+  if(!ok)return;
+  const tbody=document.getElementById('audit-tbody');
+  const items=data.items||[];
+  if(!items.length){tbody.innerHTML='<tr><td colspan="7" class="empty-state">Nenhum evento encontrado</td></tr>';return;}
+  tbody.innerHTML=items.map(e=>`
+    <tr>
+      <td style="font-family:var(--mono);font-size:11px;white-space:nowrap">${fmtDate(e.timestamp)}</td>
+      <td>${auditActionBadge(e.action)}</td>
+      <td>${auditOutcomeBadge(e.outcome)}</td>
+      <td><div style="font-size:12px">${e.filename||'—'}</div><div class="trace-id" style="margin-top:2px">${e.doc_id||''}</div></td>
+      <td style="font-family:var(--mono);font-size:11px">${e.performed_by||'—'}</td>
+      <td><span class="badge ${e.http_status<400?'badge-green':e.http_status<500?'badge-amber':'badge-red'}">${e.http_status}</span></td>
+      <td style="font-family:var(--mono);font-size:11px;color:var(--red)">${e.error_detail||''}</td>
+    </tr>`).join('');
+  const total=data.total||0;
+  const pages=Math.ceil(total/AUDIT_PAGE_SIZE);
+  const pag=document.getElementById('audit-pagination');
+  pag.innerHTML=`<span>${total} eventos</span>`+
+    (AUDIT_PAGE>1?`<button class="btn btn-ghost btn-sm" onclick="AUDIT_PAGE--;loadAuditLogs()">◀</button>`:'<button class="btn btn-ghost btn-sm" disabled>◀</button>')+
+    `<span>Pág. ${AUDIT_PAGE}/${pages||1}</span>`+
+    (AUDIT_PAGE<pages?`<button class="btn btn-ghost btn-sm" onclick="AUDIT_PAGE++;loadAuditLogs()">▶</button>`:'<button class="btn btn-ghost btn-sm" disabled>▶</button>');
 }
 
 async function loadAppsForMetrics(){

@@ -123,6 +123,76 @@ O registo de arranque confirma o estado do sistema:
 
 ---
 
+## Módulo Pipeline — Gestão de Documentos PDF
+
+O módulo pipeline gere o ciclo de vida completo dos documentos PDF que alimentam o sistema RAG.
+
+### Configuração — variáveis `.env`
+
+```bash
+# Storage de PDFs
+PDF_STORAGE_BACKEND=local
+PDF_STORAGE_PATH=../data/raw
+PDF_MAX_SIZE_MB=50
+
+# Preview de páginas
+PDF_PREVIEW_DEFAULT_DPI=150
+PDF_PREVIEW_MAX_DPI=300
+```
+
+O `PDF_STORAGE_PATH` deve apontar para a mesma pasta que o pipeline de chunking lê (`data/raw/`). Desta forma, um ficheiro enviado via upload fica imediatamente disponível para indexação.
+
+### Endpoints (`rag:admin`)
+
+| Método    | Endpoint                                              | Descrição                                    |
+| ---------- | ----------------------------------------------------- | ---------------------------------------------- |
+| `POST`   | `/v1/pipeline/documents`                            | Upload de um PDF e indexação assíncrona     |
+| `GET`    | `/v1/pipeline/documents`                            | Lista PDFs com paginação e filtro por estado |
+| `GET`    | `/v1/pipeline/documents/{doc_id}`                   | Detalhe de um documento                        |
+| `DELETE` | `/v1/pipeline/documents/{doc_id}`                   | Remove o PDF e os chunks do ChromaDB           |
+| `PUT`    | `/v1/pipeline/documents/{doc_id}/file`              | Substitui o ficheiro e re-indexa               |
+| `POST`   | `/v1/pipeline/documents/{doc_id}/reindex`           | Re-indexação manual                          |
+| `GET`    | `/v1/pipeline/documents/{doc_id}/pages/{n}/preview` | Renderiza uma página como PNG                 |
+| `GET`    | `/v1/pipeline/status`                               | Contagens do índice por estado                |
+| `GET`    | `/v1/pipeline/audit`                                | Log de auditoria de operações                |
+| `POST`   | `/v1/pipeline/embed`                                | Re-indexação global de todos os documentos   |
+
+### Ciclo de vida de um documento
+
+```
+Upload (POST /documents)
+    │
+    ▼
+status=pending → status=processing → status=indexed
+                                           │
+                         ┌─────────────────┼─────────────────┐
+                         ▼                 ▼                 ▼
+                      Preview           Reindex           Delete
+                  (GET /pages/n)   (POST /reindex)   (DELETE /{doc_id})
+```
+
+O upload é aceite imediatamente — a indexação corre em background. O processo de indexação executa duas fases sequencialmente:
+
+1. **Chunking** (`Chunking/pipeline.py`) — lê `data/raw/`, divide os PDFs em chunks, faz skip dos já processados
+2. **Embedding** (`embedding/indexer.py`) — gera embeddings dos chunks e indexa no ChromaDB
+
+### Sincronização de documentos existentes
+
+Para registar no MongoDB os PDFs já presentes em `data/raw/` antes da instalação do módulo:
+
+```bash
+cd rag-api
+python3 sync_pdfs.py --dry-run          # simulação
+python3 sync_pdfs.py --skip-pipeline    # regista sem indexar
+python3 sync_pdfs.py                    # regista e indexa
+```
+
+### Auditoria
+
+Todas as operações sobre documentos são registadas na colecção `audit_logs` (append-only). O log é consultável por `doc_id`, `action` e `outcome` via `GET /v1/pipeline/audit`.
+
+---
+
 ## Mecanismo de autenticação
 
 Todos os pedidos autenticados requerem o seguinte cabeçalho HTTP:

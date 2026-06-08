@@ -43,6 +43,13 @@ from rag_api.memory_reporting import (
     memory_reports_router,
 )
 from rag_api.rag import create_rag_controller
+from rag_api.pipeline.audit import PipelineAuditLogger
+from rag_api.pipeline.chroma import ChromaPipelineClient
+from rag_api.pipeline.preview import PagePreviewRenderer
+from rag_api.pipeline.service import PipelineService
+from rag_api.pipeline.storage import make_storage_backend
+from rag_api.pipeline.routes import router as pipeline_documents_router
+from rag_api.pipeline.store import MongoPdfDocumentStore, init_pdf_document_indexes
 from rag_api.reporting import (
     MongoSnapshotAggregator, RedisSchedulerLock,
     create_scheduler, SchedulerConfig,
@@ -114,6 +121,7 @@ def create_app() -> FastAPI:
     app.include_router(metrics_router)
     app.include_router(memory_router)
     app.include_router(memory_reports_router)
+    app.include_router(pipeline_documents_router)
 
     @app.get("/v1/health", response_model=HealthResponse, tags=["infra"])
     async def health():
@@ -132,6 +140,7 @@ def create_app() -> FastAPI:
         await init_application_indexes(db)
         await init_signals_collection(db)
         await init_memory_indexes(db)
+        await init_pdf_document_indexes(db)
 
         # Redis
         redis = await redis_from_url(
@@ -197,6 +206,45 @@ def create_app() -> FastAPI:
 
         # RAG Controller — real se o pipeline estiver disponível
         app.state.rag_controller = create_rag_controller()
+
+        # Wiring — pipeline (Módulo Pipeline)
+        # ChromaDB instanciado de forma independente do RAGController.
+        # O pipeline do colega gere a sua ligação via appsettings.json —
+        # reutilizamos a mesma configuração para operações de gestão de chunks.
+        try:
+            from Chunking.config.settings import PipelineSettings as _PS
+            _ps          = _PS()
+            import chromadb as _chromadb
+            if _ps.chromadb_mode == "persistent":
+                _chroma_client = _chromadb.PersistentClient(path=_ps.chromadb_persist_directory)
+            else:
+                _chroma_client = _chromadb.HttpClient(
+                    host     = "api.trychroma.com",
+                    tenant   = _ps.chromadb_tenant,
+                    database = _ps.chromadb_database,
+                    headers  = {"X-Chroma-Token": os.environ.get("CHROMA_API_KEY", "")},
+                )
+            _collection = _chroma_client.get_or_create_collection(_ps.chromadb_collection_name)
+        except Exception as _exc:
+            # Pipeline indisponível — endpoints delete/reindex retornam erro em runtime.
+            structlog.get_logger(__name__).warning(
+                "chroma_pipeline_unavailable", error=repr(_exc)
+            )
+            _collection = None
+
+        pipeline_storage = make_storage_backend()
+        pipeline_chroma  = ChromaPipelineClient(collection=_collection)
+        pipeline_preview = PagePreviewRenderer()
+        pipeline_audit   = PipelineAuditLogger(collection=db["audit_logs"])
+
+        app.state.pipeline_service = PipelineService(
+            storage = pipeline_storage,
+            chroma  = pipeline_chroma,
+            preview = pipeline_preview,
+            audit   = pipeline_audit,
+        )
+        app.state.audit_collection = db["audit_logs"]
+        app.state.pdf_doc_store = MongoPdfDocumentStore(db)
 
         structlog.get_logger(__name__).info(
             "startup_complete",

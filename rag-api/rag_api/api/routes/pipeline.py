@@ -3,21 +3,14 @@ import structlog
 from fastapi import APIRouter, Depends, Request
 
 from rag_api.auth.middleware import require_scope
+from rag_api.pipeline.schemas import EmbedResponse
 from rag_api.schemas.identity import ClientIdentity
 
 logger = structlog.get_logger(__name__)
 
-router = APIRouter(prefix="/v1", tags=["pipeline"])
-
-
-from pydantic import BaseModel
-
-class EmbedResponse(BaseModel):
-    run_id:                str
-    input_record_count:    int
-    embedded_record_count: int
-    records_path:          str
-    manifest_path:         str
+# Prefix actualizado para /v1/pipeline — consistente com o novo módulo pipeline.
+# EmbedResponse movido para rag_api/pipeline/schemas.py (SSOT).
+router = APIRouter(prefix="/v1/pipeline", tags=["pipeline"])
 
 
 @router.post(

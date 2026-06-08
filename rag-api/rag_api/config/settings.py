@@ -27,6 +27,13 @@ class Settings(BaseSettings):
     chroma_api_key:         str = ""
     external_gpt4o_api_key: str = ""
 
+    # Pipeline — gestão de PDFs (Módulo Pipeline)
+    pdf_storage_backend:     str = "local"
+    pdf_storage_path:        str = "./data/pdfs"
+    pdf_max_size_mb:         int = 50
+    pdf_preview_default_dpi: int = 150
+    pdf_preview_max_dpi:     int = 300
+
     # Reporting — Scheduler (signals)
     snapshot_realtime_minutes: int = 15
     snapshot_hourly_minutes:   int = 60
