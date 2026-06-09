@@ -1,0 +1,19 @@
+fastapi>=0.110.0
+pydantic>=2.0.0
+pydantic-settings>=2.0.0
+motor>=3.3.0          # MongoDB async driver
+redis>=5.0.0
+# aioredis removido — incompatível com Python 3.14
+structlog>=24.0.0
+uvicorn>=0.29.0
+python-multipart>=0.0.9
+
+# testes
+pytest>=8.0.0
+pytest-asyncio>=0.23.0
+httpx>=0.27.0
+apscheduler>=3.10
+
+#adicionado para lidar com os ficheiros pdf
+PyMuPDF>=1.24.0
+aiofiles>=23.0

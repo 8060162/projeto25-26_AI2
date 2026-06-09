@@ -1,0 +1,1156 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RAG API — Painel de Administração</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap');
+  :root{--bg:#0f1117;--bg2:#161922;--bg3:#1e2330;--border:#2a3040;--accent:#4f8ef7;--accent2:#7c5cbf;--green:#3ecf8e;--red:#f76f6f;--amber:#f7c948;--text:#e2e8f0;--muted:#64748b;--mono:'IBM Plex Mono',monospace;--sans:'IBM Plex Sans',sans-serif}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14px;min-height:100vh;display:flex;flex-direction:column}
+  header{background:var(--bg2);border-bottom:1px solid var(--border);padding:0 24px;height:56px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100}
+  .logo{font-family:var(--mono);font-size:13px;font-weight:600;letter-spacing:.08em;color:var(--accent);display:flex;align-items:center;gap:10px}
+  .logo::before{content:'';width:8px;height:8px;background:var(--green);border-radius:50%;animation:pulse 2s infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+  .header-right{display:flex;align-items:center;gap:12px}
+  #api-url-input,#key-input{background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--mono);font-size:11px;padding:6px 10px;outline:none;transition:border-color .2s}
+  #api-url-input{width:220px}#key-input{width:260px}
+  #api-url-input:focus,#key-input:focus{border-color:var(--accent)}
+  .btn-connect{background:var(--accent);color:#fff;border:none;border-radius:6px;padding:6px 14px;font-family:var(--mono);font-size:11px;font-weight:600;cursor:pointer;transition:opacity .2s}
+  .btn-connect:hover{opacity:.85}
+  #status-badge{font-family:var(--mono);font-size:11px;padding:4px 10px;border-radius:20px;background:var(--bg3);border:1px solid var(--border);color:var(--muted)}
+  #status-badge.ok{color:var(--green);border-color:var(--green)}#status-badge.err{color:var(--red);border-color:var(--red)}
+  .layout{display:flex;flex:1}
+  nav{width:200px;background:var(--bg2);border-right:1px solid var(--border);padding:20px 0;flex-shrink:0}
+  .nav-section{padding:0 16px 8px;font-family:var(--mono);font-size:10px;font-weight:600;letter-spacing:.12em;color:var(--muted);text-transform:uppercase}
+  .nav-item{display:flex;align-items:center;gap:10px;padding:9px 20px;cursor:pointer;color:var(--muted);font-size:13px;font-weight:400;transition:all .15s;border-left:2px solid transparent;user-select:none}
+  .nav-item:hover{color:var(--text);background:var(--bg3)}.nav-item.active{color:var(--accent);border-left-color:var(--accent);background:rgba(79,142,247,.07)}
+  .nav-item .icon{font-size:15px;width:18px;text-align:center}
+  main{flex:1;padding:28px;overflow-y:auto}
+  .page{display:none}.page.active{display:block}
+  h1{font-size:18px;font-weight:600;margin-bottom:6px;color:var(--text)}
+  .page-desc{color:var(--muted);font-size:13px;margin-bottom:24px}
+  .card{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:20px;margin-bottom:16px}
+  .card-title{font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:16px}
+  .form-row{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+  .form-group{display:flex;flex-direction:column;gap:6px;flex:1;min-width:160px}
+  label{font-size:12px;color:var(--muted);font-weight:500}
+  input[type=text],input[type=number],select,textarea{background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--sans);font-size:13px;padding:8px 12px;outline:none;transition:border-color .2s;width:100%}
+  input:focus,select:focus,textarea:focus{border-color:var(--accent)}
+  textarea{resize:vertical;min-height:80px;font-family:var(--mono);font-size:12px}
+  .btn{padding:8px 16px;border-radius:6px;border:none;font-family:var(--sans);font-size:13px;font-weight:500;cursor:pointer;transition:all .15s;display:inline-flex;align-items:center;gap:6px}
+  .btn-primary{background:var(--accent);color:#fff}.btn-primary:hover{opacity:.85}
+  .btn-success{background:var(--green);color:#0f1117}.btn-success:hover{opacity:.85}
+  .btn-danger{background:var(--red);color:#fff}.btn-danger:hover{opacity:.85}
+  .btn-ghost{background:var(--bg3);border:1px solid var(--border);color:var(--text)}.btn-ghost:hover{border-color:var(--accent);color:var(--accent)}
+  .btn-sm{padding:5px 10px;font-size:12px}.btn:disabled{opacity:.4;cursor:not-allowed}
+  .table-wrap{overflow-x:auto}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{text-align:left;padding:10px 12px;font-family:var(--mono);font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--border)}
+  td{padding:12px 12px;border-bottom:1px solid rgba(42,48,64,.6);vertical-align:middle}
+  tr:last-child td{border-bottom:none}tr:hover td{background:rgba(255,255,255,.02)}
+  .badge{display:inline-block;padding:2px 8px;border-radius:20px;font-family:var(--mono);font-size:10px;font-weight:600}
+  .badge-green{background:rgba(62,207,142,.15);color:var(--green)}.badge-red{background:rgba(247,111,111,.15);color:var(--red)}
+  .badge-blue{background:rgba(79,142,247,.15);color:var(--accent)}.badge-amber{background:rgba(247,201,72,.15);color:var(--amber)}
+  .response-box{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:14px;font-family:var(--mono);font-size:12px;line-height:1.6;color:var(--green);min-height:80px;max-height:320px;overflow-y:auto;white-space:pre-wrap;word-break:break-all}
+  .response-box.err{color:var(--red)}.response-box.empty{color:var(--muted);font-style:italic}
+  .key-reveal{background:rgba(247,201,72,.08);border:1px solid rgba(247,201,72,.3);border-radius:8px;padding:14px 16px;font-family:var(--mono);font-size:12px;color:var(--amber);display:none;margin-top:12px;word-break:break-all}
+  .key-reveal.visible{display:block}.key-reveal strong{display:block;font-size:10px;margin-bottom:6px;opacity:.7;letter-spacing:.08em;text-transform:uppercase}
+  .metrics-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;margin-bottom:20px}
+  .metric-card{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:18px}
+  .metric-label{font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px}
+  .metric-value{font-size:28px;font-weight:600;color:var(--text);font-family:var(--mono)}
+  .metric-value.good{color:var(--green)}.metric-value.warn{color:var(--amber)}.metric-value.bad{color:var(--red)}
+  .metric-sub{font-size:11px;color:var(--muted);margin-top:4px}
+  .answer-block{background:var(--bg3);border-left:3px solid var(--accent);border-radius:0 8px 8px 0;padding:14px 16px;font-size:14px;line-height:1.7;margin-top:12px;display:none}
+  .answer-block.visible{display:block}
+  .loading{display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,.2);border-top-color:#fff;border-radius:50%;animation:spin .6s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .divider{height:1px;background:var(--border);margin:20px 0}
+  .empty-state{text-align:center;padding:40px;color:var(--muted);font-size:13px}
+  .trace-id{font-family:var(--mono);font-size:11px;color:var(--muted)}
+  .actions{display:flex;gap:6px}
+  .section-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
+  .hint-tag{font-family:var(--mono);font-size:11px;background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:2px 6px;color:var(--text)}
+  .gran-selector{display:flex;gap:6px;margin-bottom:0}
+  .gran-btn{background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--muted);font-family:var(--mono);font-size:11px;font-weight:600;padding:6px 14px;cursor:pointer;transition:all .15s}
+  .gran-btn:hover{border-color:var(--accent);color:var(--accent)}
+  .gran-btn.active{background:rgba(79,142,247,.12);border-color:var(--accent);color:var(--accent)}
+  .bar-chart{display:flex;align-items:flex-end;gap:4px;height:80px;margin-top:8px}
+  .bar-col{display:flex;flex-direction:column;align-items:center;flex:1;gap:4px}
+  .bar{width:100%;background:var(--accent);border-radius:3px 3px 0 0;opacity:.7;min-height:2px;transition:height .3s}
+  .bar-label{font-family:var(--mono);font-size:9px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:40px;text-align:center}
+  .cat-row{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+  .cat-name{font-family:var(--mono);font-size:11px;color:var(--text);width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .cat-bar-wrap{flex:1;background:var(--bg3);border-radius:3px;height:10px}
+  .cat-bar{background:var(--accent);border-radius:3px;height:10px;transition:width .4s;opacity:.8}
+  .cat-count{font-family:var(--mono);font-size:11px;color:var(--muted);width:30px;text-align:right}
+  .last-updated{font-family:var(--mono);font-size:10px;color:var(--muted);margin-left:auto}
+  /* Distribuição qualidade */
+  .dist-row{display:flex;align-items:center;gap:10px;margin-bottom:6px}
+  .dist-label{font-family:var(--mono);font-size:11px;color:var(--muted);width:140px}
+  .dist-bar-wrap{flex:1;background:var(--bg3);border-radius:3px;height:8px}
+  .dist-bar-green{background:var(--green);border-radius:3px;height:8px;transition:width .4s;opacity:.8}
+  .dist-bar-amber{background:var(--amber);border-radius:3px;height:8px;transition:width .4s;opacity:.8}
+  .dist-bar-red{background:var(--red);border-radius:3px;height:8px;transition:width .4s;opacity:.8}
+  .dist-count{font-family:var(--mono);font-size:11px;color:var(--muted);width:30px;text-align:right}
+  .quality-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+
+  /* Timeline tópicos */
+  .timeline-wrap{overflow-x:auto;padding-bottom:8px}
+  .timeline-grid{display:grid;gap:2px;min-width:600px}
+  .tl-row{display:flex;align-items:center;gap:6px;margin-bottom:4px}
+  .tl-label{font-family:var(--mono);font-size:10px;color:var(--text);width:130px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .tl-cells{display:flex;gap:2px;flex:1}
+  .tl-cell{height:18px;border-radius:2px;flex:1;min-width:12px;position:relative;cursor:default;transition:opacity .15s}
+  .tl-cell:hover{opacity:.75}
+  .tl-week{font-family:var(--mono);font-size:9px;color:var(--muted);text-align:center;flex:1;min-width:12px}
+  /* Clarification badge */
+  .badge-clarified{background:rgba(62,207,142,.15);color:var(--green)}
+  .badge-partial{background:rgba(247,201,72,.15);color:var(--amber)}
+  .badge-weak-clar{background:rgba(247,111,111,.15);color:var(--red)}
+  /* uncategorized card */
+  .uncat-row{display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid rgba(42,48,64,.4)}
+  .uncat-row:last-child{border-bottom:none}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">RAG ADMIN</div>
+  <div class="header-right">
+    <input id="api-url-input" type="text" placeholder="http://127.0.0.1:8000" value="http://127.0.0.1:8000">
+    <input id="key-input" type="text" placeholder="Chave de administração (rag_...)">
+    <button class="btn-connect" onclick="connect()">Ligar</button>
+    <span id="status-badge">desligado</span>
+  </div>
+</header>
+<div class="layout">
+<nav>
+  <div class="nav-section" style="margin-bottom:8px">Sistema</div>
+  <div class="nav-item active" onclick="showPage('dashboard')" id="nav-dashboard"><span class="icon">◈</span> Dashboard</div>
+  <div class="nav-item" onclick="showPage('query')" id="nav-query"><span class="icon">◎</span> Consulta RAG</div>
+  <div class="nav-section" style="margin-top:20px;margin-bottom:8px">Gestão</div>
+  <div class="nav-item" onclick="showPage('applications')" id="nav-applications"><span class="icon">⊞</span> Aplicações</div>
+  <div class="nav-item" onclick="showPage('keys')" id="nav-keys"><span class="icon">⊛</span> Chaves</div>
+  <div class="nav-section" style="margin-top:20px;margin-bottom:8px">Operações</div>
+  <div class="nav-item" onclick="showPage('pipeline')" id="nav-pipeline"><span class="icon">⊙</span> Pipeline</div>
+  <div class="nav-item" onclick="showPage('documents')" id="nav-documents"><span class="icon">⊟</span> Documentos</div>
+  <div class="nav-item" onclick="showPage('audit')" id="nav-audit"><span class="icon">⊕</span> Auditoria</div>
+  <div class="nav-item" onclick="showPage('metrics')" id="nav-metrics"><span class="icon">◬</span> Métricas</div>
+  <div class="nav-item" onclick="showPage('memory')" id="nav-memory"><span class="icon">◈</span> Memória</div>
+</nav>
+<main>
+  <!-- DASHBOARD -->
+  <div class="page active" id="page-dashboard">
+    <h1>Dashboard</h1><p class="page-desc">Estado geral do sistema RAG.</p>
+    <div class="metrics-grid">
+      <div class="metric-card"><div class="metric-label">Estado</div><div class="metric-value" id="dash-status" style="font-size:16px;padding-top:4px">—</div><div class="metric-sub" id="dash-version">—</div></div>
+      <div class="metric-card"><div class="metric-label">Aplicações</div><div class="metric-value" id="dash-apps">—</div><div class="metric-sub">registadas</div></div>
+      <div class="metric-card"><div class="metric-label">Total de Consultas</div><div class="metric-value" id="dash-queries">—</div><div class="metric-sub">últimas 24h</div></div>
+      <div class="metric-card"><div class="metric-label">Pontuação Média</div><div class="metric-value" id="dash-score">—</div><div class="metric-sub">retrieval score</div></div>
+      <div class="metric-card"><div class="metric-label">Latência Média</div><div class="metric-value" id="dash-latency">—</div><div class="metric-sub">milissegundos</div></div>
+      <div class="metric-card"><div class="metric-label">Taxa de Sucesso</div><div class="metric-value" id="dash-success">—</div><div class="metric-sub">% respostas ok</div></div>
+    </div>
+    <div class="card"><div class="card-title">Acesso Rápido</div><div style="display:flex;gap:10px;flex-wrap:wrap"><button class="btn btn-ghost" onclick="showPage('applications')">⊞ Nova Aplicação</button><button class="btn btn-ghost" onclick="showPage('query')">◎ Testar Consulta</button><button class="btn btn-ghost" onclick="showPage('pipeline')">⊙ Executar Pipeline</button><button class="btn btn-ghost" onclick="refreshDashboard()">↺ Actualizar</button></div></div>
+  </div>
+
+  <!-- CONSULTA RAG -->
+  <div class="page" id="page-query">
+    <h1>Consulta RAG</h1><p class="page-desc">Submeta uma questão ao sistema de recuperação e geração de respostas.</p>
+    <div class="card"><div class="card-title">Nova Consulta</div>
+      <div class="form-group" style="margin-bottom:12px"><label>Questão</label><textarea id="query-question" placeholder="Ex: Qual o prazo de matrícula?"></textarea></div>
+      <div class="form-row">
+        <div class="form-group"><label>Chave de Acesso (deixar vazio para usar a chave admin)</label><input type="text" id="query-key" placeholder="rag_... (opcional)"></div>
+        <div class="form-group" style="max-width:200px"><label>ID de Sessão (opcional)</label><input type="text" id="query-session" placeholder="para memória curta"></div>
+      </div>
+      <button class="btn btn-primary" onclick="submitQuery()" id="btn-query">Submeter Consulta</button>
+    </div>
+    <div class="card" id="query-result-card" style="display:none">
+      <div class="card-title">Resposta</div>
+      <div class="answer-block visible" id="query-answer"></div>
+      <div id="query-sources" style="margin-top:12px"></div>
+      <div class="divider"></div>
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <span class="trace-id" id="query-trace"></span>
+        <div style="display:flex;gap:8px"><button class="btn btn-success btn-sm" onclick="sendFeedback('positive')">✓ Útil</button><button class="btn btn-danger btn-sm" onclick="sendFeedback('negative')">✗ Não útil</button></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- APLICAÇÕES -->
+  <div class="page" id="page-applications">
+    <h1>Aplicações</h1><p class="page-desc">Gestão das aplicações clientes com acesso ao sistema RAG.</p>
+    <div class="card"><div class="card-title">Registar Nova Aplicação</div>
+      <div class="form-row">
+        <div class="form-group"><label>Nome</label><input type="text" id="app-name" placeholder="Ex: Portal Académico"></div>
+        <div class="form-group"><label>Descrição (opcional)</label><input type="text" id="app-desc" placeholder="Breve descrição"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Âmbitos</label><select id="app-scopes"><option value="rag:query">rag:query — consulta</option><option value="rag:query,rag:ingest">rag:query + rag:ingest</option><option value="rag:query,rag:admin">rag:query + rag:admin</option></select></div>
+        <div class="form-group" style="max-width:160px"><label>Limite (pedidos/min)</label><input type="number" id="app-rate" value="100" min="1" max="10000"></div>
+      </div>
+      <button class="btn btn-primary" onclick="createApp()">Registar Aplicação</button>
+    </div>
+    <div class="card"><div class="section-header"><div class="card-title" style="margin:0">Aplicações Registadas</div><button class="btn btn-ghost btn-sm" onclick="loadApps()">↺ Actualizar</button></div>
+      <div class="table-wrap"><table><thead><tr><th>Nome</th><th>Âmbitos</th><th>Limite</th><th>Estado</th><th>Criada em</th><th>Acções</th></tr></thead><tbody id="apps-tbody"><tr><td colspan="6" class="empty-state">Carregue para ver as aplicações</td></tr></tbody></table></div>
+    </div>
+  </div>
+
+  <!-- CHAVES -->
+  <div class="page" id="page-keys">
+    <h1>Chaves de Acesso</h1><p class="page-desc">Geração, rotação e revogação de chaves de acesso por aplicação.</p>
+    <div class="card"><div class="card-title">Seleccionar Aplicação</div>
+      <div class="form-row">
+        <div class="form-group"><label>Aplicação</label><select id="keys-app-select"><option value="">— seleccionar —</option></select></div>
+        <div style="display:flex;align-items:flex-end"><button class="btn btn-primary" onclick="generateKey()">Gerar Nova Chave</button></div>
+      </div>
+      <div class="key-reveal" id="key-reveal-box"><strong>⚠ Chave gerada — guarde imediatamente. Não será mostrada novamente.</strong><span id="key-reveal-value"></span></div>
+    </div>
+    <div class="card"><div class="card-title">Chaves Activas</div><div id="keys-hint-list"><div class="empty-state">Seleccione uma aplicação para ver as chaves</div></div></div>
+  </div>
+
+  <!-- PIPELINE -->
+  <div class="page" id="page-pipeline">
+    <h1>Pipeline de Indexação</h1><p class="page-desc">Executa o pipeline completo de segmentação e indexação de documentos no ChromaDB.</p>
+    <div class="metrics-grid" style="grid-template-columns:repeat(5,1fr);margin-bottom:20px" id="pipeline-stats-grid" style="display:none">
+      <div class="metric-card"><div class="metric-label">Total</div><div class="metric-value" id="ps-total">—</div><div class="metric-sub">documentos</div></div>
+      <div class="metric-card"><div class="metric-label">Indexados</div><div class="metric-value good" id="ps-indexed">—</div></div>
+      <div class="metric-card"><div class="metric-label">A processar</div><div class="metric-value warn" id="ps-processing">—</div></div>
+      <div class="metric-card"><div class="metric-label">Pendentes</div><div class="metric-value" id="ps-pending">—</div></div>
+      <div class="metric-card"><div class="metric-label">Erro</div><div class="metric-value bad" id="ps-error">—</div></div>
+    </div>
+    <div class="card"><div class="card-title">Re-indexação Global</div>
+      <p style="color:var(--muted);font-size:13px;margin-bottom:16px">Executa sequencialmente sobre todos os documentos: segmentação → embeddings → ChromaDB.</p>
+      <div style="display:flex;gap:10px;align-items:center">
+        <button class="btn btn-success" onclick="runEmbed()" id="btn-embed">▶ Executar Pipeline</button>
+        <button class="btn btn-ghost" onclick="loadPipelineStatus()">↺ Estado</button>
+        <span id="pipeline-status" style="font-family:var(--mono);font-size:12px;color:var(--muted)"></span>
+      </div>
+    </div>
+    <div class="card" id="pipeline-result" style="display:none"><div class="card-title">Resultado</div><div class="response-box" id="pipeline-output"></div></div>
+  </div>
+
+  <!-- DOCUMENTOS -->
+  <div class="page" id="page-documents">
+    <h1>Documentos PDF</h1><p class="page-desc">Gestão do ciclo de vida dos documentos PDF — upload, indexação, preview e remoção.</p>
+
+    <!-- Upload -->
+    <div class="card">
+      <div class="card-title">Adicionar Documento</div>
+      <div class="form-row" style="align-items:flex-end">
+        <div class="form-group">
+          <label>Ficheiro PDF</label>
+          <input type="file" id="doc-file-input" accept=".pdf" style="background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;padding:8px 12px;width:100%">
+        </div>
+        <div><button class="btn btn-primary" onclick="uploadDocument()" id="btn-upload">⬆ Fazer Upload</button></div>
+      </div>
+      <div id="upload-feedback" style="margin-top:10px;font-family:var(--mono);font-size:12px;display:none"></div>
+    </div>
+
+    <!-- Lista de documentos -->
+    <div class="card">
+      <div class="section-header">
+        <div class="card-title" style="margin:0">Documentos Registados</div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <select id="doc-status-filter" style="background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;padding:5px 10px;font-family:var(--mono)">
+            <option value="">Todos os estados</option>
+            <option value="indexed">indexed</option>
+            <option value="pending">pending</option>
+            <option value="processing">processing</option>
+            <option value="error">error</option>
+          </select>
+          <button class="btn btn-ghost btn-sm" onclick="loadDocuments()">↺ Actualizar</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Ficheiro</th><th>Estado</th><th>Versão</th><th>Chunks</th><th>Páginas</th><th>Tamanho</th><th>Indexado em</th><th>Acções</th></tr></thead>
+          <tbody id="docs-tbody"><tr><td colspan="8" class="empty-state">Carregue para ver os documentos</td></tr></tbody>
+        </table>
+      </div>
+      <div id="docs-pagination" style="display:flex;gap:8px;align-items:center;margin-top:14px;font-family:var(--mono);font-size:12px;color:var(--muted)"></div>
+    </div>
+
+    <!-- Preview modal -->
+    <div id="preview-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:999;display:none;align-items:center;justify-content:center;flex-direction:column;gap:12px">
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:16px;max-width:90vw;max-height:90vh;overflow:auto">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+          <span id="preview-title" style="font-family:var(--mono);font-size:12px;color:var(--muted)"></span>
+          <div style="display:flex;gap:8px;align-items:center">
+            <button class="btn btn-ghost btn-sm" onclick="changePage(-1)">◀</button>
+            <span id="preview-page-info" style="font-family:var(--mono);font-size:12px"></span>
+            <button class="btn btn-ghost btn-sm" onclick="changePage(1)">▶</button>
+            <select id="preview-dpi" onchange="loadPreview()" style="background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:11px;padding:4px 8px;font-family:var(--mono)">
+              <option value="72">72 dpi</option>
+              <option value="150" selected>150 dpi</option>
+              <option value="300">300 dpi</option>
+            </select>
+            <button class="btn btn-ghost btn-sm" onclick="closePreview()">✕ Fechar</button>
+          </div>
+        </div>
+        <div id="preview-container" style="text-align:center;min-width:400px;min-height:200px;display:flex;align-items:center;justify-content:center">
+          <span style="color:var(--muted)">A carregar...</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- AUDITORIA -->
+  <div class="page" id="page-audit">
+    <h1>Log de Auditoria</h1><p class="page-desc">Registo imutável de todas as operações sobre documentos PDF.</p>
+    <div class="card">
+      <div class="section-header" style="margin-bottom:12px">
+        <div class="card-title" style="margin:0">Filtros</div>
+      </div>
+      <div class="form-row" style="align-items:flex-end">
+        <div class="form-group" style="max-width:200px">
+          <label>Acção</label>
+          <select id="audit-action-filter" style="font-family:var(--mono);font-size:12px">
+            <option value="">Todas</option>
+            <option value="upload">upload</option>
+            <option value="delete">delete</option>
+            <option value="replace">replace</option>
+            <option value="reindex">reindex</option>
+            <option value="preview">preview</option>
+            <option value="list">list</option>
+            <option value="get">get</option>
+          </select>
+        </div>
+        <div class="form-group" style="max-width:200px">
+          <label>Resultado</label>
+          <select id="audit-outcome-filter" style="font-family:var(--mono);font-size:12px">
+            <option value="">Todos</option>
+            <option value="success">success</option>
+            <option value="error">error</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>doc_id (opcional)</label>
+          <input type="text" id="audit-docid-filter" placeholder="UUID do documento">
+        </div>
+        <div><button class="btn btn-primary" onclick="loadAuditLogs()">Filtrar</button></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="section-header">
+        <div class="card-title" style="margin:0">Eventos</div>
+        <button class="btn btn-ghost btn-sm" onclick="loadAuditLogs()">↺ Actualizar</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Timestamp</th><th>Acção</th><th>Resultado</th><th>Documento</th><th>Realizado por</th><th>HTTP</th><th>Detalhe</th></tr></thead>
+          <tbody id="audit-tbody"><tr><td colspan="7" class="empty-state">Carregue para ver o log</td></tr></tbody>
+        </table>
+      </div>
+      <div id="audit-pagination" style="display:flex;gap:8px;align-items:center;margin-top:14px;font-family:var(--mono);font-size:12px;color:var(--muted)"></div>
+    </div>
+  </div>
+
+  <!-- MÉTRICAS -->
+  <div class="page" id="page-metrics">
+    <h1>Métricas</h1><p class="page-desc">Análise de utilização e qualidade das respostas do sistema RAG.</p>
+
+    <!-- Filtros -->
+    <div class="card"><div class="card-title">Filtros</div>
+      <div class="form-row" style="align-items:flex-end">
+        <div class="form-group" style="flex:0 0 auto">
+          <label>Granularidade</label>
+          <div class="gran-selector">
+            <button class="gran-btn active" onclick="setGran('realtime',this)">Tempo real</button>
+            <button class="gran-btn" onclick="setGran('hourly',this)">Hora</button>
+            <button class="gran-btn" onclick="setGran('daily',this)">Dia</button>
+            <button class="gran-btn" onclick="setGran('monthly',this)">Mês</button>
+          </div>
+        </div>
+        <div class="form-group" style="max-width:260px">
+          <label>Aplicação (opcional)</label>
+          <select id="metrics-client"><option value="">Todas as aplicações</option></select>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-primary" onclick="loadMetrics()">Carregar</button>
+          <button class="btn btn-ghost" onclick="forceRefresh()" id="btn-refresh" title="Forçar recomputação do snapshot">↺ Refresh</button>
+        </div>
+        <span class="last-updated" id="metrics-updated"></span>
+      </div>
+    </div>
+
+    <!-- KPIs principais -->
+    <div class="metrics-grid" id="metrics-summary" style="display:none">
+      <div class="metric-card"><div class="metric-label">Total de Consultas</div><div class="metric-value" id="m-total">—</div></div>
+      <div class="metric-card"><div class="metric-label">Taxa de Sucesso</div><div class="metric-value" id="m-success">—</div><div class="metric-sub">% respostas ok</div></div>
+      <div class="metric-card"><div class="metric-label">Taxa Fundamentada</div><div class="metric-value" id="m-grounded">—</div><div class="metric-sub">% grounded</div></div>
+      <div class="metric-card"><div class="metric-label">Pontuação Média</div><div class="metric-value" id="m-score">—</div></div>
+      <div class="metric-card"><div class="metric-label">Knowledge Gaps</div><div class="metric-value" id="m-lowscore">—</div><div class="metric-sub">% score &lt; 0.6</div></div>
+      <div class="metric-card"><div class="metric-label">Latência Média</div><div class="metric-value" id="m-latency">—</div><div class="metric-sub">ms</div></div>
+      <div class="metric-card"><div class="metric-label">Hora de Pico</div><div class="metric-value" id="m-peak">—</div><div class="metric-sub">hora de Lisboa</div></div>
+      <div class="metric-card"><div class="metric-label">Clientes Activos</div><div class="metric-value" id="m-clients">—</div><div class="metric-sub">departamentos</div></div>
+      <div class="metric-card"><div class="metric-label">Tokens Entrada</div><div class="metric-value" id="m-tokens-in">—</div></div>
+      <div class="metric-card"><div class="metric-label">Tokens Saída</div><div class="metric-value" id="m-tokens-out">—</div></div>
+    </div>
+
+    <!-- Qualidade — evidence + grounding -->
+    <div class="card" id="metrics-quality-card" style="display:none">
+      <div class="card-title">Qualidade das Respostas</div>
+      <div class="quality-grid">
+        <div>
+          <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:10px;text-transform:uppercase;letter-spacing:.06em">Evidência</div>
+          <div id="metrics-evidence-bars"></div>
+        </div>
+        <div>
+          <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:10px;text-transform:uppercase;letter-spacing:.06em">Grounding</div>
+          <div id="metrics-grounding-bars"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Top categorias -->
+    <div class="card" id="metrics-categories-card" style="display:none">
+      <div class="card-title">Regulamentos Mais Consultados</div>
+      <div id="metrics-cat-bars"></div>
+    </div>
+
+    <!-- Distribuição diária -->
+    <div class="card" id="metrics-daily-card" style="display:none">
+      <div class="card-title">Distribuição Diária</div>
+      <div class="bar-chart" id="metrics-daily-chart"></div>
+    </div>
+
+    <!-- Por categoria (cliente seleccionado) -->
+    <div class="card" id="metrics-client-card" style="display:none">
+      <div class="card-title">Por Categoria</div>
+      <div class="table-wrap"><table><thead><tr><th>Categoria</th><th>Consultas</th><th>Score Médio</th><th>Latência (ms)</th><th>Feedback ✓</th><th>Feedback ✗</th></tr></thead><tbody id="metrics-tbody"></tbody></table></div>
+    </div>
+  </div>
+
+  <!-- MEMÓRIA -->
+  <div class="page" id="page-memory">
+    <h1>Memória Longa</h1><p class="page-desc">Eficácia do sistema no esclarecimento de dúvidas académicas — sem identificação de utilizadores.</p>
+
+    <div class="card"><div class="card-title">Janela Temporal</div>
+      <div class="form-row" style="align-items:flex-end">
+        <div class="form-group" style="max-width:160px"><label>Data início</label><input type="text" id="mem-from" placeholder="YYYY-MM-DD"></div>
+        <div class="form-group" style="max-width:160px"><label>Data fim</label><input type="text" id="mem-to" placeholder="YYYY-MM-DD"></div>
+        <div style="display:flex;gap:8px;align-items:flex-end">
+          <button class="btn btn-primary" onclick="loadMemoryRange()">Carregar</button>
+          <button class="btn btn-ghost" onclick="loadMemoryYesterday()">Ontem</button>
+          <button class="btn btn-ghost" onclick="setMemPreset(7)">7 dias</button>
+          <button class="btn btn-ghost" onclick="setMemPreset(30)">30 dias</button>
+          <button class="btn btn-ghost" onclick="forceMemoryRefresh()" id="btn-mem-refresh">↺ Refresh</button>
+        </div>
+        <span class="last-updated" id="mem-updated"></span>
+      </div>
+    </div>
+
+    <div class="metrics-grid" id="mem-summary" style="display:none">
+      <div class="metric-card"><div class="metric-label">Interacções</div><div class="metric-value" id="mem-total">—</div><div class="metric-sub">total no período</div></div>
+      <div class="metric-card"><div class="metric-label">Autenticadas</div><div class="metric-value" id="mem-auth">—</div><div class="metric-sub">com login</div></div>
+      <div class="metric-card"><div class="metric-label">Anónimas</div><div class="metric-value" id="mem-anon">—</div><div class="metric-sub">sem login</div></div>
+      <div class="metric-card"><div class="metric-label">Alunos únicos</div><div class="metric-value" id="mem-users">—</div></div>
+      <div class="metric-card"><div class="metric-label">Importância Média</div><div class="metric-value" id="mem-importance">—</div><div class="metric-sub">qualidade 0–10</div></div>
+      <div class="metric-card"><div class="metric-label">Gaps de Conteúdo</div><div class="metric-value" id="mem-gaps">—</div><div class="metric-sub">% respostas fracas</div></div>
+      <div class="metric-card"><div class="metric-label">Sem Fontes</div><div class="metric-value" id="mem-nosrc">—</div><div class="metric-sub">% sem documentos</div></div>
+      <div class="metric-card"><div class="metric-label">Não Classificadas</div><div class="metric-value" id="mem-uncat">—</div><div class="metric-sub" id="mem-uncat-rate">perguntas sem tópico</div></div>
+    </div>
+
+    <!-- Tópicos com clarification_rate -->
+    <div class="card" id="mem-topics-card" style="display:none">
+      <div class="card-title">Tópicos — Volume e Taxa de Esclarecimento</div>
+      <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:12px">
+        Taxa de esclarecimento = % de interacções com resposta fundamentada (fontes + qualidade alta)
+      </div>
+      <div id="mem-topics-list"></div>
+    </div>
+
+    <!-- Timeline semanal por tópico -->
+    <div class="card" id="mem-timeline-card" style="display:none">
+      <div class="card-title">Evolução Temporal por Tópico</div>
+      <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:12px">
+        Volume semanal — permite identificar sazonalidade (épocas de matrículas, exames, propinas)
+      </div>
+      <div class="timeline-wrap" id="mem-timeline"></div>
+    </div>
+
+    <!-- Gaps de conteúdo -->
+    <div class="card" id="mem-weak-card" style="display:none">
+      <div class="card-title">Gaps de Conteúdo — Tópicos Mal Cobertos pelo Corpus</div>
+      <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:12px">
+        Tópicos com volume significativo mas respostas consistentemente fracas — indicam lacunas nos regulamentos indexados
+      </div>
+      <div id="mem-weak-list"></div>
+    </div>
+
+    <!-- Documentos -->
+    <div class="card" id="mem-sources-card" style="display:none">
+      <div class="card-title">Regulamentos Mais Consultados</div>
+      <div id="mem-sources-list"></div>
+    </div>
+
+    <!-- Breakdown diário -->
+    <div class="card" id="mem-daily-card" style="display:none">
+      <div class="card-title">Detalhe por Dia</div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Data</th><th>Total</th><th>Autenticadas</th><th>Anónimas</th><th>Importância Média</th></tr></thead>
+        <tbody id="mem-daily-tbody"></tbody>
+      </table></div>
+    </div>
+  </div>
+</main>
+</div>
+<script>
+let BASE='http://127.0.0.1:8000', ADMIN_KEY='', APPS=[], LAST_TRACE_ID=null, CURRENT_GRAN='realtime';
+
+function apiUrl(p){return BASE+p}
+function headers(k){const key=k||ADMIN_KEY;return{'Content-Type':'application/json','Authorization':'Bearer '+key}}
+async function api(method,path,body,key){const opts={method,headers:headers(key)};if(body)opts.body=JSON.stringify(body);const r=await fetch(apiUrl(path),opts);const data=await r.json().catch(()=>({}));return{ok:r.ok,status:r.status,data}}
+function fmt(o){return JSON.stringify(o,null,2)}
+function fmtDate(iso){if(!iso)return'—';return new Date(iso).toLocaleDateString('pt-PT',{day:'2-digit',month:'2-digit',year:'numeric'})}
+function fmtPct(v){if(v==null||v==='—')return'—';return(v*100).toFixed(1)+'%'}
+function fmtScore(v){if(v==null||v==='—')return'—';return v.toFixed(2)}
+
+function showPage(name){
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+  document.getElementById('page-'+name).classList.add('active');
+  document.getElementById('nav-'+name).classList.add('active');
+  if(name==='applications')loadApps();
+  if(name==='keys')loadAppsForKeys();
+  if(name==='metrics')loadAppsForMetrics();
+  if(name==='dashboard')refreshDashboard();
+  if(name==='memory'){initMemoryPage();}
+}
+
+function setGran(gran,btn){
+  CURRENT_GRAN=gran;
+  document.querySelectorAll('.gran-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+}
+
+async function connect(){
+  BASE=document.getElementById('api-url-input').value.replace(/\/$/,'');
+  ADMIN_KEY=document.getElementById('key-input').value.trim();
+  const badge=document.getElementById('status-badge');
+  badge.className='';badge.textContent='...';
+  try{
+    const r=await fetch(apiUrl('/v1/health'));
+    const d=await r.json();
+    badge.className='ok';badge.textContent=d.status+' v'+d.version;
+    refreshDashboard();
+  }catch(e){badge.className='err';badge.textContent='erro'}
+}
+
+async function refreshDashboard(){
+  try{
+    const h=await fetch(apiUrl('/v1/health'));
+    const hd=await h.json();
+    document.getElementById('dash-status').innerHTML='<span style="color:var(--green)">● operacional</span>';
+    document.getElementById('dash-version').textContent='v'+hd.version;
+  }catch(e){document.getElementById('dash-status').innerHTML='<span style="color:var(--red)">● indisponível</span>'}
+  if(!ADMIN_KEY)return;
+  try{const{data}=await api('GET','/v1/applications');document.getElementById('dash-apps').textContent=data.total??'—'}catch(e){}
+  try{
+    const{data}=await api('GET','/v1/metrics/signals?granularity=daily');
+    document.getElementById('dash-queries').textContent=data.total_queries??'—';
+    document.getElementById('dash-score').textContent=data.avg_score!=null?data.avg_score.toFixed(2):'—';
+    document.getElementById('dash-latency').textContent=data.avg_latency_ms!=null?Math.round(data.avg_latency_ms):'—';
+    document.getElementById('dash-success').textContent=data.success_rate!=null?fmtPct(data.success_rate):'—';
+  }catch(e){}
+}
+
+async function submitQuery(){
+  const q=document.getElementById('query-question').value.trim();if(!q)return;
+  const btn=document.getElementById('btn-query');
+  const customKey=document.getElementById('query-key').value.trim();
+  const session=document.getElementById('query-session').value.trim();
+  const body={question:q};if(session)body.session_id=session;
+  btn.innerHTML='<span class="loading"></span> A processar...';btn.disabled=true;
+  try{
+    const{ok,data}=await api('POST','/v1/query',body,customKey||ADMIN_KEY);
+    document.getElementById('query-result-card').style.display='block';
+    document.getElementById('query-answer').textContent=data.answer||'';
+    LAST_TRACE_ID=data.trace_id;
+    document.getElementById('query-trace').textContent='trace: '+(data.trace_id||'');
+    const srcs=document.getElementById('query-sources');srcs.innerHTML='';
+    if(data.sources&&data.sources.length){srcs.innerHTML='<div style="font-size:11px;color:var(--muted);margin-bottom:6px;font-family:var(--mono)">FONTES</div>'+data.sources.map(s=>`<span class="hint-tag" style="margin-right:6px;margin-bottom:4px;display:inline-block">${s}</span>`).join('')}
+    if(session)document.getElementById('query-session').value=data.session_id||'';
+  }catch(e){
+    document.getElementById('query-result-card').style.display='block';
+    document.getElementById('query-answer').textContent='Erro: '+e.message;
+  }
+  btn.innerHTML='Submeter Consulta';btn.disabled=false;
+}
+
+async function sendFeedback(rating){
+  if(!LAST_TRACE_ID)return;
+  await api('POST','/v1/feedback',{trace_id:LAST_TRACE_ID,rating});
+  const btn=rating==='positive'?document.querySelector('.btn-success.btn-sm'):document.querySelector('.btn-danger.btn-sm');
+  btn.textContent='✓ Registado';
+  setTimeout(()=>{document.querySelector('.btn-success.btn-sm').textContent='✓ Útil';document.querySelector('.btn-danger.btn-sm').textContent='✗ Não útil'},2000);
+}
+
+async function loadApps(){
+  const{ok,data}=await api('GET','/v1/applications');if(!ok)return;
+  APPS=data.items||[];
+  const tbody=document.getElementById('apps-tbody');
+  if(!APPS.length){tbody.innerHTML='<tr><td colspan="6" class="empty-state">Nenhuma aplicação registada</td></tr>';return}
+  tbody.innerHTML=APPS.map(a=>`<tr><td><strong>${a.name}</strong>${a.description?`<div style="font-size:11px;color:var(--muted)">${a.description}</div>`:''}</td><td>${a.scopes.map(s=>`<span class="badge badge-blue">${s}</span>`).join(' ')}</td><td><span class="badge badge-amber">${a.rate_limit}/min</span></td><td><span class="badge ${a.active?'badge-green':'badge-red'}">${a.active?'activa':'inactiva'}</span></td><td style="color:var(--muted)">${fmtDate(a.created_at)}</td><td class="actions"><button class="btn btn-ghost btn-sm" onclick="deleteApp('${a.id}','${a.name}')">✕ Remover</button></td></tr>`).join('');
+}
+
+async function createApp(){
+  const name=document.getElementById('app-name').value.trim();if(!name)return;
+  const desc=document.getElementById('app-desc').value.trim();
+  const scopes=document.getElementById('app-scopes').value.split(',');
+  const rate=parseInt(document.getElementById('app-rate').value);
+  const body={name,scopes,rate_limit:rate};if(desc)body.description=desc;
+  const{ok,data}=await api('POST','/v1/applications',body);
+  if(ok){document.getElementById('app-name').value='';document.getElementById('app-desc').value='';loadApps();}
+  else{alert('Erro: '+(data.message||'falha ao criar aplicação'));}
+}
+
+async function deleteApp(id,name){
+  if(!confirm(`Remover a aplicação "${name}"?`))return;
+  const{ok}=await api('DELETE','/v1/applications/'+id);if(ok)loadApps();
+}
+
+async function loadAppsForKeys(){
+  const{ok,data}=await api('GET','/v1/applications');if(!ok)return;
+  APPS=data.items||[];
+  const sel=document.getElementById('keys-app-select');
+  sel.innerHTML='<option value="">— seleccionar —</option>'+APPS.map(a=>`<option value="${a.id}">${a.name}</option>`).join('');
+}
+
+async function generateKey(){
+  const appId=document.getElementById('keys-app-select').value;
+  if(!appId)return alert('Seleccione uma aplicação.');
+  const{ok,data}=await api('POST',`/v1/applications/${appId}/keys`);
+  if(ok){
+    const box=document.getElementById('key-reveal-box');
+    document.getElementById('key-reveal-value').textContent=data.key;
+    box.classList.add('visible');loadKeysForApp(appId);
+  }
+}
+
+async function loadKeysForApp(appId){
+  if(!appId)return;
+  const list=document.getElementById('keys-hint-list');
+  list.innerHTML=`<div style="color:var(--muted);font-size:12px;padding:8px 0">ID da aplicação: <span class="hint-tag">${appId}</span></div><div style="color:var(--muted);font-size:12px;padding:8px 0">Para ver as chaves activas, utilize os hints apresentados após a geração de cada chave.</div>`;
+}
+
+document.addEventListener('change',function(e){
+  if(e.target.id==='keys-app-select'){document.getElementById('key-reveal-box').classList.remove('visible');loadKeysForApp(e.target.value);}
+});
+
+async function runEmbed(){
+  const btn=document.getElementById('btn-embed');const status=document.getElementById('pipeline-status');
+  btn.innerHTML='<span class="loading"></span> A executar...';btn.disabled=true;
+  status.textContent='Pipeline em execução — pode demorar alguns minutos...';
+  const result=document.getElementById('pipeline-result');const output=document.getElementById('pipeline-output');result.style.display='none';
+  try{
+    const{ok,data}=await api('POST','/v1/pipeline/embed');result.style.display='block';
+    if(ok){output.className='response-box';output.textContent=fmt(data);status.textContent='✓ Concluído — '+data.embedded_record_count+' registos indexados';}
+    else{output.className='response-box err';output.textContent=fmt(data);status.textContent='✗ Erro na execução';}
+  }catch(e){result.style.display='block';output.className='response-box err';output.textContent=e.message;status.textContent='✗ Erro de ligação';}
+  btn.innerHTML='▶ Executar Pipeline';btn.disabled=false;
+}
+
+// ── Pipeline status ────────────────────────────────────────────────────────
+async function loadPipelineStatus(){
+  const{ok,data}=await api('GET','/v1/pipeline/status');if(!ok)return;
+  document.getElementById('pipeline-stats-grid').style.display='grid';
+  document.getElementById('ps-total').textContent=data.total_documents??'—';
+  const iv=data.indexed??0;
+  document.getElementById('ps-indexed').textContent=iv;
+  document.getElementById('ps-indexed').className='metric-value'+(iv>0?' good':'');
+  const pv=data.processing??0;
+  document.getElementById('ps-processing').textContent=pv;
+  document.getElementById('ps-processing').className='metric-value'+(pv>0?' warn':'');
+  document.getElementById('ps-pending').textContent=data.pending??0;
+  const ev=data.error??0;
+  document.getElementById('ps-error').textContent=ev;
+  document.getElementById('ps-error').className='metric-value'+(ev>0?' bad':'');
+}
+
+// ── Documentos ────────────────────────────────────────────────────────────
+let DOC_PAGE=1;
+const DOC_PAGE_SIZE=20;
+
+function statusBadge(s){
+  const map={indexed:'badge-green',pending:'badge-amber',processing:'badge-blue',error:'badge-red',deleted:'badge-red'};
+  return`<span class="badge ${map[s]||'badge-blue'}">${s}</span>`;
+}
+function fmtBytes(b){if(!b)return'—';if(b<1024)return b+'B';if(b<1048576)return(b/1024).toFixed(1)+'KB';return(b/1048576).toFixed(1)+'MB';}
+
+async function loadDocuments(){
+  const status=document.getElementById('doc-status-filter').value;
+  const qs=new URLSearchParams({page:DOC_PAGE,page_size:DOC_PAGE_SIZE});
+  if(status)qs.set('status',status);
+  const{ok,data}=await api('GET','/v1/pipeline/documents?'+qs);
+  if(!ok)return;
+  const tbody=document.getElementById('docs-tbody');
+  const items=data.items||[];
+  if(!items.length){tbody.innerHTML='<tr><td colspan="8" class="empty-state">Nenhum documento encontrado</td></tr>';return;}
+  tbody.innerHTML=items.map(d=>`
+    <tr>
+      <td><strong style="font-size:13px">${d.filename}</strong><div class="trace-id" style="margin-top:2px">${d.doc_id}</div></td>
+      <td>${statusBadge(d.status)}${d.error_detail?`<div style="font-size:10px;color:var(--red);margin-top:3px">${d.error_detail.substring(0,60)}</div>`:''}</td>
+      <td><span class="badge badge-blue">v${d.version}</span></td>
+      <td style="font-family:var(--mono)">${d.chunk_count??'—'}</td>
+      <td style="font-family:var(--mono)">${d.page_count??'—'}</td>
+      <td style="font-family:var(--mono);color:var(--muted)">${fmtBytes(d.file_size)}</td>
+      <td style="color:var(--muted)">${d.indexed_at?fmtDate(d.indexed_at):'—'}</td>
+      <td class="actions">
+        ${d.status==='indexed'?`<button class="btn btn-ghost btn-sm" onclick="openPreview('${d.doc_id}','${d.filename}',${d.page_count||1})">👁 Preview</button>`:''}
+        <button class="btn btn-ghost btn-sm" onclick="reindexDocument('${d.doc_id}','${d.filename}')">↺ Re-indexar</button>
+        ${d.status!=='deleted'?`<button class="btn btn-danger btn-sm" onclick="deleteDocument('${d.doc_id}','${d.filename}')">✕</button>`:''}
+      </td>
+    </tr>`).join('');
+  // Paginação
+  const total=data.total||0;
+  const pages=Math.ceil(total/DOC_PAGE_SIZE);
+  const pag=document.getElementById('docs-pagination');
+  pag.innerHTML=`<span>${total} documentos</span>`+
+    (DOC_PAGE>1?`<button class="btn btn-ghost btn-sm" onclick="DOC_PAGE--;loadDocuments()">◀</button>`:'<button class="btn btn-ghost btn-sm" disabled>◀</button>')+
+    `<span>Pág. ${DOC_PAGE}/${pages||1}</span>`+
+    (DOC_PAGE<pages?`<button class="btn btn-ghost btn-sm" onclick="DOC_PAGE++;loadDocuments()">▶</button>`:'<button class="btn btn-ghost btn-sm" disabled>▶</button>');
+}
+
+async function uploadDocument(){
+  const input=document.getElementById('doc-file-input');
+  const fb=document.getElementById('upload-feedback');
+  if(!input.files||!input.files[0])return alert('Seleccione um ficheiro PDF.');
+  const file=input.files[0];
+  const btn=document.getElementById('btn-upload');
+  btn.innerHTML='<span class="loading"></span> A enviar...';btn.disabled=true;
+  fb.style.display='block';fb.style.color='var(--muted)';fb.textContent='A enviar e a iniciar indexação...';
+  const formData=new FormData();formData.append('file',file);
+  try{
+    const r=await fetch(apiUrl('/v1/pipeline/documents'),{method:'POST',headers:{Authorization:'Bearer '+ADMIN_KEY},body:formData});
+    const d=await r.json();
+    if(r.ok){
+      fb.style.color='var(--green)';fb.textContent='✓ Upload aceite — doc_id: '+d.doc_id+' (indexação em curso)';
+      input.value='';DOC_PAGE=1;loadDocuments();
+    }else{fb.style.color='var(--red)';fb.textContent='✗ Erro: '+(d.detail||JSON.stringify(d));}
+  }catch(e){fb.style.color='var(--red)';fb.textContent='✗ Erro de ligação: '+e.message;}
+  btn.innerHTML='⬆ Fazer Upload';btn.disabled=false;
+}
+
+async function deleteDocument(docId,filename){
+  if(!confirm(`Remover "${filename}" e todos os chunks do ChromaDB?`))return;
+  const{ok,data}=await api('DELETE','/v1/pipeline/documents/'+docId);
+  if(ok){loadDocuments();loadPipelineStatus();}
+  else alert('Erro: '+(data.detail||'falha ao remover'));
+}
+
+async function reindexDocument(docId,filename){
+  if(!confirm(`Re-indexar "${filename}"? Os chunks actuais serão substituídos.`))return;
+  const{ok,data}=await api('POST','/v1/pipeline/documents/'+docId+'/reindex');
+  if(ok){loadDocuments();}
+  else alert('Erro: '+(data.detail||'falha ao re-indexar'));
+}
+
+// ── Preview ───────────────────────────────────────────────────────────────
+let PREVIEW_DOC_ID='';let PREVIEW_FILENAME='';let PREVIEW_PAGE=1;let PREVIEW_PAGE_COUNT=1;
+
+function openPreview(docId,filename,pageCount){
+  PREVIEW_DOC_ID=docId;PREVIEW_FILENAME=filename;PREVIEW_PAGE=1;PREVIEW_PAGE_COUNT=pageCount||1;
+  document.getElementById('preview-modal').style.display='flex';
+  loadPreview();
+}
+function closePreview(){document.getElementById('preview-modal').style.display='none';}
+function changePage(delta){
+  PREVIEW_PAGE=Math.max(1,Math.min(PREVIEW_PAGE_COUNT,PREVIEW_PAGE+delta));loadPreview();
+}
+async function loadPreview(){
+  const dpi=document.getElementById('preview-dpi').value;
+  document.getElementById('preview-title').textContent=PREVIEW_FILENAME;
+  document.getElementById('preview-page-info').textContent=`Pág. ${PREVIEW_PAGE} / ${PREVIEW_PAGE_COUNT}`;
+  const container=document.getElementById('preview-container');
+  container.innerHTML='<span style="color:var(--muted)">A carregar...</span>';
+  try{
+    const r=await fetch(apiUrl(`/v1/pipeline/documents/${PREVIEW_DOC_ID}/pages/${PREVIEW_PAGE}/preview?dpi=${dpi}`),
+      {headers:{Authorization:'Bearer '+ADMIN_KEY}});
+    if(!r.ok){container.innerHTML='<span style="color:var(--red)">Erro ao carregar página</span>';return;}
+    const blob=await r.blob();
+    const url=URL.createObjectURL(blob);
+    container.innerHTML=`<img src="${url}" style="max-width:100%;border-radius:4px;box-shadow:0 4px 20px rgba(0,0,0,.5)" alt="Página ${PREVIEW_PAGE}">`;
+  }catch(e){container.innerHTML='<span style="color:var(--red)">Erro: '+e.message+'</span>';}
+}
+
+// ── Auditoria ─────────────────────────────────────────────────────────────
+let AUDIT_PAGE=1;
+const AUDIT_PAGE_SIZE=50;
+
+function auditActionBadge(a){
+  const map={upload:'badge-green',delete:'badge-red',replace:'badge-amber',reindex:'badge-blue',preview:'badge-blue',list:'',get:''};
+  return`<span class="badge ${map[a]||''}">${a}</span>`;
+}
+function auditOutcomeBadge(o){
+  return o==='success'
+    ?'<span class="badge badge-green">success</span>'
+    :'<span class="badge badge-red">error</span>';
+}
+
+async function loadAuditLogs(){
+  const action=document.getElementById('audit-action-filter').value;
+  const outcome=document.getElementById('audit-outcome-filter').value;
+  const docId=document.getElementById('audit-docid-filter').value.trim();
+  const qs=new URLSearchParams({page:AUDIT_PAGE,page_size:AUDIT_PAGE_SIZE});
+  if(action)qs.set('action',action);
+  if(outcome)qs.set('outcome',outcome);
+  if(docId)qs.set('doc_id',docId);
+  const{ok,data}=await api('GET','/v1/pipeline/audit?'+qs);
+  if(!ok)return;
+  const tbody=document.getElementById('audit-tbody');
+  const items=data.items||[];
+  if(!items.length){tbody.innerHTML='<tr><td colspan="7" class="empty-state">Nenhum evento encontrado</td></tr>';return;}
+  tbody.innerHTML=items.map(e=>`
+    <tr>
+      <td style="font-family:var(--mono);font-size:11px;white-space:nowrap">${fmtDate(e.timestamp)}</td>
+      <td>${auditActionBadge(e.action)}</td>
+      <td>${auditOutcomeBadge(e.outcome)}</td>
+      <td><div style="font-size:12px">${e.filename||'—'}</div><div class="trace-id" style="margin-top:2px">${e.doc_id||''}</div></td>
+      <td style="font-family:var(--mono);font-size:11px">${e.performed_by||'—'}</td>
+      <td><span class="badge ${e.http_status<400?'badge-green':e.http_status<500?'badge-amber':'badge-red'}">${e.http_status}</span></td>
+      <td style="font-family:var(--mono);font-size:11px;color:var(--red)">${e.error_detail||''}</td>
+    </tr>`).join('');
+  const total=data.total||0;
+  const pages=Math.ceil(total/AUDIT_PAGE_SIZE);
+  const pag=document.getElementById('audit-pagination');
+  pag.innerHTML=`<span>${total} eventos</span>`+
+    (AUDIT_PAGE>1?`<button class="btn btn-ghost btn-sm" onclick="AUDIT_PAGE--;loadAuditLogs()">◀</button>`:'<button class="btn btn-ghost btn-sm" disabled>◀</button>')+
+    `<span>Pág. ${AUDIT_PAGE}/${pages||1}</span>`+
+    (AUDIT_PAGE<pages?`<button class="btn btn-ghost btn-sm" onclick="AUDIT_PAGE++;loadAuditLogs()">▶</button>`:'<button class="btn btn-ghost btn-sm" disabled>▶</button>');
+}
+
+async function loadAppsForMetrics(){
+  const{ok,data}=await api('GET','/v1/applications');if(!ok)return;
+  const sel=document.getElementById('metrics-client');
+  sel.innerHTML='<option value="">Todas as aplicações</option>'+(data.items||[]).map(a=>`<option value="${a.id}">${a.name}</option>`).join('');
+}
+
+async function forceRefresh(){
+  const btn=document.getElementById('btn-refresh');
+  btn.innerHTML='<span class="loading"></span>';btn.disabled=true;
+  await api('POST',`/v1/metrics/refresh?granularity=${CURRENT_GRAN}`);
+  await loadMetrics();
+  btn.innerHTML='↺ Refresh';btn.disabled=false;
+}
+
+function colorForScore(v){if(v>=0.7)return'good';if(v>=0.4)return'warn';return'bad';}
+function colorForSuccess(v){if(v>=0.9)return'good';if(v>=0.6)return'warn';return'bad';}
+function colorForLowScore(v){if(v<=0.1)return'good';if(v<=0.3)return'warn';return'bad';}
+function colorForGrounded(v){if(v>=0.8)return'good';if(v>=0.5)return'warn';return'bad';}
+
+function renderDistBars(containerId, rows){
+  const total = rows.reduce((s,r)=>s+r.count,0)||1;
+  document.getElementById(containerId).innerHTML = rows.map(r=>`
+    <div class="dist-row">
+      <div class="dist-label">${r.label}</div>
+      <div class="dist-bar-wrap"><div class="${r.cls}" style="width:${(r.count/total*100).toFixed(1)}%"></div></div>
+      <div class="dist-count">${r.count}</div>
+    </div>`).join('');
+}
+
+async function loadMetrics(){
+  const client=document.getElementById('metrics-client').value;
+  const endpoint=client
+    ?`/v1/metrics/signals/${client}`
+    :`/v1/metrics/signals?granularity=${CURRENT_GRAN}`;
+  const{ok,data}=await api('GET',endpoint);if(!ok)return;
+
+  document.getElementById('metrics-summary').style.display='grid';
+  document.getElementById('metrics-updated').textContent=data.generated_at?'actualizado: '+new Date(data.generated_at).toLocaleTimeString('pt-PT'):'';
+
+  if(client){
+    ['m-total','m-success','m-grounded','m-score','m-lowscore','m-latency','m-peak','m-clients','m-tokens-in','m-tokens-out'].forEach(id=>document.getElementById(id).textContent='—');
+    document.getElementById('metrics-quality-card').style.display='none';
+    document.getElementById('metrics-categories-card').style.display='none';
+    document.getElementById('metrics-daily-card').style.display='none';
+    document.getElementById('metrics-client-card').style.display='block';
+    const cats=data.categories||[];
+    const tbody=document.getElementById('metrics-tbody');
+    tbody.innerHTML=cats.length
+      ?cats.map(c=>`<tr><td><span class="badge badge-blue">${c.category}</span></td><td>${c.total_queries}</td><td>${c.avg_score.toFixed(2)}</td><td>${Math.round(c.avg_latency_ms)}</td><td><span class="badge badge-green">${c.positive_feedback}</span></td><td><span class="badge badge-red">${c.negative_feedback}</span></td></tr>`).join('')
+      :'<tr><td colspan="6" class="empty-state">Sem dados para o período seleccionado</td></tr>';
+  } else {
+    document.getElementById('metrics-client-card').style.display='none';
+
+    document.getElementById('m-total').textContent=data.total_queries??0;
+
+    const elSuccess=document.getElementById('m-success');
+    elSuccess.textContent=fmtPct(data.success_rate);
+    elSuccess.className='metric-value '+(data.success_rate!=null?colorForSuccess(data.success_rate):'');
+
+    const elGrounded=document.getElementById('m-grounded');
+    elGrounded.textContent=fmtPct(data.grounded_rate);
+    elGrounded.className='metric-value '+(data.grounded_rate!=null?colorForGrounded(data.grounded_rate):'');
+
+    const elScore=document.getElementById('m-score');
+    elScore.textContent=fmtScore(data.avg_score);
+    elScore.className='metric-value '+(data.avg_score!=null?colorForScore(data.avg_score):'');
+
+    const elLow=document.getElementById('m-lowscore');
+    elLow.textContent=fmtPct(data.low_score_rate);
+    elLow.className='metric-value '+(data.low_score_rate!=null?colorForLowScore(data.low_score_rate):'');
+
+    document.getElementById('m-latency').textContent=data.avg_latency_ms!=null?Math.round(data.avg_latency_ms):'—';
+    document.getElementById('m-peak').textContent=data.peak_hour_lisbon!=null?data.peak_hour_lisbon+'h':'—';
+    document.getElementById('m-clients').textContent=data.active_clients??'—';
+    document.getElementById('m-tokens-in').textContent=data.total_tokens_input??'—';
+    document.getElementById('m-tokens-out').textContent=data.total_tokens_output??'—';
+
+    // Qualidade — evidence + grounding
+    const ev=data.evidence_distribution;
+    const gr=data.grounding_distribution;
+    const qualityCard=document.getElementById('metrics-quality-card');
+    if(ev||gr){
+      qualityCard.style.display='block';
+      if(ev){
+        renderDistBars('metrics-evidence-bars',[
+          {label:'Forte',    count:ev.strong||0, cls:'dist-bar-green'},
+          {label:'Fraca',    count:ev.weak||0,   cls:'dist-bar-amber'},
+        ]);
+      }
+      if(gr){
+        renderDistBars('metrics-grounding-bars',[
+          {label:'Alinhado', count:gr.strong_alignment||0, cls:'dist-bar-green'},
+          {label:'Mismatch', count:gr.mismatch||0,         cls:'dist-bar-red'},
+        ]);
+      }
+    } else {qualityCard.style.display='none';}
+
+    // Top categorias
+    const cats=data.top_categories||[];
+    const catCard=document.getElementById('metrics-categories-card');
+    if(cats.length){
+      catCard.style.display='block';
+      const maxCount=Math.max(...cats.map(c=>c.count),1);
+      document.getElementById('metrics-cat-bars').innerHTML=cats.map(c=>`
+        <div class="cat-row">
+          <div class="cat-name">${c.category}</div>
+          <div class="cat-bar-wrap"><div class="cat-bar" style="width:${(c.count/maxCount*100).toFixed(1)}%"></div></div>
+          <div class="cat-count">${c.count}</div>
+        </div>`).join('');
+    } else {catCard.style.display='none';}
+
+    // Distribuição diária
+    const daily=data.queries_by_day||{};
+    const dailyCard=document.getElementById('metrics-daily-card');
+    const keys=Object.keys(daily).sort();
+    if(keys.length&&(CURRENT_GRAN==='daily'||CURRENT_GRAN==='monthly')){
+      dailyCard.style.display='block';
+      const maxVal=Math.max(...Object.values(daily),1);
+      document.getElementById('metrics-daily-chart').innerHTML=keys.map(k=>`
+        <div class="bar-col">
+          <div class="bar" style="height:${(daily[k]/maxVal*70).toFixed(0)}px" title="${k}: ${daily[k]}"></div>
+          <div class="bar-label">${k.slice(5)}</div>
+        </div>`).join('');
+    } else {dailyCard.style.display='none';}
+  }
+}
+
+
+// ── Memória Longa ─────────────────────────────────────────────────────────────
+
+function todayStr(){return new Date().toISOString().slice(0,10)}
+function daysAgoStr(n){const d=new Date();d.setDate(d.getDate()-n);return d.toISOString().slice(0,10)}
+
+// Carregar intervalo por period string — simples e determinístico
+async function loadMemoryRange(){
+  const from=document.getElementById('mem-from').value.trim();
+  const to=document.getElementById('mem-to').value.trim();
+  if(!from||!to){alert('Preencha as datas.');return;}
+  const{ok,data}=await api('GET',`/v1/memory-reports/range?from_dt=${encodeURIComponent(from+'T00:00:00Z')}&to_dt=${encodeURIComponent(to+'T23:59:59Z')}`);
+  if(!ok||!data){document.getElementById('mem-updated').textContent='erro ao carregar';return;}
+  renderMemoryReport(data, from!==to);
+  document.getElementById('mem-updated').textContent=from===to?'dia: '+from:from+' → '+to;
+}
+
+// Ontem — snapshot do dia anterior
+async function loadMemoryYesterday(){
+  const period=daysAgoStr(1);
+  document.getElementById('mem-from').value=period;
+  document.getElementById('mem-to').value=period;
+  await loadMemoryRange();
+}
+
+// Preset N dias — inclui hoje
+function setMemPreset(days){
+  document.getElementById('mem-from').value=daysAgoStr(days);
+  document.getElementById('mem-to').value=todayStr();
+  loadMemoryRange();
+}
+
+// Refresh — recomputa hoje e mostra
+async function forceMemoryRefresh(){
+  const btn=document.getElementById('btn-mem-refresh');
+  btn.innerHTML='<span class="loading"></span>';btn.disabled=true;
+  await api('POST','/v1/memory-reports/refresh');
+  document.getElementById('mem-from').value=todayStr();
+  document.getElementById('mem-to').value=todayStr();
+  await loadMemoryRange();
+  btn.innerHTML='↺ Refresh';btn.disabled=false;
+}
+
+// Ao abrir a página — mostra hoje (com refresh automático se não houver snapshot)
+async function initMemoryPage(){
+  const today=todayStr();
+  document.getElementById('mem-from').value=today;
+  document.getElementById('mem-to').value=today;
+  const{ok,data}=await api('GET',`/v1/memory-reports/daily/${today}`);
+  if(ok && data && data.total_interactions>0){
+    renderMemoryReport(data,false);
+    document.getElementById('mem-updated').textContent='dia: '+today+' (dados parciais)';
+  } else {
+    // Sem snapshot de hoje — recomputa automaticamente
+    document.getElementById('mem-updated').textContent='a calcular...';
+    await api('POST','/v1/memory-reports/refresh');
+    const r2=await api('GET',`/v1/memory-reports/daily/${today}`);
+    if(r2.ok && r2.data && r2.data.total_interactions>0){
+      renderMemoryReport(r2.data,false);
+      document.getElementById('mem-updated').textContent='dia: '+today+' (dados parciais)';
+    } else {
+      document.getElementById('mem-updated').textContent='sem dados ainda hoje';
+    }
+  }
+}
+
+function clarBadge(rate){
+  if(rate>=0.7)return`<span class="badge badge-clarified">${fmtPct(rate)}</span>`;
+  if(rate>=0.4)return`<span class="badge badge-partial">${fmtPct(rate)}</span>`;
+  return`<span class="badge badge-weak-clar">${fmtPct(rate)}</span>`;
+}
+
+function renderMemoryReport(data, showTimeline){
+  const total=data.total_interactions||0;
+  document.getElementById('mem-summary').style.display='grid';
+  document.getElementById('mem-total').textContent=total;
+  document.getElementById('mem-auth').textContent=data.authenticated_count??'—';
+  document.getElementById('mem-anon').textContent=data.anonymous_count??'—';
+  document.getElementById('mem-users').textContent=data.unique_users??'—';
+
+  const imp=data.avg_importance;
+  const elImp=document.getElementById('mem-importance');
+  elImp.textContent=imp!=null?imp.toFixed(1):'—';
+  elImp.className='metric-value '+(imp!=null?(imp>=6?'good':imp>=4?'warn':'bad'):'');
+
+  const elGap=document.getElementById('mem-gaps');
+  const gapR=data.low_importance_rate;
+  elGap.textContent=gapR!=null?fmtPct(gapR):'—';
+  elGap.className='metric-value '+(gapR!=null?(gapR<=0.1?'good':gapR<=0.3?'warn':'bad'):'');
+
+  const elNosrc=document.getElementById('mem-nosrc');
+  const nosrcR=data.no_sources_rate;
+  elNosrc.textContent=nosrcR!=null?fmtPct(nosrcR):'—';
+  elNosrc.className='metric-value '+(nosrcR!=null?(nosrcR<=0.05?'good':nosrcR<=0.15?'warn':'bad'):'');
+
+  // Não classificadas
+  const uncat=data.uncategorized_count||0;
+  const elUncat=document.getElementById('mem-uncat');
+  elUncat.textContent=uncat;
+  elUncat.className='metric-value '+(uncat===0?'good':uncat<=10?'warn':'bad');
+  document.getElementById('mem-uncat-rate').textContent=total?fmtPct(data.uncategorized_rate||0)+' do total':'perguntas sem tópico';
+
+  // ── Tópicos com clarification_rate ────────────────────────────────────────
+  const topics=data.top_topics||[];
+  const topCard=document.getElementById('mem-topics-card');
+  if(topics.length){
+    topCard.style.display='block';
+    const maxCount=Math.max(...topics.map(t=>t.count),1);
+    document.getElementById('mem-topics-list').innerHTML=`
+      <div style="display:grid;grid-template-columns:160px 1fr 60px 100px;gap:8px;align-items:center;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--border)">
+        <div style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase">Tópico</div>
+        <div style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase">Volume</div>
+        <div style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;text-align:right">Qtd</div>
+        <div style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;text-align:center">Esclarecimento</div>
+      </div>`+
+    topics.map(t=>`
+      <div style="display:grid;grid-template-columns:160px 1fr 60px 100px;gap:8px;align-items:center;margin-bottom:8px">
+        <div class="cat-name" title="${t.topic}" style="width:auto">${t.topic}</div>
+        <div class="cat-bar-wrap"><div class="cat-bar" style="width:${(t.count/maxCount*100).toFixed(1)}%"></div></div>
+        <div class="cat-count" style="width:auto">${t.count}</div>
+        <div style="text-align:center">${clarBadge(t.clarification_rate)}</div>
+      </div>`).join('');
+  } else {topCard.style.display='none';}
+
+  // ── Timeline semanal ───────────────────────────────────────────────────────
+  const timeline=data.topic_timeline||[];
+  const tlCard=document.getElementById('mem-timeline-card');
+  if(showTimeline && timeline.length){
+    tlCard.style.display='block';
+    // Organizar por tópico e semana
+    const topicsInTL=[...new Set(timeline.map(r=>r.topic))];
+    const weeksInTL=[...new Set(timeline.map(r=>r.week))].sort();
+    const tlMap={};
+    timeline.forEach(r=>{if(!tlMap[r.topic])tlMap[r.topic]={};tlMap[r.topic][r.week]=r.count;});
+    const maxVal=Math.max(...timeline.map(r=>r.count),1);
+
+    const weekHeaders='<div class="tl-row"><div class="tl-label"></div><div class="tl-cells">'+
+      weeksInTL.map(w=>`<div class="tl-week">${w.slice(5)}</div>`).join('')+'</div></div>';
+
+    const rows=topicsInTL.map(topic=>{
+      const cells=weeksInTL.map(week=>{
+        const v=tlMap[topic][week]||0;
+        const opacity=v?0.15+0.85*(v/maxVal):0.05;
+        const bg=v?`rgba(79,142,247,${opacity.toFixed(2)})`:'var(--bg3)';
+        return`<div class="tl-cell" style="background:${bg}" title="${topic} — ${week}: ${v} interacções"></div>`;
+      }).join('');
+      return`<div class="tl-row"><div class="tl-label" title="${topic}">${topic}</div><div class="tl-cells">${cells}</div></div>`;
+    }).join('');
+
+    document.getElementById('mem-timeline').innerHTML=weekHeaders+rows;
+  } else {tlCard.style.display='none';}
+
+  // ── Gaps de conteúdo ───────────────────────────────────────────────────────
+  const weak=data.weak_topics||[];
+  const weakCard=document.getElementById('mem-weak-card');
+  if(weak.length){
+    weakCard.style.display='block';
+    document.getElementById('mem-weak-list').innerHTML=weak.map(t=>`
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+        <div class="cat-name" style="width:auto;min-width:150px" title="${t.topic}">${t.topic}</div>
+        <div class="cat-bar-wrap"><div class="cat-bar" style="width:${(t.avg_importance/10*100).toFixed(1)}%;background:var(--amber)"></div></div>
+        <span class="badge badge-amber">${t.avg_importance.toFixed(1)}</span>
+        <span style="font-family:var(--mono);font-size:11px;color:var(--muted)">${t.count} interacções</span>
+      </div>`).join('');
+  } else {weakCard.style.display='none';}
+
+  // ── Fontes ────────────────────────────────────────────────────────────────
+  const sources=data.top_sources||[];
+  const srcCard=document.getElementById('mem-sources-card');
+  if(sources.length){
+    srcCard.style.display='block';
+    const maxSrc=Math.max(...sources.map(s=>s.count),1);
+    document.getElementById('mem-sources-list').innerHTML=sources.map(s=>`
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+        <div class="cat-name" style="width:280px" title="${s.source}">${s.source}</div>
+        <div class="cat-bar-wrap"><div class="cat-bar" style="width:${(s.count/maxSrc*100).toFixed(1)}%;background:var(--accent2)"></div></div>
+        <div class="cat-count">${s.count}</div>
+      </div>`).join('');
+  } else {srcCard.style.display='none';}
+
+  // ── Breakdown diário ──────────────────────────────────────────────────────
+  const breakdown=data.daily_breakdown||[];
+  const dailyCard=document.getElementById('mem-daily-card');
+  if(breakdown.length>1){
+    dailyCard.style.display='block';
+    document.getElementById('mem-daily-tbody').innerHTML=breakdown.map(d=>`
+      <tr>
+        <td style="font-family:var(--mono);font-size:12px">${d.period}</td>
+        <td>${d.total_interactions}</td>
+        <td><span class="badge badge-blue">${d.authenticated_count}</span></td>
+        <td><span class="badge badge-amber">${d.anonymous_count}</span></td>
+        <td style="font-family:var(--mono)">${d.avg_importance.toFixed(1)}</td>
+      </tr>`).join('');
+  } else {dailyCard.style.display='none';}
+}
+
+document.addEventListener('keydown',function(e){
+  if(e.ctrlKey&&e.key==='Enter'){
+    const active=document.querySelector('.page.active');
+    if(active&&active.id==='page-query')submitQuery();
+  }
+});
+</script>
+</body>
+</html>
